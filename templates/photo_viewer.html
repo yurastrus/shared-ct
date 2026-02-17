@@ -1,0 +1,666 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Перегляд фото #') }}{{ photo.id }}{% endblock %}
+
+{% block head_extra %}
+<style>
+    .photo-viewer-container {
+        display: flex;
+        gap: 20px;
+        height: calc(100vh - 120px);
+        /* overflow: hidden; -- видалено для коректної роботи */
+    }
+    
+    .photo-display-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+    }
+    
+    .photo-header {
+        background: #f8f9fa;
+        padding: 5px 10px;
+        border-radius: 8px 8px 0 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .photo-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 5px;
+    }
+    
+    .current-info {
+        font-size: 12px;
+        color: #6c757d;
+        margin: 0 10px;
+    }
+    
+    .photo-viewer-main {
+        flex: 1;
+        position: relative;
+        background: #000;
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+        cursor: grab;
+        min-height: 0;
+    }
+    
+    .photo-viewer-main.dragging {
+        cursor: grabbing;
+    }
+    
+    .photo-viewer-img {
+        max-width: none;
+        max-height: none;
+        width: auto;
+        height: auto;
+        transition: transform 0.2s ease, opacity 0.3s ease;
+        transform-origin: center;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: none;
+        object-fit: contain;
+        visibility: visible;
+        opacity: 1;
+    }
+
+    .photo-viewer-img.start {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        transform: none !important;
+    }
+            
+    /* Стрілки навігації як в identification.html */
+    .nav-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        padding: 0 15px;
+        height: 100px;
+        line-height: 100px;
+        z-index: 10;
+        display: block;
+        text-decoration: none;
+    }
+
+    .nav-arrow:hover { 
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        text-decoration: none;
+    }
+
+    .nav-arrow.prev { left: 15px; }
+    .nav-arrow.next { right: 15px; }
+
+    /* Контроли зуму всередині фото */
+    .zoom-controls {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 5px 10px;
+        border-radius: 4px;
+        z-index: 15;
+        visibility: hidden;
+    }
+
+    .zoom-btn {
+        padding: 3px 8px;
+        border: 1px solid #28a745;
+        background: #28a745;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .zoom-btn:hover {
+        background: #1e7e34;
+    }
+
+    #zoom-level {
+        color: white;
+        font-size: 12px;
+        min-width: 40px;
+        text-align: center;
+    }
+
+    /* Інформація під фото */
+    .photo-meta {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 15;
+        max-width: 90%;
+        text-align: center;
+    }
+    
+    .photo-info-sidebar {
+        width: 350px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        
+        /* === ЗМІНИ ДЛЯ ВИПРАВЛЕННЯ ПРОКРУТКИ === */
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    
+    .info-card {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .card-header {
+        background: #f8f9fa;
+        padding: 10px 15px;
+        border-bottom: 1px solid #dee2e6;
+        font-weight: bold;
+    }
+    
+    .series-navigation {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .series-photo-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 15px;
+        border-bottom: 1px solid #f8f9fa;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+    }
+    
+    .series-photo-item:hover {
+        background: #f8f9fa;
+        text-decoration: none;
+        color: inherit;
+    }
+    
+    .series-photo-item.current {
+        background: #e3f2fd;
+        font-weight: bold;
+    }
+    
+    .series-photo-info {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .series-photo-number {
+        font-size: 12px;
+        color: #6c757d;
+        margin-right: 10px;
+    }
+
+    /* === НОВІ СТИЛІ ДЛЯ КОМПАКТНОГО ІНТЕРФЕЙСУ === */
+    .series-photo-info > div {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5em;
+        flex-wrap: wrap;
+    }
+    
+    .identification-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 15px;
+        border-bottom: 1px solid #f8f9fa;
+    }
+    
+    .identification-item:last-child {
+        border-bottom: none;
+    }
+
+    .identification-details {
+        flex: 1;
+        word-break: break-word;
+    }
+    
+    .identification-species {
+        font-size: 16px;
+        color: #007bff;
+        margin: 0;
+    }
+    
+    .identification-meta {
+        display: none; /* Старий блок більше не потрібен */
+    }
+    /* === КІНЕЦЬ НОВИХ СТИЛІВ === */
+    
+    .quantity-badge {
+        background: #6c757d;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+    }
+
+    .no-transition {
+        transition: none !important;
+    }
+
+    .card-body-compact p {
+    margin-bottom: 0.5rem; /* Зменшуємо стандартний відступ */
+    }
+    .card-body-compact p:last-of-type {
+        margin-bottom: 0; /* Прибираємо відступ у останнього елемента */
+    }
+    
+    /* Responsive */
+    @media (max-width: 992px) {
+        .photo-viewer-container {
+            flex-direction: column;
+            height: auto;
+        }
+        
+        .photo-info-sidebar {
+            width: 100%;
+            order: -1;
+            max-height: 40vh;
+            height: auto; /* Повертаємо авто-висоту для мобільних */
+        }
+        
+        .photo-display-section {
+            height: 60vh;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="photo-viewer-container">
+        <!-- Основна секція з фото -->
+        <div class="photo-display-section">
+            <div class="photo-viewer-main" id="photo-container">
+                <!-- Стрілки навігації -->
+                {% if current_photo_index > 0 %}
+                    <a href="{{ url_for('camera_traps.view_photo', lang_code=g.lang_code, observation_id=observation.id, photo_index=current_photo_index-1) }}" class="nav-arrow prev">&lt;</a>
+                {% endif %}
+                
+                {% if current_photo_index < series_photos|length - 1 %}
+                    <a href="{{ url_for('camera_traps.view_photo', lang_code=g.lang_code, observation_id=observation.id, photo_index=current_photo_index+1) }}" class="nav-arrow next">&gt;</a>
+                {% endif %}
+                
+                <!-- Контроли зуму -->
+                <div class="zoom-controls">
+                    <button type="button" class="zoom-btn" onclick="zoomOut()">−</button>
+                    <span id="zoom-level"></span>
+                    <button type="button" class="zoom-btn" onclick="zoomIn()">+</button>
+                    <button type="button" class="zoom-btn" onclick="resetZoom()">{{ _('Скинути') }}</button>
+                </div>
+                
+                <img id="photo-img"
+                    src="{{ url_for('camera_traps.serve_raw_photo', filename=photo.system_filename, lang_code=g.lang_code) }}" 
+                    class="photo-viewer-img"
+                    style="display:none"
+                    alt="{{ _('Фото #') }}{{ photo.id }}">
+                
+                <!-- Мета-інформація під фото -->
+                <div class="photo-meta">
+                    <strong>{{ _('Локація:') }}</strong> {{ observation.location.name }} | 
+                    <strong>{{ _('Час:') }}</strong> {{ photo.captured_at.strftime('%d.%m.%Y %H:%M:%S') }} |
+                    <strong>{{ _('ID:') }}</strong> {{ photo.id }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Бокова панель з інформацією -->
+        <div class="photo-info-sidebar">
+            
+            <!-- === ОНОВЛЕНИЙ БЛОК "Серія спостереження" === -->
+            <div class="info-card">
+                <div class="card-header">
+                    {{ _('Серія спостереження') }} #{{ observation.id }}
+                </div>
+                <div class="series-navigation">
+                    {% for series_photo in series_photos %}
+                        <a href="{{ url_for('camera_traps.view_photo', lang_code=g.lang_code, observation_id=observation.id, photo_index=series_photo.index) }}" 
+                           class="series-photo-item {% if series_photo.is_current %}current{% endif %}">
+                            <span class="series-photo-number">#{{ series_photo.sequence_number }}</span>
+                            <div class="series-photo-info">
+                                <div>
+                                    <span>{{ _('Фото') }} {{ series_photo.index + 1 }}:</span>
+                                    <small>{{ series_photo.captured_at }}</small>
+                                </div>
+                            </div>
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- === ОНОВЛЕНИЙ БЛОК "Деталі фотографії" === -->
+            <div class="info-card">
+                <div class="card-header">
+                    {{ _('Деталі фотографії') }}
+                </div>
+                <div class="card-body-compact" style="padding: 15px;">
+                    <p><strong>{{ _('Статус:') }}</strong> 
+                        <span class="badge bg-info">{{ photo.status }}</span>
+                    </p>
+                    <p><strong>{{ _('Оригінальна назва:') }}</strong> 
+                        <small style="word-break: break-all;">{{ photo.original_filename }}</small>
+                    </p>
+                    {% if photo.is_favorite %}
+                        <p><span class="badge bg-warning">★ {{ _('У вибраному') }}</span></p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- === ОНОВЛЕНИЙ БЛОК "Ідентифікації" === -->
+            <div class="info-card">
+                <div class="card-header">
+                    {{ _('Ідентифікації') }} ({{ photo.identifications|length }})
+                </div>
+                {% if photo.identifications %}
+                    <div>
+                        {% for ident in photo.identifications %}
+                            <div class="identification-item">
+                                <div class="identification-details">
+                                    <strong>{% if ident.user %}{{ ident.user.username }}{% else %}{{ _('Користувач видалений') }} (ID: {{ ident.user_id }}){% endif %}:</strong>
+                                    <span class="identification-species">
+                                        {% if ident.species_id and ident.species_id > 0 %}
+                                            {{ ident.species.common_name_ua or ident.species.scientific_name }}
+                                        {% elif ident.species_id == -1 %}
+                                            <em>{{ _('Пусто (немає тварин)') }}</em>
+                                        {% else %}
+                                            <em>{{ _('Інший вид (немає у списку)') }}</em>
+                                        {% endif %}
+                                    </span>;
+                                    <small>{{ ident.created_at.strftime('%d.%m.%Y') }}</small>
+                                </div>
+                                <span class="quantity-badge">{{ _('К-сть:') }} {{ ident.quantity }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div style="padding: 15px; text-align: center; color: #6c757d;">
+                        {{ _('Для цього фото ще немає ідентифікацій.') }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentZoom = 1;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let initialScale = 1;
+let isInitialized = false;
+let translateX = 0;
+let translateY = 0;
+
+const photoImg = document.getElementById('photo-img');
+const photoContainer = document.getElementById('photo-container');
+const zoomLevelSpan = document.getElementById('zoom-level');
+
+// Функції зуму
+function zoomIn() {
+    currentZoom = Math.min(currentZoom * 1.2, 5);
+    updateZoom();
+}
+
+function zoomOut() {
+    currentZoom = Math.max(currentZoom / 1.2, 0.1);
+    updateZoom();
+}
+
+function resetZoom() {
+    currentZoom = initialScale;
+    translateX = 0;
+    translateY = 0;
+    photoImg.style.transform = `translate(-50%, -50%) scale(${currentZoom})`;
+    updateZoomLevel();
+}
+
+function updateZoom() {
+    // Зберігаємо позицію при зумі
+    photoImg.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${currentZoom})`;
+    updateZoomLevel();
+}
+
+function updateZoomLevel() {
+    zoomLevelSpan.textContent = Math.round(currentZoom * 100) + '%';
+}
+
+function fitToContainer() {
+    // Запобігаємо повторним викликам після ініціалізації
+    if (isInitialized) {
+        console.log('Already initialized, skipping fitToContainer');
+        return;
+    }
+    
+    const containerRect = photoContainer.getBoundingClientRect();
+    
+    // Перевіряємо чи контейнер має розміри
+    if (containerRect.width === 0 || containerRect.height === 0) {
+        console.log('Container not ready, retrying...');
+        setTimeout(fitToContainer, 100);
+        return;
+    }
+    
+    // Перевіряємо чи зображення завантажене
+    if (!photoImg.naturalWidth || !photoImg.naturalHeight) {
+        console.log('Image not ready, retrying...');
+        setTimeout(fitToContainer, 100);
+        return;
+    }
+    
+    console.log('Container dimensions:', {
+        width: containerRect.width,
+        height: containerRect.height
+    });
+    
+    console.log('Image natural dimensions:', {
+        width: photoImg.naturalWidth,
+        height: photoImg.naturalHeight
+    });
+    
+    // Розраховуємо масштаб для підганяння під контейнер
+    const scaleX = containerRect.width / photoImg.naturalWidth;
+    const scaleY = containerRect.height / photoImg.naturalHeight;
+    
+    // Вибираємо менший масштаб, щоб фото поміщалось повністю
+    // Множимо на 0.9 для невеликого відступу від країв
+    const scale = Math.min(scaleX, scaleY) * 0.9;
+    
+    // Обмежуємо мінімальний масштаб
+    initialScale = Math.max(scale, 0.1);
+    currentZoom = initialScale;
+    // Тимчасово вимикаємо анімацію
+    photoImg.classList.add('no-transition');
+
+    // Миттєво застосовуємо правильний розмір і робимо фото видимим
+    updateZoom(); // Це встановлює transform
+    photoImg.classList.remove('start');
+   
+    // Через крихітну затримку повертаємо анімацію для майбутніх дій (зум, і т.д.)
+    requestAnimationFrame(() => {
+        photoImg.classList.remove('no-transition');
+    });
+    
+    // Позначаємо що ініціалізація завершена
+    isInitialized = true;
+}
+
+// Ініціалізація після завантаження сторінки
+function initializePhotoViewer() {
+    console.log('Preloading image...');
+
+    const preload = new Image();
+    preload.src = photoImg.src;
+
+    preload.onload = function() {
+        const containerRect = photoContainer.getBoundingClientRect();
+
+        const scaleX = containerRect.width / preload.naturalWidth;
+        const scaleY = containerRect.height / preload.naturalHeight;
+        const scale = Math.min(scaleX, scaleY) * 0.9;
+
+        initialScale = Math.max(scale, 0.1);
+        currentZoom = initialScale;
+
+        // Виставляємо відразу правильний transform
+        photoImg.style.transform =
+            `translate(-50%, -50%) scale(${initialScale})`;
+        photoImg.style.display = 'block';
+        photoImg.style.opacity = '1';
+
+        isInitialized = true;
+        updateZoomLevel();
+        document.querySelector('.zoom-controls').style.visibility = 'visible';
+    };
+}
+
+// Обробка зміни розміру вікна
+let resizeTimeout;
+window.addEventListener('resize', function() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(function() {
+        // При зміні розміру перераховуємо тільки якщо зум на початковому рівні
+        if (Math.abs(currentZoom - initialScale) < 0.01) {
+            isInitialized = false;
+            fitToContainer();
+        }
+    }, 250);
+});
+
+// Запускаємо ініціалізацію
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializePhotoViewer);
+} else {
+    initializePhotoViewer();
+}
+
+// Додатково викликаємо після повного завантаження
+window.addEventListener('load', function() {
+    if (!isInitialized) {
+        setTimeout(fitToContainer, 200);
+    }
+});
+
+// Зум колесом миші
+photoContainer.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    
+    // Зберігаємо позицію курсора відносно контейнера
+    const rect = photoContainer.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Визначаємо напрямок зуму
+    const zoomFactor = e.deltaY < 0 ? 1.2 : 1/1.2;
+    const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.1), 5);
+    
+    // Якщо зум змінився
+    if (newZoom !== currentZoom) {
+        currentZoom = newZoom;
+        updateZoom();
+    }
+});
+
+// Перетягування фото
+photoImg.addEventListener('mousedown', function(e) {
+    if (currentZoom <= initialScale) return;
+    
+    isDragging = true;
+    photoContainer.classList.add('dragging');
+    
+    // Зберігаємо початкову позицію миші
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    
+    e.preventDefault();
+});
+
+document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    
+    // Обчислюємо зміщення
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    // Оновлюємо позицію
+    translateX += deltaX;
+    translateY += deltaY;
+    
+    // Оновлюємо початкову позицію для наступного руху
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    
+    // Застосовуємо трансформацію
+    photoImg.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${currentZoom})`;
+});
+
+document.addEventListener('mouseup', function() {
+    if (isDragging) {
+        isDragging = false;
+        photoContainer.classList.remove('dragging');
+    }
+});
+
+// Запобігаємо виділенню тексту при перетягуванні
+photoImg.addEventListener('selectstart', function(e) {
+    e.preventDefault();
+});
+
+// Клавіатурна навігація
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowLeft') {
+        const prevBtn = document.querySelector('.nav-arrow.prev');
+        if (prevBtn) window.location.href = prevBtn.href;
+    } else if (e.key === 'ArrowRight') {
+        const nextBtn = document.querySelector('.nav-arrow.next');
+        if (nextBtn) window.location.href = nextBtn.href;
+    } else if (e.key === 'Escape') {
+        resetZoom();
+    } else if (e.key === '+' || e.key === '=') {
+        zoomIn();
+    } else if (e.key === '-' || e.key === '_') {
+        zoomOut();
+    }
+});
+
+// Початкове оновлення рівня зуму
+updateZoomLevel();
+
+// Робимо функції глобальними для onclick handlers
+window.zoomIn = zoomIn;
+window.zoomOut = zoomOut;
+window.resetZoom = resetZoom;
+</script>
+{% endblock %}

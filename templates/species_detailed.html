@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Карта детекцій видів фотопастками') }}{% endblock %}
+
+{% block head_extra %}
+    <!-- Select2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    
+    <style>
+        .page-container {
+            padding: 20px;
+        }
+        
+        /* Стилі для панелі фільтрів */
+        .filters-panel {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 200px;
+        }
+        
+        .filter-group label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .filter-group.species-select-group {
+            flex-grow: 1;
+            min-width: 300px;
+        }
+
+        /* Статистика */
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-box {
+            background: #fff;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 4px solid #0d6efd;
+            flex: 1;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #212529;
+        }
+
+        /* Карта */
+        #map {
+            height: 600px;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 1;
+        }
+
+        /* Легенда карти (буде наповнюватись динамічно) */
+        .info.legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            line-height: 1.5;
+            color: #555;
+            min-width: 150px;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+            border-radius: 50%;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>{{ _('Карта детекцій видів фотопастками') }}</h1>
+    </div>
+
+    <!-- Панель фільтрів -->
+    <div class="filters-panel">
+        <div class="filter-group">
+            <label>{{ _('Період з:') }}</label>
+            <input type="date" id="start-date" class="form-control" value="{{ start_date }}">
+        </div>
+        <div class="filter-group">
+            <label>{{ _('до:') }}</label>
+            <input type="date" id="end-date" class="form-control" value="{{ end_date }}">
+        </div>
+        <div class="filter-group species-select-group">
+            <label>{{ _('Вид тварини:') }}</label>
+            <select id="species-select" class="form-control">
+                <option></option> <!-- Placeholder -->
+                {% for s in species_list %}
+                    <option value="{{ s.id }}">
+                        {% if g.lang_code == 'uk' %}{{ s.name_ua }}{% else %}{{ s.name_en }}{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <button id="apply-btn" class="btn btn-primary">
+                <i class="fas fa-search"></i> {{ _('Застосувати') }}
+            </button>
+        </div>
+    </div>
+
+    <!-- Блок статистики -->
+    <div class="stats-bar">
+        <div class="stat-box">
+            <div class="stat-label">{{ _('Всього детекцій') }}</div>
+            <div class="stat-value" id="stat-detections">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">{{ _('Активних локацій') }}</div>
+            <div class="stat-value" id="stat-locations">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">{{ _('Середній DR') }}</div>
+            <div class="stat-value" id="stat-rai">-</div>
+        </div>
+    </div>
+
+    <!-- Контейнер для карти -->
+    <div id="map"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<script>
+$(document).ready(function() {
+    // --- 1. ІНІЦІАЛІЗАЦІЯ ---
+    
+    // Select2
+    $('#species-select').select2({
+        placeholder: "{{ _('-- Виберіть вид --') }}",
+        allowClear: true,
+        width: '100%'
+    });
+
+    // Змінні карти
+    const map = L.map('map').setView([49.0, 31.0], 6); // Центр України (приблизно)
+
+    // Базові шари (Tiles)
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19
+    }).addTo(map);
+
+    const esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri',
+        maxZoom: 19
+    });
+
+    // Групи шарів для даних (Data Layers)
+    const absoluteLayerGroup = L.layerGroup().addTo(map); // Цей шар активний за замовчуванням
+    const normalizedLayerGroup = L.layerGroup();
+
+    // Контроль шарів (Layer Control)
+    // Ми використовуємо хитрий прийом: додаємо групи даних як "Base Maps" у другий контрол,
+    // або як "Overlays". Щоб реалізувати перемикання (radio button behavior) між даними,
+    // найзручніше додати їх як Overlays і керувати подіями, або просто як Base Maps (але тоді зникне перемикач тайлів).
+    // Найкращий UX тут: Тайли окремо, Дані окремо.
+    
+    const baseMaps = {
+        "{{ _('Карта (OSM)') }}": osmLayer,
+        "{{ _('Супутник (Esri)') }}": esriLayer
+    };
+
+    const overlayMaps = {
+        "{{ _('Кількість детекцій') }}": absoluteLayerGroup,
+        "{{ _('DR (Детекцій на 100 днів)') }}": normalizedLayerGroup
+    };
+
+    const layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+
+    // Легенда
+    const legend = L.control({ position: 'bottomleft' });
+    legend.onAdd = function (map) {
+        const div = L.DomUtil.create('div', 'info legend');
+        div.innerHTML = '<div id="legend-content">{{ _("Завантажте дані...") }}</div>';
+        return div;
+    };
+    legend.addTo(map);
+
+    // Змінні для зберігання даних
+    let currentMaxDetections = 0;
+    let currentMaxDR = 0;
+
+    // --- 2. ЛОГІКА ЗАВАНТАЖЕННЯ ---
+
+    $('#apply-btn').click(function() {
+        const speciesId = $('#species-select').val();
+        const startDate = $('#start-date').val();
+        const endDate = $('#end-date').val();
+
+        if(!speciesId || !startDate || !endDate) {
+            alert("{{ _('Будь ласка, заповніть всі поля') }}");
+            return;
+        }
+
+        // Блокуємо кнопку
+        const btn = $(this);
+        const originalText = btn.html();
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ _("Завантаження...") }}');
+
+        // URL API
+        const apiUrl = `{{ url_for('camera_traps.api_distribution_map', lang_code=g.lang_code) }}?species_id=${speciesId}&start_date=${startDate}&end_date=${endDate}`;
+
+        $.getJSON(apiUrl)
+            .done(function(data) {
+                updateStats(data.summary);
+                renderMapData(data.locations);
+            })
+            .fail(function() {
+                alert("{{ _('Помилка отримання даних') }}");
+                $('#legend-content').html("{{ _('Помилка') }}");
+            })
+            .always(function() {
+                btn.prop('disabled', false).html(originalText);
+            });
+    });
+
+    function updateStats(summary) {
+        $('#stat-detections').text(summary.total_detections);
+        $('#stat-locations').text(summary.total_locations);
+        $('#stat-rai').text(summary.avg_rai);
+    }
+
+    // --- 3. РЕНДЕРИНГ КАРТИ ---
+
+    function renderMapData(locations) {
+        // Очищаємо старі шари
+        absoluteLayerGroup.clearLayers();
+        normalizedLayerGroup.clearLayers();
+
+        if (locations.length === 0) {
+            $('#legend-content').html("{{ _('Дані відсутні') }}");
+            return;
+        }
+
+        // Знаходимо максимуми для масштабування
+        currentMaxDetections = Math.max(...locations.map(l => l.detections));
+        currentMaxDR = Math.max(...locations.map(l => l.rai * 100)); // DR на 100 днів для зручності
+
+        const bounds = L.latLngBounds();
+
+        locations.forEach(loc => {
+            const latLng = [loc.lat, loc.lon];
+            bounds.extend(latLng);
+
+            // 1. Абсолютний маркер (Червоний)
+            const absRadius = getLogRadius(loc.detections);
+            const absMarker = L.circleMarker(latLng, {
+                radius: absRadius,
+                fillColor: "#ff3333",
+                color: "#cc0000",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.6
+            });
+            
+            const popupContent = `
+                <div style="font-size: 14px;">
+                    <strong>${loc.name}</strong><br>
+                    <hr style="margin: 5px 0;">
+                    {{ _('Детекцій:') }} <b>${loc.detections}</b><br>
+                    {{ _('Днів роботи:') }} <b>${loc.effort}</b><br>
+                    {{ _('DR:') }} <b>${loc.rai}</b> <small>({{ _('дет./день') }})</small>
+                </div>
+            `;
+            
+            absMarker.bindPopup(popupContent);
+            absoluteLayerGroup.addLayer(absMarker);
+
+            // 2. Нормалізований маркер (Синій) - DR * 100 (детекцій на 100 трап-днів)
+            const raiVal = loc.rai * 100; 
+            const normRadius = getLogRadius(raiVal); 
+            const normMarker = L.circleMarker(latLng, {
+                radius: normRadius,
+                fillColor: "#3388ff",
+                color: "#0055cc",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.6
+            });
+            
+            normMarker.bindPopup(popupContent);
+            normalizedLayerGroup.addLayer(normMarker);
+        });
+
+        // Центруємо карту
+        if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        // Оновлюємо легенду для активного шару
+        updateLegend();
+    }
+
+    // --- 4. МАТЕМАТИКА ТА ЛЕГЕНДА ---
+
+    // Логарифмічна функція радіуса (Base 10)
+    // r = base + multiplier * log10(value)
+    // Щоб 1 = маленький, 10 = середній, 100 = великий
+    function getLogRadius(value) {
+        if (value <= 0) return 3; // Мінімальний радіус
+        // log10(1) = 0 -> radius 4
+        // log10(10) = 1 -> radius 4 + 6 = 10
+        // log10(100) = 2 -> radius 4 + 12 = 16
+        // log10(1000) = 3 -> radius 4 + 18 = 22
+        return 4 + (7 * Math.log10(value)); 
+    }
+
+    // Слухаємо перемикання шарів, щоб оновити легенду
+    map.on('overlayadd', function(eventLayer) {
+        // Хитрий фікс: якщо вмикаємо один шар, вимикаємо інший, щоб не було каші
+        if (eventLayer.layer === absoluteLayerGroup) {
+            if (map.hasLayer(normalizedLayerGroup)) {
+                map.removeLayer(normalizedLayerGroup);
+            }
+            updateLegend('absolute');
+        } else if (eventLayer.layer === normalizedLayerGroup) {
+            if (map.hasLayer(absoluteLayerGroup)) {
+                map.removeLayer(absoluteLayerGroup);
+            }
+            updateLegend('normalized');
+        }
+    });
+
+    function updateLegend(mode = 'absolute') {
+        const container = $('#legend-content');
+        let html = '';
+        let maxVal = 0;
+        let color = '';
+        let labelSuffix = '';
+
+        // Визначаємо режим, якщо не переданий (при першому завантаженні)
+        if (map.hasLayer(normalizedLayerGroup) && !map.hasLayer(absoluteLayerGroup)) {
+            mode = 'normalized';
+        }
+
+        if (mode === 'absolute') {
+            maxVal = currentMaxDetections;
+            color = '#ff3333';
+            html += '<div style="margin-bottom:5px; font-weight:bold; color:#000000">{{ _("Кількість детекцій") }}</div>';
+        } else {
+            maxVal = currentMaxDR; // Це DR * 100
+            color = '#3388ff';
+            html += '<div style="margin-bottom:5px; font-weight:bold; color:#0055cc">{{ _("DR (на 100 днів)") }}</div>';
+        }
+
+        if (maxVal === 0) {
+            container.html("{{ _('Немає даних') }}");
+            return;
+        }
+
+        // Генеруємо ступені 10: 1, 10, 100, 1000... до maxVal
+        // 10^0, 10^1...
+        let power = 0;
+        let val = 1;
+        
+        while (val <= maxVal * 10) { // *10 щоб показати наступний крок як "максимум"
+            // Відображаємо тільки ті кроки, які менші або трохи більші за макс
+            if (val > maxVal && val > 10) break; // Stop loop appropriately
+
+            // Рахуємо радіус для легенди за тією ж формулою
+            const r = getLogRadius(val);
+            const diameter = r * 2;
+            
+            // Вирівнювання тексту
+            let textVal = val;
+            if (val >= 1000) textVal = (val/1000) + 'k';
+
+            html += `
+                <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                    <div style="
+                        width: ${diameter}px; 
+                        height: ${diameter}px; 
+                        background: ${color}; 
+                        opacity: 0.6; 
+                        border-radius: 50%; 
+                        margin-right: 8px;
+                        margin-left: ${24 - r}px;"> <!-- Центрування кіл -->
+                    </div>
+                    <span>${textVal}</span>
+                </div>
+            `;
+
+            val *= 10;
+        }
+
+        container.html(html);
+    }
+});
+</script>
+{% endblock %}

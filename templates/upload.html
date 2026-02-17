@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+
+{% from 'macros.html' import render_field %}
+
+{% block title %}{{ _('Завантаження даних фотопасток') }}{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+
+<style>
+.upload-layout {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 20px;
+    align-items: stretch;
+}
+.form-panel {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    background: #f9f9f9;
+}
+.map-panel {
+    height: 300px;
+    width: 400px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+#map {
+    height: 100%;
+}
+.file-list{
+    font-family:'Courier New',monospace;
+    font-size:13px;
+    line-height:1.4;
+    margin:15px 0;
+    padding:10px;
+    border:1px solid #ddd;
+    background:#f9f9f9;
+    min-height:100px;
+    max-height:300px;
+    overflow-y:auto;
+    width:100%;
+    max-width:100%;box-sizing:border-box;
+    overflow-x:hidden}
+    
+.file-item{
+    padding:2px 0;
+    border-bottom:1px dotted #ccc;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    min-height:20px}
+    
+.file-item:last-child{
+    border-bottom:none
+}
+.file-controls{
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    min-width:240px}
+.file-remove{
+    color:#dc3545;
+    text-decoration:none;
+    margin-left:10px;
+    margin-right:10px;
+    flex-shrink:0
+}
+.file-remove:hover{
+    text-decoration:underline
+}
+.file-status{
+    color:#666;
+    font-size:11px;
+    width:140px;
+    text-align:left;
+    flex-shrink:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap
+}
+.file-status.success{
+    color:#28a745
+}
+.file-status.error{
+    color:#dc3545
+}
+.upload-progress{
+    margin:15px 0;display:none
+}
+.progress{
+    height:20px;
+    background:#e9ecef;
+    border-radius:4px;
+    overflow:hidden
+}
+.progress-bar{height:100%;
+    background:#007bff;
+    transition:width .3s ease
+}
+.progress-text{
+    font-size:14px;
+    margin-bottom:5px
+}
+.btn-file{
+    position:relative;
+    overflow:hidden;
+    display:inline-block}
+.btn-file input[type=file]{
+    position:absolute;
+    top:0;
+    right:0;min-width:100%;
+    min-height:100%;
+    font-size:100px;
+    text-align:right;
+    filter:alpha(opacity=0);
+    opacity:0;outline:none;
+    background:white;
+    cursor:inherit
+}
+
+input[type="text"], textarea {
+    width: 100% !important;
+    max-width: 100%;
+}
+
+.leaflet-control-layers {
+    text-align: left;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header mb-4">
+        <h1>{{ _('Завантаження фотографій з фотопасток') }}</h1>
+    </div>
+
+    <div class="location-form-group">
+        <h3 class="form-section-title">{{ _('Крок 1: Вкажіть місце зйомки') }}</h3>
+        
+        <div class="upload-layout">
+            <div class="form-panel">
+                <form id="location-form" method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ render_field(form.location, class="form-select") }}
+                    </div>
+
+                    <div id="new-location-fields" style="display: none;">
+                        <h5>{{ _('Дані місця зйомки') }}</h5>
+                        <div class="col-12 mb-3">{{ render_field(form.new_location_name) }}</div>
+                        <div class="col-12 mb-3">{{ render_field(form.description) }}</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">{{ render_field(form.latitude) }}</div>
+                            <div class="col-md-6 mb-3">{{ render_field(form.longitude) }}</div>
+                        </div>
+                        <button type="button" id="create-location-btn" class="btn btn-secondary">{{ _('Створити та вибрати місце') }}</button>
+                        <div id="location-feedback" class="mt-2"></div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="map-panel">
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="upload-section" class="mt-4" style="display: none;">
+        <h3 class="form-section-title">{{ _('Крок 2: Завантажте фотографії') }}</h3>
+        <input type="hidden" id="location-id" value="">
+        <div class="file-upload-area">
+            <span class="btn btn-primary btn-file">{{ _('Вибрати файли') }}
+                <input type="file" id="file-input" multiple accept="image/jpeg,image/jpg">
+            </span>
+            <span class="ml-3 text-muted">{{ _('Дозволені файли: .jpg, .jpeg') }}</span>
+            <div id="file-list" class="file-list">
+                <div class="text-muted">{{ _('Файли не вибрані') }}</div>
+            </div>
+        </div>
+        <div class="form-check my-3">
+            <input class="form-check-input" type="checkbox" id="save-original-checkbox" checked>
+            <label class="form-check-label" for="save-original-checkbox">
+                {{ _('Зберігати повнорозмірні (оригінальні) фотографії') }}
+            </label>
+        </div>
+        <div class="upload-progress"><div class="progress-text">{{ _('Завантаження...') }}</div><div class="progress"><div class="progress-bar" style="width: 0%"></div></div></div>
+        <div class="text-center mt-3"><button id="upload-btn" class="btn btn-primary btn-lg" disabled>{{ _('Завантажити та обробити') }}</button></div>
+        <div id="upload-success-message" class="alert alert-success mt-4" style="display: none; text-align: center;"><h4>{{ _('Файли успішно завантажені!') }}</h4><p>{{ _('Тепер ви можете перейти до їх розпізнавання.') }}</p><a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}" class="btn btn-success btn-lg mt-2">{{ _('Перейти до ідентифікації') }}</a></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+$(document).ready(function () {
+    const csrfToken = "{{ csrf_token() }}";
+    const locationApiUrlPattern = "/{{ g.lang_code }}/camera-traps/api/location/";
+
+    const locationSelect = $('#{{ form.location.id }}');
+    const newLocationFields = $('#new-location-fields');
+    const createLocationBtn = $('#create-location-btn');
+    const locationFeedback = $('#location-feedback');
+    const uploadSection = $('#upload-section');
+    const locationIdInput = $('#location-id');
+    const fileInput = $('#file-input');
+    const fileList = $('#file-list');
+    const uploadBtn = $('#upload-btn');
+    const uploadSuccessMessage = $('#upload-success-message');
+    const uploadProgress = $('.upload-progress');
+    const progressBar = $('.progress-bar');
+    const progressText = $('.progress-text');
+
+    let selectedFiles = [];
+    
+    let map, markers = {};
+    let activeLocationId = null;
+
+    const defaultIcon = L.icon({
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+    });
+    const selectedIcon = L.icon({
+        iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+    });
+
+    function initMap() {
+        const GEOSERVER_BASE_URL = "{{ geoserver_url }}";
+        const geocache = `${GEOSERVER_BASE_URL}/gwc/service/wms`;
+        
+        const kvartals_rsnr = L.tileLayer.wms(geocache, {
+            layers: 'roztochya:kvartals_rsnr',
+            format: 'image/png',
+            transparent: true,
+            pane: 'kvartalsPane'
+        });
+
+        const vydils_rsnr = L.tileLayer.wms(geocache, {
+            layers: 'roztochya:vydils_rsnr',
+            format: 'image/png',
+            transparent: true,
+            pane: 'vydilsPane'
+        });
+
+        map = L.map('map').setView([49.8, 23.6], 9);
+        
+        map.createPane('vydilsPane');
+        map.getPane('vydilsPane').style.zIndex = 450; // Менший z-index, буде нижче
+        map.createPane('kvartalsPane');
+        map.getPane('kvartalsPane').style.zIndex = 460; // Більший z-index, буде вище
+
+        // Базові шари
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        });
+        
+        const hybridLayer = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '© ESRI',
+                maxZoom: 19
+            }),
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19
+            })
+        ]);
+        
+        // Додаємо OSM за замовчуванням
+        osmLayer.addTo(map);
+
+                // Контроль шарів
+        const baseLayers = {
+            "OSM": osmLayer,
+            "Hybrid": hybridLayer
+        };
+
+        const overlayLayers = {
+            "{{ _('Квартальна сітка ПЗ Розточчя') }}": kvartals_rsnr,
+            "{{ _('Видільна сітка ПЗ Розточчя') }}": vydils_rsnr
+        };
+        
+        L.control.layers(baseLayers, overlayLayers).addTo(map);
+
+        const locationsData = {{ locations_json_string|safe }};
+        const markersGroup = L.featureGroup();
+
+        locationsData.forEach(loc => {
+            const marker = L.marker([loc.latitude, loc.longitude], {icon: defaultIcon});
+            marker.locationId = loc.id;
+            marker.on('click', () => selectLocation(loc.id));
+            markers[loc.id] = marker;
+            markersGroup.addLayer(marker);
+        });
+
+        markersGroup.addTo(map);
+        if (markersGroup.getBounds().isValid()) {
+            map.fitBounds(markersGroup.getBounds().pad(0.1));
+        }
+    }
+    
+    function selectLocation(locationId) {
+        locationSelect.val(locationId).trigger('change');
+    }
+
+    function updateMapSelection(locationId) {
+        if (activeLocationId === locationId) return;
+
+        if (activeLocationId && markers[activeLocationId]) {
+            markers[activeLocationId].setIcon(defaultIcon);
+        }
+        
+        activeLocationId = locationId;
+
+        if (markers[activeLocationId]) {
+            markers[activeLocationId].setIcon(selectedIcon);
+            map.panTo(markers[activeLocationId].getLatLng());
+        }
+    }
+    
+    initMap();
+
+    // ... (код для завантаження файлів без змін) ...
+    fileInput.on('change',function(e){selectedFiles=Array.from(e.target.files),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length),uploadSuccessMessage.hide()});function displayFileList(){if(0===selectedFiles.length)return void fileList.html('<div class="text-muted">{{ _("Файли не вибрані") }}</div>');let e="";selectedFiles.forEach((t,o)=>{const i=(t.size/1024/1024).toFixed(1),n=t.webkitRelativePath||t.name;e+=`<div class="file-item" data-index="${o}">${n} (${i} MB)<a href="#" class="file-remove" onclick="removeFile(${o}); return false;">[видалити]</a><span class="file-status" id="status-${o}"></span></div>`}),fileList.html(e)}window.removeFile=function(e){selectedFiles.splice(e,1),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length);const t=new DataTransfer;selectedFiles.forEach(e=>t.items.add(e)),fileInput[0].files=t.files},uploadBtn.on('click',function(e){e.preventDefault();const t=locationIdInput.val();0===selectedFiles.length?alert("{{ _('Будь ласка, спочатку виберіть файли для завантаження.') }}"):t&&"-1"!==t&&"0"!==t?uploadFiles(selectedFiles,t):alert("{{ _('Будь ласка, виберіть дійсне місце перед завантаженням.') }}")});function uploadFiles(files,locationId){let currentIndex=0,successCount=0,errorCount=0,batchId=null;function resetUploadState(){uploadProgress.hide(),uploadBtn.prop('disabled',0===selectedFiles.length).text("{{ _('Завантажити та обробити') }}")}function finalizeBatch(){progressText.text('{{ _("Групування фото в серії...") }}'),progressBar.css('width','95%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/finalize-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({batch_id:batchId}),success:function(data){progressBar.css('width','100%'),progressText.text(`{{ _('Успішно згруповано') }} ${data.grouped_photos} {{ _('фото в серії') }}`),setTimeout(()=>{resetUploadState(),0===errorCount?(clearFileList(),uploadSuccessMessage.slideDown()):alert(`{{ _('Завантаження завершено:') }} ${successCount} {{ _('успішно,') }} ${errorCount} {{ _('з помилками') }}`)},1e3)},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка групування';alert(`{{ _('Помилка групування:') }} ${error}`),resetUploadState()}})}
+    function uploadNextFile(){
+        if(currentIndex>=files.length)
+            return void finalizeBatch();
+        const file=files[currentIndex],
+        formData=new FormData;
+        formData.append('location_id',locationId),
+        formData.append('batch_id',batchId),
+        formData.append('file',file);
+        formData.append('save_original', $('#save-original-checkbox').is(':checked'));
+        const uploadProgressPercent=5+Math.round(currentIndex/files.length*85);
+        progressBar.css('width',uploadProgressPercent+'%'),progressText.text(`{{ _('Завантажую файл') }} ${currentIndex+1} {{ _('з') }} ${files.length}: ${file.name}`),$('#status-'+currentIndex).text('{{ _("завантажується...") }}').removeClass('success error'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/upload/process-single',method:'POST',headers:{'X-CSRFToken':csrfToken},data:formData,processData:!1,contentType:!1,success:function(data){successCount++,$('#status-'+currentIndex).text('{{ _("завантажено") }}').addClass('success')},error:function(xhr){errorCount++;const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка сервера';$('#status-'+currentIndex).text(`{{ _("помилка:") }} ${error}`).addClass('error')},complete:function(){currentIndex++,setTimeout(uploadNextFile,100)}})}uploadBtn.prop('disabled',!0).text("{{ _('Завантаження...') }}"),uploadProgress.show(),progressText.text('{{ _("Підготовка до завантаження...") }}'),progressBar.css('width','5%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/create-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({location_id:parseInt(locationId),total_files:files.length}),success:function(data){batchId=data.batch_id,uploadNextFile()},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка створення batch';alert(`Помилка підготовки: ${error}`),resetUploadState()}})}function clearFileList(){selectedFiles=[],fileInput.val(""),displayFileList(),uploadBtn.prop("disabled",!0)}
+
+    // **ВИПРАВЛЕНИЙ JAVASCRIPT**
+    locationSelect.on('change', function () {
+        const selectedValue = $(this).val();
+        updateMapSelection(selectedValue);
+
+        // Ось тут була неточність у вашій версії
+        const allFields = $('#{{ form.new_location_name.id }}, #{{ form.description.id }}, #{{ form.latitude.id }}, #{{ form.longitude.id }}');
+
+        if (selectedValue === '0') {
+            newLocationFields.slideDown(); 
+            uploadSection.slideUp(); 
+            locationIdInput.val('');
+            allFields.val('').prop('readonly', false); // Очищаємо і робимо всі поля доступними
+            createLocationBtn.show(); 
+            locationFeedback.empty();
+        } else if (selectedValue && selectedValue !== '-1') {
+            newLocationFields.slideDown(); 
+            locationIdInput.val(selectedValue);
+            const url = locationApiUrlPattern + selectedValue;
+            
+            $.get(url)
+            .done(function(data) {
+                // Заповнюємо всі поля
+                $('#{{ form.new_location_name.id }}').val(data.name);
+                $('#{{ form.description.id }}').val(data.description);
+                $('#{{ form.latitude.id }}').val(data.latitude);
+                $('#{{ form.longitude.id }}').val(data.longitude);
+                
+                allFields.prop('readonly', true); // Блокуємо всі поля
+                createLocationBtn.hide(); 
+                locationFeedback.empty(); 
+                uploadSection.slideDown();
+            })
+            .fail(function() {
+                locationFeedback.removeClass('alert-success').addClass('alert alert-warning')
+                    .text("{{ _('Не вдалося завантажити деталі локації, але ви можете продовжити завантаження.') }}");
+                uploadSection.slideDown(); 
+            });
+        } else {
+            newLocationFields.slideUp(); 
+            uploadSection.slideUp(); 
+            locationIdInput.val('');
+        }
+    });
+
+    createLocationBtn.on('click', function () {
+        const name = $('#{{ form.new_location_name.id }}').val().trim();
+        const description = $('#{{ form.description.id }}').val().trim(); // Ця частина була правильна
+        const latitude = $('#{{ form.latitude.id }}').val();
+        const longitude = $('#{{ form.longitude.id }}').val();
+        if (!name || !latitude || !longitude) {
+            alert('{{ _("Назва та координати є обов\"язковими для створення нового місця.") }}'); 
+            return;
+        }
+        
+        $.ajax({
+            url: '/{{ g.lang_code }}/camera-traps/api/create-location',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            data: JSON.stringify({ name, description, latitude, longitude }), // і ця
+            success: function(data) {
+                locationFeedback.removeClass('alert-danger').addClass('alert alert-success').text(data.message);
+                if (data.location) {
+                    const newOption = new Option(data.location.name, String(data.location.id), true, true);
+                    locationSelect.append(newOption).val(String(data.location.id)).trigger('change');
+                }
+            },
+            error: function(xhr) {
+                const error = xhr.responseJSON ? xhr.responseJSON.message : 'Сталася помилка під час створення місця.';
+                locationFeedback.removeClass('alert-success').addClass('alert alert-danger').text(error);
+            }
+        });
+    });
+
+    const v = locationSelect.val();
+    if (v && v !== '-1' && v !== '0') {
+        locationSelect.trigger('change');
+    }
+});
+</script>
+{% endblock %}

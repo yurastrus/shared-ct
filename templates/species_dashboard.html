@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Аналіз трендів по видах') }}{% endblock %}
+
+{% block head_extra %}
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .species-analysis-page {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        
+        .page-header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #1a202c;
+            margin-bottom: 1.5rem;
+        }
+        
+        .filters-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .filters-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 1rem;
+            align-items: end;
+        }
+        
+        .filter-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .filter-item label {
+            font-weight: 500;
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .filter-item.species-filter {
+            grid-column: 1;
+        }
+        
+        .filter-item.year-filter {
+            min-width: 140px;
+            max-width: 160px;
+        }
+        
+        .filter-item select.form-control {
+            height: 38px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+        }
+        
+        .filter-item select.form-control:focus {
+            border-color: #4299e1;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+        
+        .filter-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-end;
+        }
+        
+        .btn {
+            padding: 0.5rem 1.25rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .btn-primary {
+            background: #0d6efd;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0b5ed7;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+            color: white;
+            text-decoration: none;
+        }
+        
+        /* === ЗМІНЕНО ТУТ === */
+        .message-container {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem 1.5rem; /* Зменшено вертикальний відступ */
+            text-align: center;
+            color: #6c757d;
+            max-width: 768px; /* Додано максимальну ширину */
+            margin-left: auto; /* Центрування блоку */
+            margin-right: auto; /* Центрування блоку */
+        }
+        
+        .message-container.info {
+            background: #e7f3ff;
+            border-color: #b3d9ff;
+            color: #004085;
+        }
+        
+        .message-container.error {
+            background: #ffe7e7;
+            border-color: #ffb3b3;
+            color: #721c24;
+        }
+        
+        .spinner-border {
+            width: 2rem;
+            height: 2rem;
+            border: 0.25rem solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spinner-border 0.75s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spinner-border {
+            to { transform: rotate(360deg); }
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .chart-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .chart-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 1rem;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+        
+        @media (max-width: 992px) {
+            .filters-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .filter-item.year-filter {
+                max-width: none;
+            }
+            
+            .filter-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .filter-actions .btn {
+                width: 100%;
+            }
+            
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="species-analysis-page">
+    <div class="page-header">
+        <h1>{{ _('Аналіз трендів по видах') }}</h1>
+    </div>
+
+    <!-- Панель фільтрів -->
+    <div class="filters-container">
+        <div class="filters-grid">
+            <div class="filter-item species-filter">
+                <label for="species-select">{{ _('Виберіть вид:') }}</label>
+                <select id="species-select" class="form-control">
+                    <option></option>
+                    {% for species in available_species %}
+                        <option value="{{ species.id }}">{{ species.text }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-item year-filter">
+                <label for="start-year-select">{{ _('Початковий рік:') }}</label>
+                <select id="start-year-select" class="form-control">
+                    {% for year in available_years %}
+                    <option value="{{ year }}" {% if year == start_year %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-item year-filter">
+                <label for="end-year-select">{{ _('Кінцевий рік:') }}</label>
+                <select id="end-year-select" class="form-control">
+                    {% for year in available_years %}
+                    <option value="{{ year }}" {% if year == end_year %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-actions">
+                <button id="apply-filters-btn" class="btn btn-primary">{{ _('Побудувати графіки') }}</button>
+                <a href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('До загального аналізу') }}</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Контейнер для графіків або повідомлення -->
+    <div id="dashboard-content">
+        <div class="message-container info">
+            <p>{{ _('Будь ласка, виберіть вид та натисніть "Побудувати графіки" для аналізу.') }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(document).ready(function() {
+    const speciesSelect = $('#species-select');
+    const startYearSelect = $('#start-year-select');
+    const endYearSelect = $('#end-year-select');
+    const applyButton = $('#apply-filters-btn');
+    const contentContainer = $('#dashboard-content');
+    
+    let seasonalChartInstance = null;
+    let yearlyChartInstance = null;
+
+    speciesSelect.select2({
+        placeholder: '{{ _("-- Пошук та вибір виду --") }}',
+        allowClear: true,
+        width: '100%'
+    });
+
+    // --- Код для валідації років ---
+    function validateYearRange() {
+        const startYear = parseInt(startYearSelect.val(), 10);
+        const endYear = parseInt(endYearSelect.val(), 10);
+
+        endYearSelect.find('option').each(function() {
+            const yearOption = parseInt($(this).val(), 10);
+            $(this).prop('disabled', yearOption < startYear);
+        });
+
+        if (endYear < startYear) {
+            endYearSelect.val(startYear);
+        }
+    }
+
+    startYearSelect.on('change', validateYearRange);
+    validateYearRange();
+    // --- Кінець коду валідації ---
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const speciesIdFromUrl = urlParams.get('species_id');
+    if (speciesIdFromUrl) {
+        speciesSelect.val(speciesIdFromUrl).trigger('change');
+        runAnalysis();
+    }
+
+    applyButton.on('click', runAnalysis);
+
+    function runAnalysis() {
+        const speciesId = speciesSelect.val();
+        const startYear = startYearSelect.val();
+        const endYear = endYearSelect.val();
+
+        if (!speciesId) {
+            alert('{{ _("Будь ласка, виберіть вид.") }}');
+            return;
+        }
+
+        showLoading();
+
+        const apiUrl = new URL("{{ url_for('camera_traps.api_species_dynamics', lang_code=g.lang_code, _external=True) }}");
+        apiUrl.searchParams.set('species_id', speciesId);
+        apiUrl.searchParams.set('start_year', startYear);
+        apiUrl.searchParams.set('end_year', endYear);
+        
+        fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                renderCharts(data);
+            })
+            .catch(error => {
+                console.error("Fetch error:", error);
+                showError('{{ _("Не вдалося завантажити дані для аналізу.") }}');
+            });
+    }
+
+    function showLoading() {
+        contentContainer.html(`<div class="message-container"><div class="spinner-border" role="status"></div><p class="mt-2">{{ _("Завантаження даних...") }}</p></div>`);
+    }
+
+    function showError(message) {
+        contentContainer.html(`<div class="message-container error">${message}</div>`);
+    }
+
+    function renderCharts(data) {
+        if ((!data.seasonal_activity || !data.seasonal_activity.length) && (!data.yearly_trend || !data.yearly_trend.length)) {
+            showError('{{ _("Для вибраного виду та періоду немає даних.") }}');
+            return;
+        }
+
+        contentContainer.html(`
+            <div class="dashboard-grid">
+                <div class="chart-section">
+                    <h3 class="chart-title">{{ _("Сезонна активність (кількість детекцій)") }}</h3>
+                    <div class="chart-container"><canvas id="seasonalActivityChart"></canvas></div>
+                </div>
+                <div class="chart-section">
+                    <h3 class="chart-title">{{ _("Багаторічна динаміка (індекс відносної чисельності, DR)") }}</h3>
+                    <div class="chart-container"><canvas id="yearlyTrendChart"></canvas></div>
+                </div>
+            </div>
+        `);
+        
+        if (seasonalChartInstance) seasonalChartInstance.destroy();
+        if (yearlyChartInstance) yearlyChartInstance.destroy();
+
+        // --- Графік 1: Сезонна активність ---
+        if (data.seasonal_activity && data.seasonal_activity.length > 0) {
+            const seasonalCtx = document.getElementById('seasonalActivityChart').getContext('2d');
+            const seasonalData = processSeasonalData(data.seasonal_activity);
+            seasonalChartInstance = new Chart(seasonalCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['{{ _("Січ") }}', '{{ _("Лют") }}', '{{ _("Бер") }}', '{{ _("Кві") }}', '{{ _("Тра") }}', '{{ _("Чер") }}', '{{ _("Лип") }}', '{{ _("Сер") }}', '{{ _("Вер") }}', '{{ _("Жов") }}', '{{ _("Лис") }}', '{{ _("Гру") }}'],
+                    datasets: seasonalData.datasets
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: '{{ _("Кількість детекцій") }}' } } } }
+            });
+        }
+
+        // --- Графік 2: Річна динаміка ---
+        if (data.yearly_trend && data.yearly_trend.length > 0) {
+            const yearlyCtx = document.getElementById('yearlyTrendChart').getContext('2d');
+            yearlyChartInstance = new Chart(yearlyCtx, {
+                type: 'line',
+                data: {
+                    labels: data.yearly_trend.map(d => d.year),
+                    datasets: [
+                        {
+                            label: '{{ _("Середній тренд") }}',
+                            data: data.yearly_trend.map(d => d.mean_dr_index),
+                            borderColor: '#0072B2',
+                            backgroundColor: '#0072B2',
+                            tension: 0,
+                            fill: false,
+                            pointRadius: 4,
+                        },
+                        {
+                            label: '{{ _("95%% Довірчий інтервал") }}',
+                            data: data.yearly_trend.map(d => d.upper_ci),
+                            fill: '+1',
+                            backgroundColor: '#56B4E950',
+                            borderColor: 'transparent',
+                            pointRadius: 0,
+                            tension: 0,
+                        },
+                        {
+                            label: 'Lower CI Bound',
+                            data: data.yearly_trend.map(d => d.lower_ci),
+                            fill: false,
+                            borderColor: 'transparent',
+                            pointRadius: 0,
+                            tension: 0,
+                        }
+                    ]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { 
+                        y: { 
+                            beginAtZero: true, 
+                            title: { display: true, text: '{{ _("Індекс DR") }}' } 
+                        } 
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                filter: function(legendItem, chartData) {
+                                    return legendItem.datasetIndex < 2;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    function processSeasonalData(rawData) {
+        const datasets = {};
+        const colors = ['#0d6efd', '#6c757d', '#198754', '#dc3545', '#ffc107', '#0dcaf0'];
+        
+        rawData.forEach(item => {
+            const year = item.year;
+            if (!datasets[year]) {
+                datasets[year] = {
+                    label: year,
+                    data: new Array(12).fill(0),
+                    backgroundColor: colors[(Object.keys(datasets).length) % colors.length],
+                };
+            }
+            datasets[year].data[item.month - 1] = item.count;
+        });
+
+        return { datasets: Object.values(datasets) };
+    }
+});
+</script>
+{% endblock %}

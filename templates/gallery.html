@@ -1,0 +1,624 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Галерея вибраних фото') }}{% endblock %}
+
+{% block head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
+<style>
+    /* Використовуємо CSS змінні для теми, як в identification.html */
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --border-color: #dee2e6;
+        --card-bg: #ffffff;
+        --input-bg: #ffffff;
+        --input-border: #ced4da;
+        --button-bg: #007bff;
+        --button-hover: #0056b3;
+        --photo-viewer-bg: #f8f9fa;
+        --alert-bg: #d1ecf1;
+        --alert-border: #bee5eb;
+        --alert-text: #0c5460;
+        --link-color: #0d6efd;
+    }
+
+    body.dark-theme {
+        --bg-primary: #1a1a1a;
+        --bg-secondary: #2d2d2d;
+        --text-primary: #e0e0e0;
+        --text-secondary: #a0a0a0;
+        --border-color: #404040;
+        --card-bg: #2d2d2d;
+        --input-bg: #3d3d3d;
+        --input-border: #555555;
+        --button-bg: #0d6efd;
+        --button-hover: #0b5ed7;
+        --photo-viewer-bg: #000000;
+        --alert-bg: #1e3a3a;
+        --alert-border: #2d5555;
+        --alert-text: #7dd3fc;
+        --link-color: #9ecbff;
+    }
+
+    main {
+        background-color: var(--bg-primary) !important;
+        color: var(--text-primary) !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+        min-height: calc(100vh - 200px);
+    }
+
+    main .container {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    .page-header {
+        text-align: center;
+        color: var(--text-primary);
+        margin-bottom: 1.5rem;
+    }
+
+    .page-header h1 {
+        color: var(--text-primary);
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 600;
+    }
+
+    .filters-panel {
+        background-color: var(--card-bg);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 20px;
+        display: flex;
+        gap: 15px;
+        align-items: end;
+        flex-wrap: wrap;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        /* min-width: 200px;
+    }
+
+    .filter-group-select {
+        flex: 1 1 250px; /* Дозволяє блоку рости і стискатися, з базовою шириною 250px */
+    }
+
+    .filter-group-button {
+        flex-shrink: 0; /* Забороняє кнопці стискатися */
+    }
+
+    .filter-group label {
+        font-size: 0.9rem;
+        margin-bottom: 5px;
+        color: var(--text-primary);
+        transition: color 0.3s ease;
+    }
+
+    .form-control, .form-select {
+        background-color: var(--input-bg) !important;
+        border-color: var(--input-border) !important;
+        color: var(--text-primary) !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+    }
+
+    .gallery-layout {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 25px;
+        align-items: flex-start;
+    }
+
+    .photo-viewer {
+        text-align: center;
+        position: relative;
+        background-color: var(--photo-viewer-bg);
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    #photo-display {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: border-color 0.3s ease;
+    }
+
+    .photo-info {
+        margin-top: 10px;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        transition: color 0.3s ease;
+    }
+
+    .nav-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        padding: 0 15px;
+        height: 100px;
+        line-height: 100px;
+        z-index: 10;
+        display: none;
+    }
+
+    .nav-arrow:hover { 
+        background-color: rgba(0, 0, 0, 0.8); 
+    }
+
+    #prev-btn { left: 15px; }
+    #next-btn { right: 15px; }
+
+    .photo-controls {
+        background-color: var(--card-bg);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 15px;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .photo-details {
+        background-color: var(--card-bg);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .detail-row {
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+
+    .detail-label {
+        font-weight: bold;
+        color: var(--text-primary);
+        transition: color 0.3s ease;
+    }
+
+    .detail-value {
+        color: var(--text-secondary);
+        transition: color 0.3s ease;
+    }
+
+    .favorite-badge {
+        background-color: #ffc107;
+        color: #000;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+
+    .btn-primary {
+        background-color: var(--button-bg) !important;
+        border-color: var(--button-bg) !important;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--button-hover) !important;
+        border-color: var(--button-hover) !important;
+    }
+
+    .btn-danger {
+        background-color: #dc3545 !important;
+        border-color: #dc3545 !important;
+    }
+
+    .no-photos-message {
+        text-align: center;
+        padding: 50px;
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+        transition: color 0.3s ease;
+    }
+
+    /* Тема переключення */
+    .theme-toggle {
+        display: flex;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 2px;
+        gap: 2px;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+        margin-left: auto;
+    }
+
+    .theme-toggle-option {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        user-select: none;
+        color: var(--text-secondary);
+        background-color: transparent;
+    }
+
+    .theme-toggle-option.active {
+        background-color: var(--button-bg);
+        color: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .theme-toggle-option:hover:not(.active) {
+        background-color: var(--input-bg);
+        color: var(--text-primary);
+    }
+
+    /* Responsive */
+    @media (max-width: 992px) {
+        .gallery-layout {
+            grid-template-columns: 1fr;
+        }
+        .filters-panel {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .filter-group {
+            min-width: 0;
+        }
+    }
+    a {
+    color: var(--link-color);
+    text-decoration: underline;
+    transition: color 0.3s ease;
+    }
+    a:hover {
+        text-decoration: none;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header">
+        <h1>{{ _('Галерея вибраних фото') }}</h1>
+        <p class="text-muted">
+            {{ _('Тут відображаться фото, які ще не були автоматично очищені системою, а також ті, що ідентифікатори додали у вибране. Більше фото можна знайти у нашому проекті на') }}
+        <a href="https://www.inaturalist.org/projects/bioriznomanittia-roztochchia" target="_blank" rel="noopener noreferrer">iNaturalist</a>.
+        </p>
+    </div>
+
+    <!-- Панель фільтрів -->
+    <div class="filters-panel">
+        <div class="filter-group filter-group-select">
+            <label for="species-select">{{ _('Виберіть вид:') }}</label>
+            <select id="species-select" class="form-control">
+                <option></option>
+                {% for species in available_species %}
+                    <option value="{{ species.id }}">{{ species.text }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group filter-group-button">
+            <button id="load-photos-btn" class="btn btn-primary" disabled>{{ _('Показати фото') }}</button>
+        </div>
+        
+        <!-- Переключення теми -->
+        <div class="theme-toggle">
+            <div class="theme-toggle-option active" data-theme="light">
+                <span>☀️</span>
+            </div>
+            <div class="theme-toggle-option" data-theme="dark">
+                <span>🌙</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Контейнер для галереї -->
+    <div id="gallery-content">
+        <div class="no-photos-message">
+            {{ _('Будь ласка, виберіть вид та натисніть "Показати фото" для перегляду галереї.') }}
+        </div>
+    </div>
+
+    <!-- Основна галерея (схована до завантаження) -->
+    <div id="gallery-wrapper" style="display: none;">
+        <div class="gallery-layout">
+            <!-- Ліва колонка: переглядач фото -->
+            <div class="photo-viewer">
+                <button type="button" id="prev-btn" class="nav-arrow">&lt;</button>
+                <img id="photo-display" src="" alt="{{ _('Фото з галереї') }}">
+                <button type="button" id="next-btn" class="nav-arrow">&gt;</button>
+                
+                <div id="photo-info" class="photo-info"></div>
+            </div>
+
+            <!-- Права колонка: інформація та контроли -->
+            <div class="photo-sidebar">
+                {% if can_manage_favorites %}
+                <!-- Контроли для модераторів -->
+                <div class="photo-controls">
+                    <h4>{{ _('Управління') }}</h4>
+                    <button id="remove-favorite-btn" class="btn btn-danger btn-sm" disabled>
+                        {{ _('Прибрати з вибраного') }}
+                    </button>
+                    <p class="mt-2 text-muted small">{{ _('Тільки для модераторів та адмінів') }}</p>
+                </div>
+                {% endif %}
+
+                <!-- Деталі фото -->
+                <div class="photo-details">
+                    <h4>{{ _('Інформація про фото') }}</h4>
+                    <div id="photo-details-content">
+                        <!-- Буде заповнено через JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // === СИСТЕМА ТЕМИ (як в identification.html) ===
+    function initializeTheme() {
+        const savedTheme = localStorage.getItem('camera-traps-theme') || 'light';
+        applyTheme(savedTheme);
+        updateThemeToggle(savedTheme);
+    }
+
+    function applyTheme(theme) {
+        if (theme === 'dark') {
+            document.body.classList.add('dark-theme');
+        } else {
+            document.body.classList.remove('dark-theme');
+        }
+    }
+
+    function updateThemeToggle(activeTheme) {
+        $('.theme-toggle-option').removeClass('active');
+        $(`.theme-toggle-option[data-theme="${activeTheme}"]`).addClass('active');
+    }
+
+    $('.theme-toggle-option').on('click', function() {
+        const selectedTheme = $(this).data('theme');
+        localStorage.setItem('camera-traps-theme', selectedTheme);
+        applyTheme(selectedTheme);
+        updateThemeToggle(selectedTheme);
+    });
+
+    // Ініціалізація теми
+    initializeTheme();
+
+    // === ОСНОВНА ЛОГІКА ГАЛЕРЕЇ ===
+    const speciesSelect = $('#species-select');
+    const loadPhotosBtn = $('#load-photos-btn');
+    const galleryContent = $('#gallery-content');
+    const galleryWrapper = $('#gallery-wrapper');
+    const photoDisplay = $('#photo-display');
+    const photoInfo = $('#photo-info');
+    const photoDetailsContent = $('#photo-details-content');
+    const prevBtn = $('#prev-btn');
+    const nextBtn = $('#next-btn');
+    const removeFavoriteBtn = $('#remove-favorite-btn');
+
+    let currentPhotos = [];
+    let currentPhotoIndex = 0;
+    const canManageFavorites = {{ 'true' if can_manage_favorites else 'false' }};
+
+    // Ініціалізація Select2
+    speciesSelect.select2({
+        placeholder: '{{ _("-- Пошук та вибір виду --") }}',
+        allowClear: true,
+        width: '100%'
+    });
+
+    // Активація кнопки при виборі виду
+    speciesSelect.on('change', function() {
+        loadPhotosBtn.prop('disabled', !$(this).val());
+    });
+
+    // Завантаження фото
+    loadPhotosBtn.on('click', function() {
+        const speciesId = speciesSelect.val();
+        if (!speciesId) {
+            alert('{{ _("Будь ласка, виберіть вид.") }}');
+            return;
+        }
+
+        loadGalleryPhotos(speciesId);
+    });
+
+    function loadGalleryPhotos(speciesId) {
+        galleryContent.html('<div class="text-center"><div class="spinner-border"></div><p class="mt-2">{{ _("Завантаження фото...") }}</p></div>');
+
+        fetch(`{{ url_for('camera_traps.get_gallery_photos', lang_code=g.lang_code) }}?species_id=${speciesId}`)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.json();
+            })
+            .then(data => {
+                currentPhotos = data.photos;
+                currentPhotoIndex = 0;
+                
+                if (currentPhotos.length === 0) {
+                    showNoPhotos();
+                } else {
+                    showGallery();
+                }
+            })
+            .catch(error => {
+                console.error('Error loading photos:', error);
+                galleryContent.html(`<div class="no-photos-message">${error.message || '{{ _("Помилка завантаження фото.") }}'}</div>`);
+            });
+    }
+
+    function showNoPhotos() {
+        galleryContent.html('<div class="no-photos-message">{{ _("Для вибраного виду немає фото у вибраному.") }}</div>');
+        galleryWrapper.hide();
+    }
+
+    function showGallery() {
+        galleryContent.hide();
+        galleryWrapper.show();
+        displayCurrentPhoto();
+    }
+
+    function displayCurrentPhoto() {
+        if (!currentPhotos || currentPhotos.length === 0) return;
+
+        const photo = currentPhotos[currentPhotoIndex];
+        const photoCount = currentPhotos.length;
+
+        // Оновлення зображення
+        photoDisplay.attr('src', photo.raw_url);
+        
+        // Оновлення інформації під фото
+        photoInfo.html(`
+            <strong>{{ _('Локація:') }}</strong> ${photo.location_name} | 
+            <strong>{{ _('Час:') }}</strong> ${photo.captured_at} | 
+            <strong>{{ _('Фото') }}</strong> ${currentPhotoIndex + 1} / ${photoCount}
+        `);
+
+        // Оновлення детальної інформації
+        photoDetailsContent.html(`
+            <div class="detail-row">
+                <span class="detail-label">{{ _('Вид:') }}</span>
+                <span class="detail-value">${photo.species_name}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">{{ _('Локація:') }}</span>
+                <span class="detail-value">${photo.location_name}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">{{ _('Дата зйомки:') }}</span>
+                <span class="detail-value">${photo.captured_at}</span>
+            </div>
+            ${photo.added_by ? `
+            <div class="detail-row">
+                <span class="detail-label">{{ _('Додано у вибране:') }}</span>
+                <span class="detail-value">${photo.added_by}</span>
+            </div>
+            ` : ''}
+            <div class="detail-row">
+                <span class="detail-label">{{ _('Статус:') }}</span>
+                <span class="detail-value">
+                    <span class="favorite-badge">★ {{ _('У вибраному') }}</span>
+                </span>
+            </div>
+            ${photo.sequence_number ? `
+            <div class="detail-row">
+                <span class="detail-label">{{ _('№ в серії:') }}</span>
+                <span class="detail-value">${photo.sequence_number}</span>
+            </div>
+            ` : ''}
+        `);
+
+        // Управління навігацією
+        prevBtn.toggle(currentPhotoIndex > 0);
+        nextBtn.toggle(currentPhotoIndex < photoCount - 1);
+
+        // Управління кнопкою видалення (тільки для модераторів)
+        if (canManageFavorites) {
+            removeFavoriteBtn.prop('disabled', false).data('photo-id', photo.id);
+        }
+    }
+
+    // Навігація
+    nextBtn.on('click', function() {
+        if (currentPhotoIndex < currentPhotos.length - 1) {
+            currentPhotoIndex++;
+            displayCurrentPhoto();
+        }
+    });
+
+    prevBtn.on('click', function() {
+        if (currentPhotoIndex > 0) {
+            currentPhotoIndex--;
+            displayCurrentPhoto();
+        }
+    });
+
+    // Клавіатурна навігація
+    $(document).on('keydown', function(e) {
+        if (galleryWrapper.is(':visible')) {
+            if (e.key === 'ArrowRight') nextBtn.click();
+            if (e.key === 'ArrowLeft') prevBtn.click();
+        }
+    });
+
+    // Видалення з вибраного (тільки для модераторів)
+    if (canManageFavorites) {
+        removeFavoriteBtn.on('click', function() {
+            const photoId = $(this).data('photo-id');
+            if (!photoId) return;
+
+            if (!confirm('{{ _("Ви впевнені, що хочете прибрати це фото з вибраного?") }}')) {
+                return;
+            }
+
+                            fetch('{{ url_for("camera_traps.remove_from_favorites", lang_code=g.lang_code) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': $('meta[name=csrf-token]').attr('content')
+                },
+                body: JSON.stringify({
+                    photo_id: photoId
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Видаляємо фото з поточного списку
+                currentPhotos.splice(currentPhotoIndex, 1);
+                
+                if (currentPhotos.length === 0) {
+                    showNoPhotos();
+                    return;
+                }
+                
+                // Коректуємо індекс якщо потрібно
+                if (currentPhotoIndex >= currentPhotos.length) {
+                    currentPhotoIndex = currentPhotos.length - 1;
+                }
+                
+                displayCurrentPhoto();
+                
+                // Показуємо повідомлення про успіх
+                alert(data.message || '{{ _("Фото успішно видалено з вибраного") }}');
+            })
+            .catch(error => {
+                console.error('Error removing from favorites:', error);
+                alert(error.error || '{{ _("Помилка видалення з вибраного") }}');
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

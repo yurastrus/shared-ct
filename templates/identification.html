@@ -1,0 +1,1123 @@
+{% extends "base.html" %}
+{% from 'macros.html' import render_field %}
+
+{% block title %}{{ _('Ідентифікація тварин') }}{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* ... всі існуючі стилі залишаються без змін ... */
+    /* CSS змінні для тем */
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --border-color: #dee2e6;
+        --card-bg: #ffffff;
+        --input-bg: #ffffff;
+        --input-border: #ced4da;
+        --button-bg: #007bff;
+        --button-hover: #0056b3;
+        --photo-viewer-bg: #f8f9fa;
+        --alert-bg: #d1ecf1;
+        --alert-border: #bee5eb;
+        --alert-text: #0c5460;
+        --theme-toggle-shadow: rgba(0, 0, 0, 0.1);
+    }
+
+    /* Темна тема */
+    body.dark-theme {
+        --bg-primary: #1a1a1a;
+        --bg-secondary: #2d2d2d;
+        --text-primary: #e0e0e0;
+        --text-secondary: #a0a0a0;
+        --border-color: #404040;
+        --card-bg: #2d2d2d;
+        --input-bg: #3d3d3d;
+        --input-border: #555555;
+        --button-bg: #0d6efd;
+        --button-hover: #0b5ed7;
+        --photo-viewer-bg: #000000;
+        --alert-bg: #1e3a3a;
+        --alert-border: #2d5555;
+        --alert-text: #7dd3fc;
+        --theme-toggle-shadow: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Застосування змінних до елементів - тільки для main */
+    main {
+        background-color: var(--bg-primary) !important;
+        color: var(--text-primary) !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+        min-height: calc(100vh - 200px);
+    }
+
+    /* Контейнери тільки всередині main */
+    main .container {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    /* Вимкнення центрування для сторінки ідентифікації */
+    main .identification-container {
+        display: block !important;
+        text-align: left !important;
+        align-items: stretch !important;
+    }
+
+    .page-header {
+        text-align: left;
+        color: var(--text-primary);
+        margin-bottom: 1.5rem;
+    }
+
+    .page-header h1 {
+        color: var(--text-primary);
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 600;
+    }
+
+    .identification-layout {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 25px;
+        align-items: flex-start;
+    }
+
+    .viewer-and-form {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .photo-viewer {
+        text-align: center;
+        position: relative;
+        background-color: var(--photo-viewer-bg);
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .identification-form-main {
+        background-color: var(--card-bg);
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    #photo-display {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: border-color 0.3s ease;
+    }
+
+    .photo-info {
+        margin-top: 10px;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        transition: color 0.3s ease;
+    }
+
+    .nav-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        padding: 0 15px;
+        height: 100px;
+        line-height: 100px;
+        z-index: 10;
+        display: none;
+    }
+
+    .nav-arrow:hover { 
+        background-color: rgba(0, 0, 0, 0.8); 
+    }
+
+    #prev-btn { left: 15px; }
+    #next-btn { right: 15px; }
+
+    .fullsize-btn {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        cursor: pointer;
+        z-index: 15;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s;
+    }
+
+    .fullsize-btn:hover {
+        background-color: rgba(0, 0, 0, 0.9);
+    }
+
+    /* Права колонка з двома окремими контейнерами */
+    .right-column {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .action-buttons-container {
+        background-color: var(--card-bg);
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        position: sticky;
+        top: 20px;
+        z-index: 20;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .buttons-and-theme {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .main-buttons {
+        display: flex;
+        gap: 2px;
+        flex: 1;
+    }
+
+    .action-buttons-container .btn {
+        font-size: 0.85rem;
+        padding: 6px 8px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* Компактний перемикач теми з review режимом */
+    .theme-and-review-toggle {
+        display: flex;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 2px;
+        gap: 2px;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+        align-items: center;
+    }
+
+    .theme-toggle-option {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        user-select: none;
+        color: var(--text-secondary);
+        background-color: transparent;
+    }
+
+    .theme-toggle-option.active {
+        background-color: var(--button-bg);
+        color: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .theme-toggle-option:hover:not(.active) {
+        background-color: var(--input-bg);
+        color: var(--text-primary);
+    }
+
+    .theme-icon {
+        font-size: 14px;
+    }
+
+    /* Review режим перемикач */
+    .review-toggle-container {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 6px;
+        border-left: 1px solid var(--border-color);
+        margin-left: 2px;
+    }
+
+    .review-checkbox {
+        margin: 0;
+        transform: scale(0.9);
+    }
+
+    .review-icon {
+        font-size: 12px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .review-toggle-container:hover .review-icon {
+        color: var(--text-primary);
+    }
+
+    /* Індикатор review режиму */
+    .review-indicator {
+        background-color: #e3f2fd;
+        border: 1px solid #2196f3;
+        color: #1976d2;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 15px;
+    }
+
+    /* Стилі для фільтрів review режиму */
+    .review-filters {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 12px;
+        margin-bottom: 15px;
+        border-radius: 6px;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    body.dark-theme .review-filters {
+        background-color: #2d2d2d;
+        border-color: #404040;
+    }
+
+    .filter-row {
+        display: flex;
+        gap: 15px;
+        align-items: end;
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        min-width: 150px;
+    }
+
+    .filter-group label {
+        font-size: 0.85rem;
+        margin-bottom: 3px;
+        color: var(--text-primary);
+    }
+
+    .form-control-sm {
+        padding: 4px 8px;
+        font-size: 0.85rem;
+        height: 32px;
+        background-color: var(--input-bg);
+        border-color: var(--input-border);
+        color: var(--text-primary);
+    }
+
+    /* Блок існуючих ідентифікацій */
+    .existing-identifications {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 15px;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .existing-identifications h4 {
+        margin: 0 0 8px 0;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        font-weight: bold;
+    }
+
+    .identification-item {
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.85rem;
+    }
+
+    .identification-item:last-child {
+        border-bottom: none;
+    }
+
+    .identification-username {
+        font-weight: bold;
+        color: var(--text-primary);
+        font-size: 0.8rem;
+    }
+
+    .identification-species {
+        color: #007bff;
+        margin: 2px 0;
+        font-size: 0.9rem;
+    }
+
+    .identification-meta {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+    }
+
+    .species-selection-panel {
+        background-color: var(--card-bg);
+        padding: 12px;
+        border-radius: 8px;
+        max-height: 70vh;
+        overflow-y: auto;
+        font-size: 0.85rem;
+        border: 1px solid var(--border-color);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .species-group-title {
+        font-size: 0.95rem;
+        font-weight: bold;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-primary);
+        transition: color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .species-group-title:first-child { 
+        margin-top: 0; 
+    }
+
+    .species-option {
+        display: block;
+        margin-bottom: 0;
+    }
+
+    .species-option label {
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        width: 100%;
+        padding: 2px 5px;
+        border-radius: 3px;
+        transition: background-color 0.2s ease;
+        line-height: 1.1;
+        min-height: 20px;
+        color: var(--text-primary);
+    }
+
+    .species-option label:hover {
+        background-color: var(--bg-secondary);
+    }
+
+    .species-option input[type="radio"] {
+        margin-right: 6px;
+        flex-shrink: 0;
+        width: 13px;
+        height: 13px;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+
+    /* Стилі для чекбоксів поведінки */
+    .behavior-checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        padding: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background-color: var(--input-bg);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .behavior-checkboxes .form-check {
+        margin-bottom: 0;
+        flex: 0 0 auto;
+    }
+
+    .behavior-checkboxes .form-check-label {
+        font-size: 0.9rem;
+        white-space: nowrap;
+        color: var(--text-primary);
+        transition: color 0.3s ease;
+    }
+
+    /* Стилі форм */
+    .form-control,
+    .form-select {
+        background-color: var(--input-bg) !important;
+        border-color: var(--input-border) !important;
+        color: var(--text-primary) !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        background-color: var(--input-bg) !important;
+        border-color: var(--button-bg) !important;
+        color: var(--text-primary) !important;
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25) !important;
+    }
+
+    .btn-primary {
+        background-color: var(--button-bg) !important;
+        border-color: var(--button-bg) !important;
+    }
+
+    .btn-primary:hover,
+    .btn-primary:focus {
+        background-color: var(--button-hover) !important;
+        border-color: var(--button-hover) !important;
+    }
+
+    .btn-secondary {
+        background-color: var(--text-secondary) !important;
+        border-color: var(--text-secondary) !important;
+    }
+
+    .form-label {
+        color: var(--text-primary);
+        transition: color 0.3s ease;
+    }
+
+    /* Alert стилі */
+    .alert {
+        background-color: var(--alert-bg) !important;
+        border-color: var(--alert-border) !important;
+        color: var(--alert-text) !important;
+        transition: all 0.3s ease;
+    }
+
+    .no-photos-message { 
+        text-align: center; 
+        padding: 50px; 
+        font-size: 1.2rem; 
+    }
+
+    /* Перемикач теми - компактний в панелі кнопок */
+    .theme-toggle {
+        display: flex;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 2px;
+        gap: 2px;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+    }
+
+    /* Responsive design */
+    @media (max-width: 992px) {
+        .identification-layout {
+            grid-template-columns: 1fr;
+        }
+        .right-column {
+            order: -1;
+        }
+        .action-buttons-container {
+            position: static;
+        }
+        .species-selection-panel {
+            max-height: none;
+        }
+        .main-buttons {
+            flex-direction: column;
+            gap: 8px;
+        }
+        .buttons-and-theme {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+        .theme-toggle {
+            align-self: center;
+        }
+        .filter-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .filter-group {
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .theme-toggle {
+            width: auto;
+        }
+        .main-buttons .btn {
+            font-size: 0.8rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 identification-container">
+    <div class="page-header">
+        <h1>{{ _('Ідентифікація тварин') }}</h1>
+        <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 1rem; vertical-align: middle; margin-left: 10px;"></span>
+    </div>
+
+    <div id="identification-wrapper" style="display: none;">
+        <!-- Індикатор review режиму -->
+        <div id="review-indicator" class="review-indicator" style="display: none;">
+            {{ _('🔍 РЕЖИМ ПЕРЕГЛЯДУ: Перевіряється вже визначена серія') }}
+        </div>
+
+        <!-- Фільтри для review режиму -->
+        <div id="review-filters" class="review-filters" style="display: none;">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="review-user-filter">{{ _('Користувач:') }}</label>
+                    <select id="review-user-filter" class="form-control form-control-sm">
+                        <option value="">{{ _('-- Всі користувачі --') }}</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="review-species-filter">{{ _('Вид:') }}</label>
+                    <select id="review-species-filter" class="form-control form-control-sm">
+                        <option value="">{{ _('-- Всі види --') }}</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="review-sort-filter">{{ _('Сортування:') }}</label>
+                    <select id="review-sort-filter" class="form-control form-control-sm">
+                        <option value="random">{{ _('Випадково') }}</option>
+                        <option value="date_desc">{{ _('Дата (спочатку нові)') }}</option>
+                        <option value="date_asc">{{ _('Дата (спочатку старі)') }}</option>
+                        <option value="photo_count_desc">{{ _('К-ть фото (спочатку більше)') }}</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <button type="button" id="apply-review-filters" class="btn btn-sm btn-primary">{{ _('Застосувати') }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Блок з існуючими ідентифікаціями -->
+        <div id="existing-identifications" class="existing-identifications" style="display: none;">
+            <h4>{{ _('Існуючі ідентифікації серії:') }}</h4>
+            <div id="existing-identifications-list"></div>
+        </div>
+
+        <form id="id-form" onsubmit="return false;">
+            {{ form.hidden_tag() }}
+            <input type="hidden" id="observation_id" name="observation_id" value="">
+
+            <div class="identification-layout">
+                <!-- Ліва колонка: Переглядач фото + Основна форма -->
+                <div class="viewer-and-form">
+                    <div class="photo-viewer">
+                        <button type="button" id="prev-btn" class="nav-arrow">&lt;</button>
+                        <img id="photo-display" src="" alt="{{ _('Фото для ідентифікації') }}">
+                        <button type="button" id="next-btn" class="nav-arrow">&gt;</button>
+                        
+                        <!-- Кнопка для відкриття у повному розмірі -->
+                        <button type="button" id="fullsize-btn" class="fullsize-btn" title="{{ _('Відкрити у повному розмірі') }}">
+                            🔍
+                        </button>
+                        
+                        <div id="photo-info" class="photo-info"></div>
+                    </div>
+
+                    <div class="identification-form-main">
+                        <div class="row">
+                            <div class="col-md-4">{{ render_field(form.quantity) }}</div>
+                            <div class="col-md-8">
+                                <div class="form-group">
+                                    {{ form.behaviors.label(class="form-label") }}
+                                    <div class="behavior-checkboxes">
+                                        {% for subfield in form.behaviors %}
+                                            <div class="form-check">
+                                                {{ subfield(class="form-check-input") }}
+                                                {{ subfield.label(class="form-check-label") }}
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">{{ render_field(form.is_favorite) }}</div>
+                    </div>
+                </div>
+
+                <!-- Права колонка: два окремих контейнери -->
+                <div class="right-column">
+                    <!-- Окремий контейнер для кнопок, теми та review режиму -->
+                    <div class="action-buttons-container">
+                        <div class="buttons-and-theme">
+                            <div class="main-buttons">
+                                <button type="submit" class="btn btn-primary">{{ _('Надіслати') }}</button>
+                                <button type="button" id="skip-btn" class="btn btn-secondary">{{ _('Пропустити') }}</button>
+                            </div>
+                            
+                            <!-- Компактний перемикач теми з review режимом -->
+                            <div class="theme-and-review-toggle">
+                                <div class="theme-toggle-option active" data-theme="light">
+                                    <span class="theme-icon">☀️</span>
+                                </div>
+                                <div class="theme-toggle-option" data-theme="dark">
+                                    <span class="theme-icon">🌙</span>
+                                </div>
+                                
+                                <!-- Review режим контроли для модераторів -->
+                                {% if can_review %}
+                                <div class="review-toggle-container">
+                                    <input type="checkbox" id="review-mode-toggle" class="review-checkbox form-check-input">
+                                    <span class="review-icon" title="{{ _('Режим перегляду визначених серій') }}">📋</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Окремий контейнер для списку видів -->
+                    <div class="species-selection-panel">
+                        <!-- Перша категорія: Пусто -->
+                        <h3 class="species-group-title">{{ _('Загальні опції') }}</h3>
+                        {% for value, label in empty_choices %}
+                            <div class="species-option">
+                               <label>
+                                   <input type="radio" name="{{ form.species.name }}" value="{{ value }}">
+                                   {{ label }}
+                               </label>
+                            </div>
+                        {% endfor %}
+
+                        <!-- Категорії тварин у правильному порядку -->
+                        {% set category_translations = {
+                            'mammals': _('Ссавці'),
+                            'birds': _('Птахи'), 
+                            'other': _('Інші')
+                        } %}
+
+                        {% for group_name, species_list in grouped_species.items() %}
+                            {% if species_list %}
+                                <h3 class="species-group-title">{{ category_translations.get(group_name, _(group_name|capitalize)) }}</h3>
+                                {% for value, label in species_list %}
+                                     <div class="species-option">
+                                       <label>
+                                           <input type="radio" name="{{ form.species.name }}" value="{{ value }}">
+                                           {{ label }}
+                                       </label>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endfor %}
+
+                        <!-- Інші категорії в кінці -->
+                        <h3 class="species-group-title">{{ _('Інші категорії') }}</h3>
+                        {% for value, label in other_special_choices %}
+                            <div class="species-option">
+                               <label>
+                                   <input type="radio" name="{{ form.species.name }}" value="{{ value }}">
+                                   {{ label }}
+                               </label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    <div id="no-photos-message" style="display: none;" class="no-photos-message alert alert-success"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(document).ready(function() {
+    // === СИСТЕМА ПЕРЕМИКАЧІВ ТЕБМ ===
+
+    // Ініціалізація теми при завантаженні сторінки
+    function initializeTheme() {
+        const savedTheme = localStorage.getItem('camera-traps-theme') || 'light';
+        applyTheme(savedTheme);
+        updateThemeToggle(savedTheme);
+    }
+
+    // Застосування теми
+    function applyTheme(theme) {
+        if (theme === 'dark') {
+            document.body.classList.add('dark-theme');
+        } else {
+            document.body.classList.remove('dark-theme');
+        }
+    }
+
+    // Оновлення візуального стану перемикача
+    function updateThemeToggle(activeTheme) {
+        $('.theme-toggle-option').removeClass('active');
+        $(`.theme-toggle-option[data-theme="${activeTheme}"]`).addClass('active');
+    }
+
+    // Обробники кліків на перемикач теми
+    $('.theme-toggle-option').on('click', function() {
+        const selectedTheme = $(this).data('theme');
+        
+        // Зберігаємо вибір користувача
+        localStorage.setItem('camera-traps-theme', selectedTheme);
+        
+        // Застосовуємо тему
+        applyTheme(selectedTheme);
+        updateThemeToggle(selectedTheme);
+        
+        console.log(`Theme switched to: ${selectedTheme}`);
+    });
+
+    // Клавіатурний ярлик для перемикання теми (Ctrl + Shift + T)
+    $(document).on('keydown', function(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+            e.preventDefault();
+            const currentTheme = localStorage.getItem('camera-traps-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            localStorage.setItem('camera-traps-theme', newTheme);
+            applyTheme(newTheme);
+            updateThemeToggle(newTheme);
+            
+            console.log(`Theme toggled to: ${newTheme} via keyboard shortcut`);
+        }
+    });
+
+    // Ініціалізація теми
+    initializeTheme();
+
+    // === КІНЕЦЬ СИСТЕМИ ПЕРЕМИКАЧІВ ТЕБМ ===
+
+    const wrapper = $('#identification-wrapper');
+    const noPhotosMessage = $('#no-photos-message');
+    const photoDisplay = $('#photo-display');
+    const photoInfo = $('#photo-info');
+    const form = $('#id-form');
+    const skipBtn = $('#skip-btn');
+    const prevBtn = $('#prev-btn');
+    const nextBtn = $('#next-btn');
+    const observationIdInput = $('#observation_id');
+    const reviewModeToggle = $('#review-mode-toggle');
+    const reviewIndicator = $('#review-indicator');
+    const reviewFilters = $('#review-filters');
+    const existingIdentificationsBlock = $('#existing-identifications');
+    const existingIdentificationsList = $('#existing-identifications-list');
+    let remainingIdentificationsCount = 0;
+
+    let currentObservation = null;
+    let currentPhotoIndex = 0;
+    let reviewMode = false;
+    let reviewFiltersData = { userId: '', speciesId: '', sortBy: 'random' };
+
+    const translations = {
+        location: "{{ _('Локація') }}",
+        time: "{{ _('Час') }}",
+        photo: "{{ _('Фото') }}",
+        selectSpecies: '{{ _('Будь ласка, виберіть вид, або опцію "Пусто".') }}',
+        saveError: "{{ _('Помилка збереження:') }}",
+        loadError: "{{ _('Не вдалося завантажити дані.') }}",
+        congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
+        noReviewSeries: "{{ _('Немає серій для перегляду, які б відповідали критеріям.') }}",
+        counterText: "{{ _('Залишилось вам:') }}"
+    };
+
+    function loadAndDisplayCounter() {
+        const counterElement = $('#identification-counter');
+        
+        // Не показуємо лічильник у режимі перегляду
+        if (reviewMode) {
+            counterElement.hide();
+            return;
+        }
+
+        fetch("{{ url_for('camera_traps.api_get_identification_stats', lang_code=g.lang_code) }}")
+            .then(response => {
+                if (!response.ok) return Promise.reject('Failed to fetch count');
+                return response.json();
+            })
+            .then(data => {
+                remainingIdentificationsCount = data.remaining_count;
+                if (remainingIdentificationsCount > 0) {
+                    counterElement.text(`${translations.counterText} ${remainingIdentificationsCount}`);
+                    counterElement.show();
+                } else {
+                    counterElement.hide();
+                }
+            })
+            .catch(error => {
+                console.error('Could not load identification counter:', error);
+                counterElement.hide();
+            });
+    }
+
+    // Завантаження фільтрів для review режиму
+    function loadReviewFilters() {
+        fetch("{{ url_for('camera_traps.get_review_filters', lang_code=g.lang_code) }}")
+            .then(r => r.json())
+            .then(data => {
+                const userSelect = $('#review-user-filter');
+                const speciesSelect = $('#review-species-filter');
+                
+                // Заповнити користувачів
+                userSelect.empty().append('<option value="">{{ _("-- Всі користувачі --") }}</option>');
+                data.users.forEach(user => {
+                    userSelect.append(`<option value="${user.id}">${user.username}</option>`);
+                });
+                
+                // Заповнити види
+                speciesSelect.empty().append('<option value="">{{ _("-- Всі види --") }}</option>');
+                data.species.forEach(species => {
+                    speciesSelect.append(`<option value="${species.id}">${species.name}</option>`);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading review filters:', error);
+            });
+    }
+
+    function updateReviewModeUI() {
+        // Синхронізуємо стан чекбоксу зі змінною reviewMode
+        reviewModeToggle.prop('checked', reviewMode);
+        
+        if (reviewMode) {
+            reviewFilters.show();
+            reviewIndicator.show();
+        } else {
+            reviewFilters.hide();
+            reviewIndicator.hide();
+            existingIdentificationsBlock.hide();
+        }
+    }
+
+    // Обробка перемикання review режиму
+    reviewModeToggle.on('change', function() {
+        reviewMode = $(this).is(':checked');
+        updateReviewModeUI(); 
+
+        if (reviewMode) {
+            loadReviewFilters();
+        } else {
+            reviewFiltersData = { userId: '', speciesId: '' };
+        }
+        
+        // --- ДОДАНО: Оновлюємо лічильник при зміні режиму ---
+        loadAndDisplayCounter();
+        
+        console.log('Review mode:', reviewMode);
+        loadNextObservation();
+    });
+
+    // Обробка фільтрів
+    $('#apply-review-filters').on('click', function() {
+        reviewFiltersData.userId = $('#review-user-filter').val();
+        reviewFiltersData.speciesId = $('#review-species-filter').val();
+        reviewFiltersData.sortBy = $('#review-sort-filter').val();
+        loadNextObservation();
+    });
+
+    function displayExistingIdentifications(identifications) {
+        if (!identifications || identifications.length === 0) {
+            existingIdentificationsBlock.hide();
+            return;
+        }
+
+        let html = '';
+        identifications.forEach(function(ident) {
+            html += `
+                <div class="identification-item">
+                    <div class="identification-username">${ident.username}</div>
+                    <div class="identification-species">${ident.species_name}</div>
+                    <div class="identification-meta">
+                        Кількість: ${ident.quantity} | ${ident.created_at}
+                    </div>
+                </div>
+            `;
+        });
+        
+        existingIdentificationsList.html(html);
+        existingIdentificationsBlock.show();
+    }
+
+    function displayCurrentPhoto() {
+        if (!currentObservation || !currentObservation.photos || !currentObservation.photos[currentPhotoIndex]) return;
+        
+        const photo = currentObservation.photos[currentPhotoIndex];
+        const photoCount = currentObservation.photos.length;
+
+        photoDisplay.attr('src', photo.thumbnail_url);
+        photoInfo.text(
+            `${translations.location}: ${currentObservation.location_name} | ` +
+            `${translations.time}: ${photo.captured_at} | ` +
+            `${translations.photo} ${currentPhotoIndex + 1} / ${photoCount}`
+        );
+
+        prevBtn.toggle(currentPhotoIndex > 0);
+        nextBtn.toggle(currentPhotoIndex < photoCount - 1);
+    }
+
+        function loadNextObservation() {
+        wrapper.css('opacity', 0.5);
+        
+        let apiUrl = "{{ url_for('camera_traps.next_observation_for_identification', lang_code=g.lang_code) }}";
+        
+        if (reviewMode) {
+            const params = new URLSearchParams({ 
+                review: 'true',
+                sort_by: reviewFiltersData.sortBy
+            });
+            if (reviewFiltersData.userId) params.append('review_user_id', reviewFiltersData.userId);
+            if (reviewFiltersData.speciesId) params.append('review_species_id', reviewFiltersData.speciesId);
+            apiUrl += '?' + params.toString();
+        }
+        
+        fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.json();
+            })
+            .then(data => {
+                currentObservation = data;
+                currentPhotoIndex = 0;
+                observationIdInput.val(data.observation_id);
+                displayCurrentPhoto();
+                
+                if (data.review_mode) {
+                    displayExistingIdentifications(data.existing_identifications);
+                }
+                
+                wrapper.show();
+                noPhotosMessage.hide();
+                form[0].reset();
+
+                // 2. ГОЛОВНЕ ВИПРАВЛЕННЯ: Відновлюємо стан чекбоксу після скидання форми
+                updateReviewModeUI();
+            })
+            .catch(error => {
+                wrapper.hide();
+                let message;
+                if (reviewMode && error.message && error.message.includes('критеріям')) {
+                    message = translations.noReviewSeries;
+                } else {
+                    message = error.message || translations.congratulations;
+                }
+                noPhotosMessage.text(message).show();
+            })
+            .finally(() => {
+                wrapper.css('opacity', 1);
+            });
+    }
+
+    nextBtn.on('click', function() { 
+        if (currentObservation && currentPhotoIndex < currentObservation.photos.length - 1) { 
+            currentPhotoIndex++; 
+            displayCurrentPhoto(); 
+        } 
+    });
+    
+    prevBtn.on('click', function() { 
+        if (currentPhotoIndex > 0) { 
+            currentPhotoIndex--; 
+            displayCurrentPhoto(); 
+        } 
+    });
+    
+    // Обробка кнопки повного розміру
+    $('#fullsize-btn').on('click', function() {
+        if (currentObservation && typeof currentPhotoIndex !== 'undefined') {
+            // Формуємо URL напряму
+            const langCode = "{{ g.lang_code }}";
+            const fullsizeUrl = `/${langCode}/camera-traps/observation/${currentObservation.observation_id}/photo/${currentPhotoIndex}`;
+            
+            window.open(fullsizeUrl, '_blank');
+        }
+    });
+    
+    $(document).on('keydown', function(e) { 
+        if (wrapper.is(':visible')) { 
+            if (e.key === "ArrowRight") nextBtn.click(); 
+            if (e.key === "ArrowLeft") prevBtn.click(); 
+        } 
+    });
+
+    skipBtn.on('click', loadNextObservation);
+
+    form.on('submit', function(e) {
+        e.preventDefault();
+        
+        const selectedSpecies = $('input[name="species"]:checked').val();
+        
+        if (!selectedSpecies) {
+            alert(translations.selectSpecies);
+            return;
+        }
+
+        // Збираємо вибрані поведінки з чекбоксів
+        const selectedBehaviors = [];
+        $('input[name="{{ form.behaviors.name }}"]:checked').each(function() {
+            selectedBehaviors.push(parseInt($(this).val()));
+        });
+
+        const identificationData = {
+            observation_id: observationIdInput.val(),
+            species_id: selectedSpecies,
+            quantity: $('#{{ form.quantity.id }}').val(),
+            is_favorite: $('#{{ form.is_favorite.id }}').is(':checked'),
+            current_photo_index: currentPhotoIndex, // індекс поточного фото
+            behaviors: selectedBehaviors,
+            csrf_token: $('input[name="csrf_token"]').val()
+        };
+
+        fetch("{{ url_for('camera_traps.submit_identification', lang_code=g.lang_code) }}", {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'X-CSRFToken': identificationData.csrf_token 
+            },
+            body: JSON.stringify(identificationData)
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            return response.json().then(err => Promise.reject(err));
+        })
+        .then(data => {
+            if (!reviewMode && remainingIdentificationsCount > 0) {
+                remainingIdentificationsCount--; // Зменшуємо лічильник
+                const counterElement = $('#identification-counter');
+                if (remainingIdentificationsCount > 0) {
+                   counterElement.text(`${translations.counterText} ${remainingIdentificationsCount}`);
+                } else {
+                   // Якщо це була остання серія, ховаємо лічильник
+                   counterElement.hide();
+                }
+            }
+            loadNextObservation();
+        })
+        .catch(error => {
+            alert(translations.saveError + " " + (error.error || error.message));
+        });
+    });
+
+    loadNextObservation();
+    loadAndDisplayCounter();
+});
+</script>
+{% endblock %}

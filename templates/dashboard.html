@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Аналітичний дашборд') }}{% endblock %}
+
+{% block head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<style>
+/* Загальні стилі */
+.quick-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.quick-actions .btn, .quick-actions form { display: inline-flex; align-items: center; }
+.quick-actions .btn { height: 38px; padding: 6px 12px; line-height: 1.42857143; box-sizing: border-box; border: none; }
+.quick-actions form { margin: 0 !important; }
+.quick-actions form .btn { height: 38px; padding: 6px 12px; line-height: 1.42857143; box-sizing: border-box; }
+.quick-actions form .btn-danger { background-color: #dc3545 !important; border-color: #dc3545 !important; color: white !important; }
+.quick-actions form .btn-danger:hover { background-color: #c82333 !important; border-color: #bd2130 !important; }
+.select2-container .select2-selection--multiple { min-height: 38px; border: 1px solid #ced4da; }
+.select2-container--default .select2-selection--multiple .select2-selection__choice { background-color: #007bff; border-color: #0069d9; color: white; padding: 2px 6px; }
+
+/* <-- ВИПРАВЛЕНО: Нові, простіші стилі для переміщення хрестика праворуч --> */
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: rgba(255, 255, 255, 0.7);
+    float: right; /* Переміщуємо хрестик направо */
+    margin-right: 1px; /* Невеликий відступ від правого краю тега */
+    margin-left: 4px; /* Відступ від тексту зліва */
+    font-weight: bold;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: white;
+}
+
+/* Стилі для кнопок керування картою */
+.leaflet-control.map-controls {
+    display: flex;
+    background-color: white;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-radius: 4px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+}
+.leaflet-control.map-controls a {
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    text-decoration: none;
+    color: #333;
+    font-size: 1.2em;
+    font-weight: bold;
+    border-right: 1px solid #ddd;
+}
+.leaflet-control.map-controls a:last-child {
+    border-right: none;
+}
+.leaflet-control.map-controls a:hover {
+    background-color: #f4f4f4;
+}
+
+/* Стиль для видимості карти */
+#map {
+    height: 450px;
+    width: 100%;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-wrapper">
+        
+        <div class="page-header">
+            <h1>{{ _('Аналітичний дашборд фотопасток') }}</h1>
+            <h4>{{ _('Загальний огляд результатів і доступ до основних функцій. Якщо у вас є доступ, увійдіть і зможете перейти до перегляду фото та ідентифікації.') }}</h4>
+        </div>
+        
+        <!-- Розділ швидких дій -->
+        {% if current_user.is_authenticated and ct_profile and ct_profile.camera_trap_role in ['identifier', 'data_user', 'moderator', 'admin'] %}
+        <div class="dashboard-section">
+            <h2 class="section-title">{{ _('Швидкі дії') }}</h2>
+            <div class="quick-actions">
+                {% if ct_profile.camera_trap_role in ['identifier', 'data_user', 'moderator', 'admin'] %}
+                    <a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Ідентифікувати') }}</a>
+                {% endif %}
+                {% if ct_profile.camera_trap_role in ['moderator', 'admin'] %}
+                    <a href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Завантажити фото') }}</a>
+                    <a href="{{ url_for('camera_traps.service_log', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Обслуговування') }}</a>
+                {% endif %}
+                {% if ct_profile.camera_trap_role in ['data_user', 'moderator', 'admin'] %}
+                    <a href="{{ url_for('camera_traps.ct_data_export', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Експорт даних') }}</a>
+                {% endif %}
+                {% if ct_profile.camera_trap_role in ['admin'] %}
+                    <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}" class="btn btn-info">{{ _('Управління локаціями') }}</a>
+                    <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
+                            <i class="fas fa-calculator"></i> {{ _('Перерахувати аналітику') }}
+                        </button>
+                    </form>
+                    <form action="{{ url_for('camera_traps.recalculate_consensus', lang_code=g.lang_code) }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('Перерахувати консенсус для всіх спостережень?')">
+                            <i class="fas fa-sync"></i> {{ _('Перерахувати консенсус') }}
+                        </button>
+                    </form>
+                    <form action="{{ url_for('camera_traps.manual_cleanup', lang_code=g.lang_code) }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Ви впевнені, що хочете видалити файли старих фотографій?') }}')">
+                            <i class="fas fa-trash"></i> {{ _('Видалити визначені фото') }}
+                        </button>
+                    </form>
+                    <form action="{{ url_for('camera_traps.manual_delete_originals', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('УВАГА! Будуть видалені ВСІ оригінали фото, крім тих, що позначені як \'вибране\'. Мініатюри залишаться. Ця дія НЕЗВОРОТНЯ. Продовжити?') }}')">
+                            <i class="fas fa-trash-alt"></i> {{ _('Видалити оригінали') }}
+                        </button>
+                    </form>
+                    <form action="{{ url_for('camera_traps.manual_batch_cleanup', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Це видалить файли та дані від незавершених завантажень, які старші 24 годин. Ця дія незворотня. Продовжити?') }}')">
+                            <i class="fas fa-broom"></i> {{ _('Очистити невдалі завантаження') }}
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Панель фільтрів -->
+        <form id="filters-form" method="GET" class="filters-panel">
+            <div class="filter-group">
+                <label for="start-date-input">{{ _('Початкова дата:') }}</label>
+                <input type="date" id="start-date-input" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="filter-group">
+                <label for="end-date-input">{{ _('Кінцева дата:') }}</label>
+                <input type="date" id="end-date-input" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="filter-group" style="flex-grow: 1;">
+                <label for="biotope-select">{{ _('Біотоп:') }}</label>
+                <select id="biotope-select" name="biotopes" class="form-control" multiple>
+                    {% for biotope in biotopes %}
+                        <option value="{{ biotope.id }}" {% if biotope.id in selected_biotopes %}selected{% endif %}>
+                            {{ biotope.get_name(g.lang_code) }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!-- Приховане поле для ID локацій буде додано сюди за допомогою JS -->
+            <div class="filter-group action-group">
+                <button type="submit" class="btn btn-primary" style="min-width: auto;">{{ _('Застосувати') }}</button>
+                <a href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Тренди') }}</a>
+                <a href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Добова активність') }}</a>
+                <a href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Мапа') }}</a>
+                <a href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Галерея') }}</a>
+            </div>
+        </form>
+        
+        <!-- ВІДНОВЛЕНА ДВОКОЛОНКОВА СТРУКТУРА -->
+        <div class="dashboard-layout">
+            <!-- Ліва колонка -->
+            <div class="dashboard-sidebar">
+                <div class="dashboard-section">
+                    <h2 class="section-title">{{ _('Загальна статистика') }}</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card"><h5>{{ _('Всього фото') }}</h5><div class="stat-value">{{ stats.total_photos }}</div></div>
+                        <div class="stat-card"><h5>{{ _('Локацій') }}</h5><div class="stat-value">{{ stats.total_locations }}</div></div>
+                        <div class="stat-card"><h5>{{ _('Спостережень') }}</h5><div class="stat-value">{{ stats.total_observations }}</div></div>
+                        <div class="stat-card"><h5>{{ _('Видів') }}</h5><div class="stat-value">{{ stats.identified_species_count }}</div></div>
+                        <div class="stat-card"><h5>{{ _('В очікуванні') }}</h5><div class="stat-value">{{ stats.pending_observations }}</div></div>
+                        <div class="stat-card"><h5>{{ _('Днів зйомки') }}</h5><div class="stat-value">{{ stats.unique_capture_days }}</div></div>
+                    </div>
+                </div>
+                <div class="dashboard-section">
+                    <h2 class="section-title">{{ _('Найактивніші учасники') }}</h2>
+                    {% if stats.top_contributors %}
+                        <div class="contributors-list">
+                            {% for user in stats.top_contributors %}
+                                <div class="contributor-item">
+                                    <span class="contributor-name">{{ loop.index }}. {{ user.username }}</span>
+                                    <span class="contributor-badge">{{ user.observation_count }} {{ _('ідентифікацій') }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="info-message">{{ _('За цей період немає даних про ідентифікації.') }}</div>
+                    {% endif %}
+                </div>
+                <div class="dashboard-section" style="padding: 20px; text-align: center; display: flex; align-items: center; justify-content: center;">
+                    <p style="margin: 0; line-height: 1.5;">
+                        {{ _('Повний набір даних можна завантажити через') }} 
+                        <a href="https://doi.org/10.15468/fkzktf" target="_blank" style="font-weight: bold; text-decoration: underline;">GBIF</a>
+                    </p>
+                </div>
+            </div>
+            <!-- Права колонка -->
+            <div class="dashboard-main">
+                <div class="dashboard-section">
+                    <h2 class="section-title">{{ _('Статистика детекцій видів') }}</h2>
+                    <div class="chart-container">
+                        <canvas id="topSpeciesChart"></canvas>
+                    </div>
+                </div>
+                <div class="dashboard-section">
+                    <h2 class="section-title">{{ _('Карта локацій') }}</h2>
+                    <div id="map"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+$(document).ready(function() {
+
+    // --- ГЛОБАЛЬНІ ЗМІННІ ---
+    const urlParams = new URLSearchParams(window.location.search);
+    let selectedLocationIds = new Set();
+    let allVisibleLocationIds = new Set();
+    const markers = {};
+    window.map = null;
+
+    // ВИПРАВЛЕННЯ ФІЛЬТРАЦІЇ: Створюємо input і додаємо його В СЕРЕДИНУ форми
+    let locationsInput = $('<input type="hidden" id="locations-input" name="locations">');
+    $('#filters-form').append(locationsInput);
+    
+    // Ініціалізуємо `selectedLocationIds` з URL, якщо є параметр
+    const preselectedLocations = urlParams.get('locations');
+    if (preselectedLocations) {
+        selectedLocationIds = new Set(preselectedLocations.split(',').map(Number));
+    }
+
+    // --- ЗАПУСК ---
+    initializeDashboard();
+
+    // --- ОСНОВНІ ФУНКЦІЇ ---
+    function initializeDashboard() {
+        $('#biotope-select').select2({
+            placeholder: '{{ _("-- Всі біотопи --") }}',
+            allowClear: true,
+            width: '100%'
+        });
+        
+        initializeMap();
+        initializeChart();
+        setupEventListeners();
+    }
+
+    function initializeMap() {
+        const mapElement = document.getElementById('map');
+        if (!mapElement) return;
+
+        if (window.map) window.map.remove();
+
+        delete L.Icon.Default.prototype._getIconUrl;
+        L.Icon.Default.mergeOptions({
+            iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+        });
+
+        window.map = L.map(mapElement).setView([49.8, 23.6], 9);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(window.map);
+
+        addMapControls(window.map);
+        loadMapData();
+    }
+
+    function initializeChart() {
+        const ctx = document.getElementById('topSpeciesChart');
+        if (!ctx) return;
+
+        const chartApiUrl = `{{ url_for('camera_traps.stats_top_species', lang_code=g.lang_code, _external=True) }}?${urlParams.toString()}`;
+        fetch(chartApiUrl)
+            .then(r => r.json())
+            .then(apiData => {
+                if (!apiData || apiData.labels.length === 0) {
+                    ctx.parentElement.innerHTML = `<p class="info-message">{{ _("За цей період даних для діаграми немає.") }}</p>`;
+                    return;
+                }
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: apiData.labels,
+                        datasets: [{
+                            label: '{{ _("Кількість спостережень") }}',
+                            data: apiData.data,
+                            backgroundColor: 'rgba(7,121,228,0.6)',
+                            borderColor: 'rgba(7,121,228,1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+                        plugins: { legend: { display: false } },
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+            })
+            .catch(error => console.error('Error fetching chart data:', error));
+    }
+
+    function loadMapData() {
+        const mapApiUrl = new URL("{{ url_for('camera_traps.stats_locations', lang_code=g.lang_code, _external=True) }}");
+        mapApiUrl.searchParams.set('start_date', urlParams.get('start_date') || '{{ start_date }}');
+        mapApiUrl.searchParams.set('end_date', urlParams.get('end_date') || '{{ end_date }}');
+        const selectedBiotopes = $('#biotope-select').val();
+        if (selectedBiotopes && selectedBiotopes.length > 0) {
+            mapApiUrl.searchParams.set('biotopes', selectedBiotopes.join(','));
+        }
+
+        fetch(mapApiUrl)
+            .then(response => response.json())
+            .then(locations => {
+                if (locations && locations.length > 0) {
+                    const markersGroup = L.featureGroup();
+                    const wasFiltered = urlParams.has('locations');
+
+                    locations.forEach(loc => {
+                        allVisibleLocationIds.add(loc.id);
+                        if (!wasFiltered) {
+                            selectedLocationIds.add(loc.id);
+                        }
+
+                        const marker = L.marker([loc.lat, loc.lon]);
+                        marker.locationId = loc.id;
+                        
+                        marker.bindPopup('');
+                        marker.on('popupopen', function() {
+                            const isChecked = selectedLocationIds.has(loc.id);
+                            const popupContent = `
+                                <b>${loc.name}</b><br>
+                                {{ _('К-ть фото:') }} <b>${loc.photo_count}</b><br><hr style="margin: 5px 0;">
+                                <input type="checkbox" id="loc-${loc.id}" class="location-checkbox" data-location-id="${loc.id}" ${isChecked ? 'checked' : ''}>
+                                <label for="loc-${loc.id}" style="margin-left: 5px;">{{ _('Включити у фільтр') }}</label>
+                            `;
+                            this.setPopupContent(popupContent);
+                        });
+                        markers[loc.id] = marker;
+                        markersGroup.addLayer(marker);
+                    });
+                    markersGroup.addTo(window.map);
+                    if (markersGroup.getBounds().isValid()) {
+                        window.map.fitBounds(markersGroup.getBounds().pad(0.1));
+                    }
+                    syncSelectionState();
+                }
+            })
+            .catch(error => console.error('Error loading map locations:', error))
+            .finally(() => {
+                if (window.map) {
+                    window.map.invalidateSize();
+                }
+            });
+    }
+
+    function addMapControls(map) {
+        L.Control.Custom = L.Control.extend({
+            onAdd: function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-bar map-controls');
+                container.innerHTML = `
+                    <a href="#" id="select-all-locs" title="{{ _('Вибрати всі') }}">&#x2714;</a>
+                    <a href="#" id="deselect-all-locs" title="{{ _('Зняти виділення') }}">&#x2718;</a>
+                    <a href="#" id="invert-locs" title="{{ _('Інвертувати') }}">⇋</a>
+                `;
+                L.DomEvent.disableClickPropagation(container);
+                return container;
+            }
+        });
+        L.control.custom = (opts) => new L.Control.Custom(opts);
+        L.control.custom({ position: 'topright' }).addTo(map);
+    }
+
+    function setupEventListeners() {
+        $(document).on('click', '#select-all-locs', function(e) {
+            e.preventDefault();
+            selectedLocationIds = new Set(allVisibleLocationIds);
+            syncSelectionState();
+            if (window.map) window.map.closePopup();
+        });
+
+        $(document).on('click', '#deselect-all-locs', function(e) {
+            e.preventDefault();
+            selectedLocationIds.clear();
+            syncSelectionState();
+            if (window.map) window.map.closePopup();
+        });
+
+        $(document).on('click', '#invert-locs', function(e) {
+            e.preventDefault();
+            const newSelected = new Set();
+            allVisibleLocationIds.forEach(id => {
+                if (!selectedLocationIds.has(id)) newSelected.add(id);
+            });
+            selectedLocationIds = newSelected;
+            syncSelectionState();
+            if (window.map) window.map.closePopup();
+        });
+
+        $(document).on('change', '.location-checkbox', function(e) {
+            e.stopPropagation();
+            const locationId = parseInt(this.dataset.locationId);
+            if (this.checked) {
+                selectedLocationIds.add(locationId);
+            } else {
+                selectedLocationIds.delete(locationId);
+            }
+            syncSelectionState();
+        });
+    }
+
+    function syncSelectionState() {
+        const selectedArray = Array.from(selectedLocationIds);
+        locationsInput.val(selectedArray.join(','));
+        updateAllMarkersStyle();
+    }
+
+    function updateMarkerStyle(locationId) {
+        const marker = markers[locationId];
+        if (!marker || !marker._icon) return;
+        const iconElement = marker._icon;
+        if (selectedLocationIds.has(locationId)) {
+            iconElement.style.filter = ''; // Скидаємо фільтри для вибраного
+        } else {
+            iconElement.style.filter = 'grayscale(100%) opacity(0.6)'; // Робимо невибраний сірим
+        }
+    }
+    
+    function updateAllMarkersStyle() {
+        allVisibleLocationIds.forEach(id => updateMarkerStyle(id));
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,262 @@
+{# myproject/app/camera_traps/templates/ct_data_export.html #}
+
+{% extends "base.html" %}
+
+{% block title %}{{ _('Експорт даних') }} - {{ _('Фотопастки') }}{% endblock %}
+
+{% block head_extra %}
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .data-wrapper { max-width: 900px; width: 100%; margin: 0 auto; text-align: left; }
+        .page-header { text-align: center; margin-bottom: 2rem; }
+        .filters-panel {
+            padding: 20px; background-color: #f8f9fa; border: 1px solid #dee2e6;
+            border-radius: 8px; margin-bottom: 25px; display: grid;
+            grid-template-columns: 1fr 1fr; gap: 20px;
+        }
+        .filter-group { display: flex; flex-direction: column; }
+        .filter-group.full-width { grid-column: 1 / -1; }
+        .filter-group label { margin-bottom: 5px; font-weight: bold; }
+        .btn {
+            background-color: #0779e4; color: white !important; border: none; padding: 10px 20px;
+            border-radius: 5px; cursor: pointer; transition: background-color 0.2s;
+            margin: 0 5px;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #5a6268; }
+        .results-area { display: none; margin-top: 30px; }
+        .preview-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .preview-table th, .preview-table td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+        .preview-table th { background-color: #f2f2f2; }
+        .spinner-wrapper { text-align: center; padding: 40px; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="data-wrapper">
+        <h1 class="page-header">{{ _('Підготовка даних для експорту - фотопастки') }}</h1>
+
+        <form id="data-filters-form" class="filters-panel">
+            <div class="filter-group"><label for="class-select">{{ _('Клас:') }}</label><select id="class-select" class="form-control tax-filter"></select></div>
+            <div class="filter-group"><label for="order-select">{{ _('Ряд:') }}</label><select id="order-select" class="form-control tax-filter"></select></div>
+            <div class="filter-group"><label for="family-select">{{ _('Родина:') }}</label><select id="family-select" class="form-control tax-filter"></select></div>
+            <div class="filter-group"><label for="genus-select">{{ _('Рід:') }}</label><select id="genus-select" class="form-control tax-filter"></select></div>
+            <div class="filter-group full-width">
+                <label for="species-select">{{ _('Види (оберіть один або декілька):') }}</label>
+                <select id="species-select" class="form-control" multiple></select>
+            </div>
+            <div class="filter-group"><label for="start-date-select">{{ _('Дата початку:') }}</label><input type="date" id="start-date-select" class="form-control"></div>
+            <div class="filter-group"><label for="end-date-select">{{ _('Дата завершення:') }}</label><input type="date" id="end-date-select" class="form-control"></div>
+            <div class="filter-group"><label for="filter-type-select">{{ _('Тип даних для експорту:') }}</label><select id="filter-type-select" class="form-control"><option value="species_only" selected>{{ _('Тільки тварини') }}</option><option value="all">{{ _('Всі записи') }}</option></select></div>
+            <div class="filter-group"><label for="aggregation-level">{{ _('Рівень агрегації:') }}</label><select id="aggregation-level" class="form-control"><option value="none" selected>{{ _('Без агрегації') }}</option><option value="location_day">{{ _('Агрегувати до дня і локації') }}</option></select></div>
+            <div class="filter-group"><label for="institution-code">{{ _('Код інституції:') }}</label><input type="text" id="institution-code" class="form-control" value="RSNR" placeholder="{{ _('За замовчуванням: RSNR') }}"></div>
+            
+            <div class="filter-group full-width" style="flex-direction: row; justify-content: center;">
+                <button type="button" id="prepare-btn" class="btn">{{ _('Підготувати дані') }}</button>
+                <button type="button" id="reset-btn" class="btn btn-secondary">{{ _('Скинути фільтри') }}</button>
+            </div>
+        </form>
+
+        <div id="results-area" class="results-area">
+             <h3 id="preview-title"></h3> 
+            <div id="preview-container"></div>
+            <div style="text-align: center; margin-top: 20px;"><button type="button" id="download-btn" class="btn">{{ _('Завантажити повний CSV-файл') }}</button></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        const filters = {
+            'class': $('#class-select'),
+            'order': $('#order-select'),
+            'family': $('#family-select'),
+            'genus': $('#genus-select'),
+            'species': $('#species-select')
+        };
+        const taxFilterLevels = ['class', 'order', 'family', 'genus'];
+
+        function updateSelectOptions(element, options, placeholder, isMultiSelect = false) {
+            const currentVal = element.val();
+            const data = (options || []).map(item => (typeof item === 'object' ? item : { id: item, text: item }));
+
+            element.empty().select2({
+                data: data,
+                placeholder: placeholder,
+                allowClear: true,
+                width: '100%'
+            });
+
+            if (isMultiSelect && Array.isArray(currentVal)) {
+                const validValues = currentVal.filter(val => data.some(opt => opt.id == val));
+                element.val(validValues).trigger('change.select2');
+            } else if (!isMultiSelect && currentVal && data.some(opt => opt.id == currentVal)) {
+                element.val(currentVal).trigger('change.select2');
+            } else {
+                 element.val(null).trigger('change.select2');
+            }
+        }
+        function fetchAllFilterOptions() {
+            const params = new URLSearchParams();
+            for (const level of taxFilterLevels) {
+                if (filters[level].val()) {
+                    params.append(level, filters[level].val());
+                }
+            }
+            
+            params.append('filter_type', $('#filter-type-select').val());
+
+            const baseUrl = "{{ url_for('camera_traps.api_get_ct_taxonomic_filters', lang_code=g.lang_code) }}";
+            const apiUrl = `${baseUrl}?${params.toString()}`;
+
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    updateSelectOptions(filters.class, data.classes, '{{ _("Всі класи") }}');
+                    updateSelectOptions(filters.order, data.orders, '{{ _("Всі ряди") }}');
+                    updateSelectOptions(filters.family, data.families, '{{ _("Всі родини") }}');
+                    updateSelectOptions(filters.genus, data.genera, '{{ _("Всі роди") }}');
+                    updateSelectOptions(filters.species, data.species, '{{ _("Всі види") }}', true);
+                });
+        }
+        for (const [key, element] of Object.entries(filters)) {
+            element.select2({
+                placeholder: '{{ _("Завантаження...") }}',
+                allowClear: true,
+                width: '100%'
+            });
+        }
+        $('.tax-filter').on('change', function(e) {
+            const changedLevel = e.target.id.split('-')[0];
+            const changedIndex = taxFilterLevels.indexOf(changedLevel);
+            if (!$(this).val()) {
+                fetchAllFilterOptions();
+                return;
+            }
+            for (let i = changedIndex + 1; i < taxFilterLevels.length; i++) {
+                filters[taxFilterLevels[i]].val(null).trigger('change.select2');
+            }
+            fetchAllFilterOptions();
+        });
+
+        $('#filter-type-select').on('change', function() {
+            // Очищуємо існуючий вибір видів та оновлюємо списки
+            filters.species.val(null).trigger('change.select2');
+            fetchAllFilterOptions();
+        });
+        
+        function resetToDefaults() {
+            for (const key of taxFilterLevels) {
+                filters[key].val(null).trigger('change.select2');
+            }
+            filters.species.val(null).trigger('change.select2');
+            
+            fetchAllFilterOptions();
+            // Скидаємо дати
+            const formatLocalDate = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            const today = new Date();
+            const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+            $('#start-date-select').val(formatLocalDate(startOfYear));
+            $('#end-date-select').val(formatLocalDate(today));
+            
+            $('#aggregation-level').val('none');
+            $('#institution-code').val('RSNR');
+            $('#filter-type-select').val('species_only')
+            $('#results-area').hide();
+        }
+        
+        $('#reset-btn').on('click', resetToDefaults);
+        resetToDefaults();
+        
+        function getApiParams() {
+             const params = new URLSearchParams();
+            if (filters.class.val()) params.append('class', filters.class.val());
+            if (filters.order.val()) params.append('order', filters.order.val());
+            if (filters.family.val()) params.append('family', filters.family.val());
+            if (filters.genus.val()) params.append('genus', filters.genus.val());
+            
+            const selectedSpecies = filters.species.val();
+            if (selectedSpecies && selectedSpecies.length > 0) {
+                params.append('species_ids', selectedSpecies.join(','));
+            }
+            if ($('#start-date-select').val()) params.append('start_date', $('#start-date-select').val());
+            if ($('#end-date-select').val()) params.append('end_date', $('#end-date-select').val());
+            params.append('aggregation', $('#aggregation-level').val());
+            params.append('institution_code', $('#institution-code').val() || 'RSNR');
+            params.append('filter_type', $('#filter-type-select').val());
+
+            return params;
+        }
+
+        $('#prepare-btn').on('click', function() {
+            const params = getApiParams();
+            // if (!params.has('species_ids') && !params.has('genus') && !params.has('family') && !params.has('order') && !params.has('class')) {
+            //     alert("{{ _('Будь ласка, оберіть хоча б один таксон.') }}");
+            //     return;
+            // }
+
+            $('#preview-container').html('<div class="spinner-wrapper"><div class="spinner-border" role="status"></div></div>');
+            $('#results-area').show();
+
+            const previewUrl = `{{ url_for('camera_traps.api_ct_data_preview', lang_code=g.lang_code) }}?${params.toString()}`;
+
+            fetch(previewUrl)
+                .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
+                .then(data => { 
+                    $('#preview-title').text(`{{ _('Попередній перегляд (перші 20 записів з ${data.total_count})') }}`);
+                    const previewData = data.preview_data;
+                    if (previewData && previewData.length > 0) {
+                        const previewColumns = [
+                            'institutionCode', 'class', 'order', 'family', 'genus',
+                            'specificEpithet', 'eventDate', 'eventTime',
+                            'decimalLatitude', 'decimalLongitude'
+                        ];
+                        
+                        let tableHtml = '<div class="table-responsive"><table class="preview-table"><thead><tr>';
+                        previewColumns.forEach(key => { tableHtml += `<th>${key}</th>`; });
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        previewData.forEach(row => {
+                            tableHtml += '<tr>';
+                            previewColumns.forEach(key => {
+                                tableHtml += `<td>${row[key] !== null ? row[key] : ''}</td>`;
+                            });
+                            tableHtml += '</tr>';
+                        });
+                        tableHtml += '</tbody></table></div>';
+                        $('#preview-container').html(tableHtml);
+                    } else {
+                        $('#preview-container').html('<p>{{ _("Дані за вибраними критеріями не знайдено.") }}</p>');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching preview data:', error);
+                    $('#preview-title').text('{{ _("Помилка") }}');
+                    $('#preview-container').html(`<p style="color: red;">{{ _('Помилка завантаження даних:') }} ${error.error || 'Unknown error'}</p>`);
+                });
+        });
+
+        $('#download-btn').on('click', function() {
+            const params = getApiParams();
+            // if (!params.has('species_ids') && !params.has('genus') && !params.has('family') && !params.has('order') && !params.has('class')) {
+            //     alert("{{ _('Будь ласка, оберіть хоча б один таксон.') }}");
+            //     return;
+            // }
+            window.location.href = `{{ url_for('camera_traps.api_ct_data_download', lang_code=g.lang_code) }}?${params.toString()}`;
+        });
+    });
+</script>
+{% endblock %}
