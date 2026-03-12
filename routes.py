@@ -15,11 +15,11 @@ from . import camera_traps_bp
 from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
 from .analytics_calculator import update_analytics_tables
-from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort
+from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, UserProfile, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats 
-from app.models import User  # Імпортуємо User з основного додатку
+from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
@@ -37,7 +37,6 @@ def dashboard(lang_code):
         if current_user.is_authenticated:
             ct_profile = current_user.get_ct_profile()
 
-        # --- ОБРОБКА ФІЛЬТРІВ ---
         # Дати
         start_date_str = request.args.get('start_date', '2020-08-01')
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
@@ -58,11 +57,32 @@ def dashboard(lang_code):
         # Отримуємо список біотопів для передачі в шаблон
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
-        # --- ЗАПИТИ ДО БД З ДИНАМІЧНОЮ ФІЛЬТРАЦІЄЮ ---
+        raw_inst_ids = request.args.getlist('institution_id')
+        if not raw_inst_ids:
+            raw_inst_ids = request.args.get('institution_id', '').split(',')
+        selected_inst_ids =[int(i) for i in raw_inst_ids if str(i).isdigit()]
+        institution_id_str = ','.join(map(str, selected_inst_ids))
+
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        
+        # Передаємо table_alias='locations' (без ніяких .replace)
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
+        )
+        inst_condition_orm = text(inst_condition)
+
+        if is_admin:
+            institutions_list = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions_list = current_user.institutions
+        else:
+            institutions_list =[]
         
         # Total Photos
         query_photos = ct_session.query(func.count(Photo.id)).join(Observation).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date))
+            .filter(Photo.captured_at.between(start_date, end_date))\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_photos = query_photos.filter(Location.id.in_(location_ids))
         if biotope_ids:
@@ -71,7 +91,8 @@ def dashboard(lang_code):
 
         # Total Locations
         query_locations = ct_session.query(func.count(distinct(Observation.location_id))).join(Photo).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date))
+            .filter(Photo.captured_at.between(start_date, end_date))\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_locations = query_locations.filter(Location.id.in_(location_ids))
         if biotope_ids:
@@ -81,7 +102,8 @@ def dashboard(lang_code):
         # Total Observations
         query_observations = ct_session.query(func.count(func.distinct(Observation.id))).join(Photo)\
             .join(Identification, Photo.id == Identification.photo_id).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date), Identification.species_id > 0)
+            .filter(Photo.captured_at.between(start_date, end_date), Identification.species_id > 0)\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_observations = query_observations.filter(Location.id.in_(location_ids))
         if biotope_ids:
@@ -92,7 +114,8 @@ def dashboard(lang_code):
         query_species_count = ct_session.query(func.count(distinct(Identification.species_id)))\
             .join(Photo, Identification.photo_id == Photo.id)\
             .join(Observation, Photo.observation_id == Observation.id).join(Location)\
-            .filter(Identification.species_id > 0, Photo.captured_at.between(start_date, end_date), Observation.status.in_(['completed', 'archived']))
+            .filter(Identification.species_id > 0, Photo.captured_at.between(start_date, end_date), Observation.status.in_(['completed', 'archived']))\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_species_count = query_species_count.filter(Location.id.in_(location_ids))
         if biotope_ids:
@@ -101,7 +124,8 @@ def dashboard(lang_code):
 
         # Pending Observations
         query_pending = ct_session.query(func.count(Observation.id)).join(Location)\
-            .filter(Observation.series_start_time.between(start_date, end_date + timedelta(days=1)), ~Observation.photos.any(Photo.identifications.any()))
+            .filter(Observation.series_start_time.between(start_date, end_date + timedelta(days=1)), ~Observation.photos.any(Photo.identifications.any()))\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_pending = query_pending.filter(Location.id.in_(location_ids))
         if biotope_ids:
@@ -110,13 +134,26 @@ def dashboard(lang_code):
 
         # Unique Capture Days
         query_capture_days = ct_session.query(func.count(func.distinct(func.date(Photo.captured_at))))\
-            .join(Observation).join(Location).filter(Photo.captured_at.between(start_date, end_date))
+            .join(Observation).join(Location).filter(Photo.captured_at.between(start_date, end_date))\
+            .filter(inst_condition_orm).params(**inst_params)
         if location_ids:
             query_capture_days = query_capture_days.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_capture_days = query_capture_days.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         unique_capture_days = query_capture_days.scalar() or 0
 
+        # Top Contributors
+        top_contributors_raw_query = ct_session.query(
+            Identification.user_id,
+            func.count(distinct(Photo.observation_id)).label('observation_count')
+        ).join(Photo, Identification.photo_id == Photo.id).join(Observation).join(Location)\
+        .filter(Photo.captured_at.between(start_date, end_date))\
+        .filter(inst_condition_orm).params(**inst_params)
+        if location_ids:
+            top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(location_ids))
+        if biotope_ids:
+            top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        
         # Top Contributors
         top_contributors_raw_query = ct_session.query(
             Identification.user_id,
@@ -160,7 +197,9 @@ def dashboard(lang_code):
                              ct_profile=ct_profile,
                              biotopes=biotopes_list,
                              selected_locations=location_ids_str,
-                             selected_biotopes=biotope_ids)
+                             selected_biotopes=biotope_ids,
+                             institutions=institutions_list,
+                             selected_institutions=selected_inst_ids)
         
     except Exception as e:
         current_app.logger.error(f"Error in dashboard: {str(e)}")
@@ -594,6 +633,7 @@ def stats_top_species(lang_code):
         # ВИПРАВЛЕНО: Повертаємо вашу дату за замовчуванням '2020-08-01'
         start_date_str = request.args.get('start_date', '2020-08-01')
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+        institution_id_str = request.args.get('institution_id', '')
         
         params = {
             'start_date': start_date_str,
@@ -604,6 +644,14 @@ def stats_top_species(lang_code):
         biotope_ids_str = request.args.get('biotopes', '')
         location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
         biotope_ids = [int(id) for id in biotope_ids_str.split(',') if id.isdigit()]
+
+        user_inst_ids =[inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        # Передаємо table_alias='l' для сирого SQL
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=institution_id_str, table_alias='l'
+        )
+        params.update(inst_params)
 
         # --- Крок 2: Новий, коректний SQL-запит з логікою консенсусу ---
         
@@ -634,10 +682,11 @@ def stats_top_species(lang_code):
             JOIN locations l ON o.location_id = l.id
         """
         
-        conditions = [
+        conditions =[
             "o.status IN ('completed', 'archived')",
             "s.id > 0",
-            "DATE(o.series_start_time) BETWEEN :start_date AND :end_date"
+            "DATE(o.series_start_time) BETWEEN :start_date AND :end_date",
+            inst_condition
         ]
 
         if biotope_ids:
@@ -682,7 +731,6 @@ def stats_top_species(lang_code):
 
 @camera_traps_bp.route('/api/stats/locations')
 def stats_locations(lang_code):
-    """Повертає дані про локації, ФІЛЬТРОВАНІ ЗА ДАТОЮ ТА БІОТОПОМ, для карти."""
     ct_session = get_ct_session()
     try:
         start_date_str = request.args.get('start_date', '2020-08-01')
@@ -690,29 +738,41 @@ def stats_locations(lang_code):
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         
+        # Отримуємо ID установ (це може бути список або рядок через кому)
+        raw_inst_ids = request.args.getlist('institution_id')
+        if not raw_inst_ids:
+            raw_inst_ids = request.args.get('institution_id', '').split(',')
+        selected_inst_ids = [int(i) for i in raw_inst_ids if str(i).isdigit()]
+
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        
+        # Викликаємо фільтр, ОДРАЗУ вказуючи правильний аліас 'locations'
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
+        )
+        
         biotope_ids_str = request.args.get('biotopes', '')
         biotope_ids = [int(id) for id in biotope_ids_str.split(',') if id.isdigit()]
 
-        locations_query = ct_session.query(
+        # Використовуємо inst_condition ЯК ВІН Є, без замін
+        query = ct_session.query(
             Location.id, Location.name, Location.latitude, Location.longitude,
             func.count(Photo.id).label('photo_count')
-        ).select_from(Location)\
-        .join(Observation, Location.id == Observation.location_id)\
+        ).join(Observation, Location.id == Observation.location_id)\
         .join(Photo, Observation.id == Photo.observation_id)\
-        .filter(Photo.captured_at.between(start_date, end_date))
+        .filter(Photo.captured_at.between(start_date, end_date))\
+        .filter(text(inst_condition)).params(**inst_params)
         
-        # Застосовуємо фільтр по біотопу
         if biotope_ids:
-            locations_query = locations_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+            query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
 
-        locations_data_raw = locations_query.group_by(Location.id, Location.name, Location.latitude, Location.longitude)\
-                                          .order_by(Location.name).all()
-
-        locations_data = [{'id': l.id, 'name': l.name, 'lat': float(l.latitude), 'lon': float(l.longitude), 'photo_count': l.photo_count} for l in locations_data_raw]
-        return jsonify(locations_data)
+        res = query.group_by(Location.id).all()
+        data = [{'id': l.id, 'name': l.name, 'lat': float(l.latitude), 'lon': float(l.longitude), 'photo_count': l.photo_count} for l in res]
+        return jsonify(data)
     except Exception as e:
-        current_app.logger.error(f"Error in stats_locations: {str(e)}")
-        return jsonify({'error': 'Помилка отримання даних'}), 500
+        current_app.logger.error(f"Error in stats_locations: {e}", exc_info=True)
+        return jsonify({'error': 'Error'}), 500
     finally:
         close_ct_session()
 

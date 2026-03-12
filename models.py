@@ -23,6 +23,13 @@ location_biotopes = Table(
     Column('biotope_id', Integer, ForeignKey('biotopes.id'), primary_key=True)
 )
 
+location_institutions = Table(
+    'location_institutions',
+    CTBase.metadata,
+    Column('location_id', Integer, ForeignKey('locations.id', ondelete='CASCADE'), primary_key=True),
+    Column('institution_id', Integer, primary_key=True)
+)
+
 class Species(CTBase):
     __tablename__ = 'species'
     
@@ -59,6 +66,7 @@ class Location(CTBase):
     photo_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
     created_by_id = Column(Integer, nullable=True)  # ID користувача з основної БД
+    visibility_level = Column(Integer, default=1, nullable=False)
 
     # Зв'язки
     observations = relationship('Observation', back_populates='location')

@@ -12,6 +12,49 @@ from flask import current_app
 from .database import get_ct_session, close_ct_session
 from .models import Location, Observation, Photo, UploadBatch, Identification
 
+def get_institution_filter(user_inst_ids=None, is_admin=False, selected_inst_id=None, table_alias='l'):
+    """
+    Генерує SQL-умову для фільтрації за правами доступу ТА вибраними установами.
+    """
+    prefix = f"{table_alias}." if table_alias else ""
+    
+    if is_admin:
+        base_condition = "1=1"
+        params = {}
+    elif not user_inst_ids:
+        base_condition = f"{prefix}visibility_level = 0"
+        params = {}
+    else:
+        base_condition = f"""
+            ({prefix}visibility_level = 0 OR EXISTS (
+                SELECT 1 FROM location_institutions li_perm 
+                WHERE li_perm.location_id = {prefix}id 
+                AND li_perm.institution_id = ANY(:user_inst_ids)
+            ))
+        """
+        params = {"user_inst_ids": user_inst_ids}
+
+    if selected_inst_id:
+        if isinstance(selected_inst_id, str):
+            ids =[int(i) for i in selected_inst_id.split(',') if i.strip().isdigit()]
+        elif isinstance(selected_inst_id, (int, float)):
+            ids = [int(selected_inst_id)]
+        else:
+            ids =[int(i) for i in selected_inst_id if str(i).isdigit()]
+
+        if ids:
+            base_condition += f"""
+                AND EXISTS (
+                    SELECT 1 FROM location_institutions li_sel 
+                    WHERE li_sel.location_id = {prefix}id 
+                    AND li_sel.institution_id = ANY(:selected_inst_id)
+                )
+            """
+            params['selected_inst_id'] = ids
+
+    return base_condition, params
+
+
 def extract_datetime_from_exif(file_stream):
     """Зчитує дату та час з EXIF-даних файлу, включаючи долі секунди."""
     try:
@@ -523,3 +566,5 @@ def calculate_total_effort(session, start_date, end_date):
         total_effort_days += effort_days
 
     return total_effort_days
+
+

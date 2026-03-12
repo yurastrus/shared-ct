@@ -15,18 +15,70 @@
 .quick-actions form .btn-danger { background-color: #dc3545 !important; border-color: #dc3545 !important; color: white !important; }
 .quick-actions form .btn-danger:hover { background-color: #c82333 !important; border-color: #bd2130 !important; }
 .select2-container .select2-selection--multiple { min-height: 38px; border: 1px solid #ced4da; }
-.select2-container--default .select2-selection--multiple .select2-selection__choice { background-color: #007bff; border-color: #0069d9; color: white; padding: 2px 6px; }
 
-/* <-- ВИПРАВЛЕНО: Нові, простіші стилі для переміщення хрестика праворуч --> */
+.filters-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: flex-end; /* Вирівнюємо поля по нижній лінії */
+}
+
+/* 2. Налаштування груп з датами (їх дві, тому кожній даємо по 12.5%, щоб разом було 25%) */
+.filter-group:has(input[type="date"]) {
+    flex: 0 0 12.5%; 
+    min-width: 130px; /* Мінімальна ширина, щоб дата не стискалася занадто сильно */
+}
+
+/* 3. Налаштування випадаючих списків (Установа та Біотоп) */
+.filter-group:has(select) {
+    flex: 1; /* Вони заберуть весь вільний простір, що залишився (75%) */
+    min-width: 200px;
+}
+
+.action-group {
+    flex-basis: 100%; /* Змушує групу зайняти весь рядок */
+    display: flex;
+    gap: 10px;
+    margin-top: 10px; /* Додає відступ між полями та кнопками */
+    justify-content: flex-start; /* Кнопки зліва. Змініть на flex-end, якщо хочете справа */
+}
+
+/* 1. Основний стиль тега (синій колір та хрестик справа) */
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: #007bff !important; /* Наш синій */
+    border: 1px solid #0069d9 !important;
+    color: white !important;
+    display: inline-flex !important; /* Використовуємо inline-flex */
+    flex-direction: row-reverse !important; /* Текст зліва, хрестик справа */
+    align-items: center;
+    padding: 2px 8px !important;
+    margin-top: 4px !important;
+    border-radius: 4px;
+}
+
+/* 2. Стиль хрестика (видалення) */
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-    color: rgba(255, 255, 255, 0.7);
-    float: right; /* Переміщуємо хрестик направо */
-    margin-right: 1px; /* Невеликий відступ від правого краю тега */
-    margin-left: 4px; /* Відступ від тексту зліва */
+    color: rgba(255, 255, 255, 0.8) !important;
+    border: none !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.4) !important; /* Лінія розділювач */
+    margin-left: 8px !important;
+    margin-right: -4px !important;
+    padding: 0 6px !important;
+    position: relative !important;
+    float: none !important;
     font-weight: bold;
 }
+
+/* 3. Колір хрестика при наведенні */
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-    color: white;
+    color: white !important;
+    background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* 4. Забезпечуємо білий колір тексту самого біотопу/установи */
+.select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+    color: white !important;
+    padding-left: 0 !important;
 }
 
 /* Стилі для кнопок керування картою */
@@ -135,6 +187,16 @@
                 <input type="date" id="end-date-input" name="end_date" class="form-control" value="{{ end_date }}">
             </div>
             <div class="filter-group" style="flex-grow: 1;">
+                <label for="institution-select">{{ _('Установа:') }}</label>
+                <select id="institution-select" name="institution_id" class="form-control" multiple>
+                    {% for inst in institutions %}
+                        <option value="{{ inst.id }}" {% if inst.id in selected_institutions %}selected{% endif %}>
+                            {{ inst.name_uk if g.lang_code == 'uk' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group" style="flex-grow: 1;">
                 <label for="biotope-select">{{ _('Біотоп:') }}</label>
                 <select id="biotope-select" name="biotopes" class="form-control" multiple>
                     {% for biotope in biotopes %}
@@ -230,9 +292,13 @@ $(document).ready(function() {
     $('#filters-form').append(locationsInput);
     
     // Ініціалізуємо `selectedLocationIds` з URL, якщо є параметр
-    const preselectedLocations = urlParams.get('locations');
-    if (preselectedLocations) {
-        selectedLocationIds = new Set(preselectedLocations.split(',').map(Number));
+    const preselectedStr = urlParams.get('locations');
+    if (preselectedStr && preselectedStr.trim() !== "") {
+        selectedLocationIds = new Set(
+            preselectedStr.split(',')
+            .map(Number)
+            .filter(n => n > 0) // прибираємо некоректні ID
+        );
     }
 
     // --- ЗАПУСК ---
@@ -242,6 +308,12 @@ $(document).ready(function() {
     function initializeDashboard() {
         $('#biotope-select').select2({
             placeholder: '{{ _("-- Всі біотопи --") }}',
+            allowClear: true,
+            width: '100%'
+        });
+
+        $('#institution-select').select2({
+            placeholder: '{{ _("-- Всі доступні установи --") }}',
             allowClear: true,
             width: '100%'
         });
@@ -317,16 +389,24 @@ $(document).ready(function() {
         if (selectedBiotopes && selectedBiotopes.length > 0) {
             mapApiUrl.searchParams.set('biotopes', selectedBiotopes.join(','));
         }
+        const selectedInsts = $('#institution-select').val();
+        if (selectedInsts && selectedInsts.length > 0) {
+            mapApiUrl.searchParams.set('institution_id', selectedInsts.join(','));
+        }
 
         fetch(mapApiUrl)
             .then(response => response.json())
             .then(locations => {
                 if (locations && locations.length > 0) {
                     const markersGroup = L.featureGroup();
-                    const wasFiltered = urlParams.has('locations');
+                    
+                    // Перевіряємо, чи був реально застосований фільтр по локаціях (не порожній)
+                    const wasFiltered = (urlParams.get('locations') && urlParams.get('locations').trim() !== "");
 
                     locations.forEach(loc => {
                         allVisibleLocationIds.add(loc.id);
+                        
+                        // Якщо фільтр не був заданий в URL, то за замовчуванням вибираємо ВСІ видимі точки
                         if (!wasFiltered) {
                             selectedLocationIds.add(loc.id);
                         }
@@ -348,10 +428,13 @@ $(document).ready(function() {
                         markers[loc.id] = marker;
                         markersGroup.addLayer(marker);
                     });
+                    
                     markersGroup.addTo(window.map);
                     if (markersGroup.getBounds().isValid()) {
                         window.map.fitBounds(markersGroup.getBounds().pad(0.1));
                     }
+                    
+                    // ОНОВЛЕНО: Синхронізуємо стан після завантаження всіх маркерів
                     syncSelectionState();
                 }
             })
