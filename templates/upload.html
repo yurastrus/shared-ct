@@ -194,6 +194,7 @@ input[type="text"], textarea {
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
@@ -330,19 +331,79 @@ $(document).ready(function () {
 
     // ... (код для завантаження файлів без змін) ...
     fileInput.on('change',function(e){selectedFiles=Array.from(e.target.files),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length),uploadSuccessMessage.hide()});function displayFileList(){if(0===selectedFiles.length)return void fileList.html('<div class="text-muted">{{ _("Файли не вибрані") }}</div>');let e="";selectedFiles.forEach((t,o)=>{const i=(t.size/1024/1024).toFixed(1),n=t.webkitRelativePath||t.name;e+=`<div class="file-item" data-index="${o}">${n} (${i} MB)<a href="#" class="file-remove" onclick="removeFile(${o}); return false;">[видалити]</a><span class="file-status" id="status-${o}"></span></div>`}),fileList.html(e)}window.removeFile=function(e){selectedFiles.splice(e,1),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length);const t=new DataTransfer;selectedFiles.forEach(e=>t.items.add(e)),fileInput[0].files=t.files},uploadBtn.on('click',function(e){e.preventDefault();const t=locationIdInput.val();0===selectedFiles.length?alert("{{ _('Будь ласка, спочатку виберіть файли для завантаження.') }}"):t&&"-1"!==t&&"0"!==t?uploadFiles(selectedFiles,t):alert("{{ _('Будь ласка, виберіть дійсне місце перед завантаженням.') }}")});function uploadFiles(files,locationId){let currentIndex=0,successCount=0,errorCount=0,batchId=null;function resetUploadState(){uploadProgress.hide(),uploadBtn.prop('disabled',0===selectedFiles.length).text("{{ _('Завантажити та обробити') }}")}function finalizeBatch(){progressText.text('{{ _("Групування фото в серії...") }}'),progressBar.css('width','95%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/finalize-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({batch_id:batchId}),success:function(data){progressBar.css('width','100%'),progressText.text(`{{ _('Успішно згруповано') }} ${data.grouped_photos} {{ _('фото в серії') }}`),setTimeout(()=>{resetUploadState(),0===errorCount?(clearFileList(),uploadSuccessMessage.slideDown()):alert(`{{ _('Завантаження завершено:') }} ${successCount} {{ _('успішно,') }} ${errorCount} {{ _('з помилками') }}`)},1e3)},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка групування';alert(`{{ _('Помилка групування:') }} ${error}`),resetUploadState()}})}
-    function uploadNextFile(){
-        if(currentIndex>=files.length)
-            return void finalizeBatch();
-        const file=files[currentIndex],
-        formData=new FormData;
-        formData.append('location_id',locationId),
-        formData.append('batch_id',batchId),
-        formData.append('file',file);
-        formData.append('save_original', $('#save-original-checkbox').is(':checked'));
-        const uploadProgressPercent=5+Math.round(currentIndex/files.length*85);
-        progressBar.css('width',uploadProgressPercent+'%'),progressText.text(`{{ _('Завантажую файл') }} ${currentIndex+1} {{ _('з') }} ${files.length}: ${file.name}`),$('#status-'+currentIndex).text('{{ _("завантажується...") }}').removeClass('success error'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/upload/process-single',method:'POST',headers:{'X-CSRFToken':csrfToken},data:formData,processData:!1,contentType:!1,success:function(data){successCount++,$('#status-'+currentIndex).text('{{ _("завантажено") }}').addClass('success')},error:function(xhr){errorCount++;const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка сервера';$('#status-'+currentIndex).text(`{{ _("помилка:") }} ${error}`).addClass('error')},complete:function(){currentIndex++,setTimeout(uploadNextFile,100)}})}uploadBtn.prop('disabled',!0).text("{{ _('Завантаження...') }}"),uploadProgress.show(),progressText.text('{{ _("Підготовка до завантаження...") }}'),progressBar.css('width','5%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/create-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({location_id:parseInt(locationId),total_files:files.length}),success:function(data){batchId=data.batch_id,uploadNextFile()},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка створення batch';alert(`Помилка підготовки: ${error}`),resetUploadState()}})}function clearFileList(){selectedFiles=[],fileInput.val(""),displayFileList(),uploadBtn.prop("disabled",!0)}
 
-    // **ВИПРАВЛЕНИЙ JAVASCRIPT**
+    async function uploadNextFile(){
+        if(currentIndex >= files.length)
+            return void finalizeBatch();
+            
+        const originalFile = files[currentIndex];
+        
+        // Зчитуємо стан галочки
+        const saveOriginal = $('#save-original-checkbox').is(':checked');
+        
+        let fileToUpload = originalFile;
+        
+        // Якщо галочка НЕ стоїть — стискаємо в браузері
+        if (!saveOriginal) {
+            $('#status-'+currentIndex).text('стиснення...').removeClass('success error');
+            
+            // Налаштування узгоджені з вашим CAMERA_TRAP_CONFIG
+            const options = {
+                maxSizeMB: 1,            // Запобіжник розміру
+                maxWidthOrHeight: 800,   // Збігається з THUMBNAIL_SIZE: (800, 800)
+                useWebWorker: true,
+                preserveExif: true       // ОБОВ'ЯЗКОВО зберігаємо час зйомки!
+            };
+
+            try {
+                const compressedBlob = await browserImageCompression(originalFile, options);
+                
+                // Перепаковуємо Blob у File, щоб сервер отримав правильне ім'я файлу
+                fileToUpload = new File([compressedBlob], originalFile.name, {
+                    type: compressedBlob.type,
+                    lastModified: originalFile.lastModified
+                });
+            } catch (error) {
+                console.error('Помилка стиснення на клієнті:', error);
+                fileToUpload = originalFile; // Фолбек: якщо помилка, відправляємо оригінал
+            }
+        }
+
+        const formData = new FormData();
+        formData.append('location_id', locationId);
+        formData.append('batch_id', batchId);
+        formData.append('file', fileToUpload); // Відправляємо стиснений або оригінальний файл
+        formData.append('save_original', saveOriginal); // Передаємо статус галочки на сервер
+        
+        const uploadProgressPercent = 5 + Math.round(currentIndex / files.length * 85);
+        progressBar.css('width', uploadProgressPercent + '%');
+        progressText.text(`Завантажую файл ${currentIndex+1} з ${files.length}: ${originalFile.name}`);
+        
+        $('#status-'+currentIndex).text('завантажується...').removeClass('success error');
+        
+        $.ajax({
+            url: '/{{ g.lang_code }}/camera-traps/upload/process-single',
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(data){
+                successCount++;
+                $('#status-'+currentIndex).text('завантажено').addClass('success');
+            },
+            error: function(xhr){
+                errorCount++;
+                const error = xhr.responseJSON ? xhr.responseJSON.error : 'Помилка сервера';
+                $('#status-'+currentIndex).text(`помилка: ${error}`).addClass('error');
+            },
+            complete: function(){
+                currentIndex++;
+                setTimeout(uploadNextFile, 100);
+            }
+        });
+    }
+
     locationSelect.on('change', function () {
         const selectedValue = $(this).val();
         updateMapSelection(selectedValue);
