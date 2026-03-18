@@ -219,14 +219,47 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
 
         # Збереження файлів
         file.seek(0)
+    
+        file.seek(0)
 
         if save_original:
-            # Зберігаємо оригінал і створюємо мініатюру з нього
+            # Сценарій 1: Користувач явно хоче зберегти оригінал (галочка стоїть)
             file.save(raw_path)
+            # Створюємо мініатюру з уже збереженого локального файлу (це швидше)
             create_thumbnail(raw_path, thumb_path)
         else:
-            # Оригінал не зберігаємо, створюємо мініатюру прямо з потоку
-            create_thumbnail(file, thumb_path)
+            # Сценарій 2: Очікуємо, що браузер уже стиснув файл (галочка не стоїть)
+            try:
+                # Відкриваємо зображення для перевірки параметрів
+                with Image.open(file) as img:
+                    target_size = config['THUMBNAIL_SIZE']
+                    
+                    # Перевіряємо, чи роздільна здатність вже відповідає нормі
+                    # (Pillow повертає (width, height))
+                    is_correct_res = img.width <= target_size[0] and img.height <= target_size[1]
+                    
+                    # Додаткова перевірка формату (на випадок, якщо прийшов не JPEG)
+                    is_jpeg = img.format == 'JPEG'
+
+                file.seek(0) # Повертаємо покажчик після відкриття Image.open
+
+                if is_correct_res and is_jpeg:
+                    # Файл уже ідеальний (стиснутий браузером): просто зберігаємо
+                    file.save(thumb_path)
+                    # current_app.logger.info(f"Файл {system_filename} збережено як є (вже стиснутий)")
+                else:
+                    # Файл не відповідає критеріям (завеликий або не той формат):
+                    # стискаємо його на сервері
+                    create_thumbnail(file, thumb_path)
+                    current_app.logger.warning(f"Файл {system_filename} був стиснутий сервером (клієнт надіслав невідповідний файл)")
+
+            except Exception as e:
+                # Якщо файл пошкоджений або Image.open не зміг його прочитати
+                current_app.logger.error(f"Помилка перевірки зображення {original_filename}: {e}")
+                # Спробуємо останній шанс - метод create_thumbnail, 
+                # якщо і він впаде, спрацює загальний try/except функції
+                file.seek(0)
+                create_thumbnail(file, thumb_path)
 
         # Створення запису в БД
         photo = Photo(

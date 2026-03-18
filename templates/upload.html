@@ -395,7 +395,7 @@ $(document).ready(function () {
             if (!saveOriginal) {
                 $('#status-' + currentIndex).text('стиснення...').removeClass('success error');
                 const options = {
-                    maxSizeMB: 1,
+                    maxSizeMB: 0.2,
                     maxWidthOrHeight: 800,
                     useWebWorker: true,
                     preserveExif: true
