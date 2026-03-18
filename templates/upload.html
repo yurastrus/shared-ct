@@ -175,6 +175,9 @@ input[type="text"], textarea {
             <span class="btn btn-primary btn-file">{{ _('Вибрати файли') }}
                 <input type="file" id="file-input" multiple accept="image/jpeg,image/jpg">
             </span>
+            <span class="btn btn-secondary btn-file" style="margin-left: 10px;">{{ _('Вибрати папку') }}
+                <input type="file" id="folder-input" webkitdirectory directory multiple>
+            </span>
             <span class="ml-3 text-muted">{{ _('Дозволені файли: .jpg, .jpeg') }}</span>
             <div id="file-list" class="file-list">
                 <div class="text-muted">{{ _('Файли не вибрані') }}</div>
@@ -332,6 +335,19 @@ $(document).ready(function () {
     // ... (код для завантаження файлів без змін) ...
     fileInput.on('change',function(e){selectedFiles=Array.from(e.target.files),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length),uploadSuccessMessage.hide()});function displayFileList(){if(0===selectedFiles.length)return void fileList.html('<div class="text-muted">{{ _("Файли не вибрані") }}</div>');let e="";selectedFiles.forEach((t,o)=>{const i=(t.size/1024/1024).toFixed(1),n=t.webkitRelativePath||t.name;e+=`<div class="file-item" data-index="${o}">${n} (${i} MB)<a href="#" class="file-remove" onclick="removeFile(${o}); return false;">[видалити]</a><span class="file-status" id="status-${o}"></span></div>`}),fileList.html(e)}window.removeFile=function(e){selectedFiles.splice(e,1),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length);const t=new DataTransfer;selectedFiles.forEach(e=>t.items.add(e)),fileInput[0].files=t.files},uploadBtn.on('click',function(e){e.preventDefault();const t=locationIdInput.val();0===selectedFiles.length?alert("{{ _('Будь ласка, спочатку виберіть файли для завантаження.') }}"):t&&"-1"!==t&&"0"!==t?uploadFiles(selectedFiles,t):alert("{{ _('Будь ласка, виберіть дійсне місце перед завантаженням.') }}")});function uploadFiles(files,locationId){let currentIndex=0,successCount=0,errorCount=0,batchId=null;function resetUploadState(){uploadProgress.hide(),uploadBtn.prop('disabled',0===selectedFiles.length).text("{{ _('Завантажити та обробити') }}")}function finalizeBatch(){progressText.text('{{ _("Групування фото в серії...") }}'),progressBar.css('width','95%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/finalize-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({batch_id:batchId}),success:function(data){progressBar.css('width','100%'),progressText.text(`{{ _('Успішно згруповано') }} ${data.grouped_photos} {{ _('фото в серії') }}`),setTimeout(()=>{resetUploadState(),0===errorCount?(clearFileList(),uploadSuccessMessage.slideDown()):alert(`{{ _('Завантаження завершено:') }} ${successCount} {{ _('успішно,') }} ${errorCount} {{ _('з помилками') }}`)},1e3)},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка групування';alert(`{{ _('Помилка групування:') }} ${error}`),resetUploadState()}})}
 
+    $('#folder-input').on('change', function(e) {
+        let files = Array.from(e.target.files);
+        
+        // Фільтруємо, щоб залишити тільки jpg/jpeg
+        const imageRegex = /\.(jpe?g)$/i;
+        selectedFiles = files.filter(file => imageRegex.test(file.name));
+        
+        // Показуємо список і активуємо кнопку
+        displayFileList();
+        uploadBtn.prop('disabled', selectedFiles.length === 0);
+        uploadSuccessMessage.hide();
+    });
+    
     async function uploadNextFile(){
         if(currentIndex >= files.length)
             return void finalizeBatch();
