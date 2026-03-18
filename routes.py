@@ -2093,42 +2093,60 @@ def get_cached_species_for_filter():
 
 @camera_traps_bp.route('/analysis/species-detailed')
 def species_detailed(lang_code):
-    """
-    Сторінка детального аналізу поширення виду з веб-картою.
-    """
+    """Сторінка детального аналізу з фільтрацією доступних видів."""
+    ct_session = get_ct_session()
     try:
+        # 1. Права доступу
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        
+        # Отримуємо фільтр для локацій (аліас 'l')
+        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
+
+        # 2. Отримуємо тільки ті види, які є на доступних локаціях
+        # Використовуємо JOIN для перевірки наявності детекцій на дозволених місцях
+        species_query = ct_session.query(Species)\
+            .join(Identification, Species.id == Identification.species_id)\
+            .join(Photo, Identification.photo_id == Photo.id)\
+            .join(Observation, Photo.observation_id == Observation.id)\
+            .join(Location, Observation.location_id == Location.id)\
+            .filter(
+                Species.id > 0,
+                Observation.status.in_(['completed', 'archived']),
+                text(inst_condition) # Фільтр установ
+            ).params(**inst_params).distinct()
+
+        species_objects = species_query.order_by(Species.common_name_ua, Species.scientific_name).all()
+
+        species_list = []
+        for s in species_objects:
+            name_ua = s.common_name_ua if s.common_name_ua else s.scientific_name
+            name_en = s.common_name_en if s.common_name_en else s.scientific_name
+            species_list.append({
+                'id': s.id,
+                'name_ua': f"{name_ua} ({s.scientific_name})",
+                'name_en': f"{name_en} ({s.scientific_name})"
+            })
+        
         # Дати за замовчуванням
         today = date.today()
         default_start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
         default_end = today.strftime('%Y-%m-%d')
 
-        start_date_str = request.args.get('start_date', default_start)
-        end_date_str = request.args.get('end_date', default_end)
-        
-        # Отримуємо кешований список видів
-        species_list = get_cached_species_for_filter()
-        
         return render_template(
             'species_detailed.html',
             species_list=species_list,
-            start_date=start_date_str,
-            end_date=end_date_str
+            start_date=request.args.get('start_date', default_start),
+            end_date=request.args.get('end_date', default_end)
         )
-    except Exception as e:
-        current_app.logger.error(f"Error loading species detailed page: {e}", exc_info=True)
-        flash(_("Помилка завантаження сторінки."), 'danger')
-        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+    finally:
+        close_ct_session()
 
 @camera_traps_bp.route('/api/stats/distribution-map')
 def api_distribution_map(lang_code):
-    """
-    API повертає дані для карти.
-    ВИПРАВЛЕНО: Використовує логіку Consensus CTE, ідентичну головному дашборду.
-    """
     session = get_ct_session()
     conn = session.connection()
     try:
-        # 1. Отримання параметрів
         species_id = request.args.get('species_id', type=int)
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
@@ -2136,16 +2154,21 @@ def api_distribution_map(lang_code):
         if not all([species_id, start_date_str, end_date_str]):
             return jsonify({'error': 'Missing parameters'}), 400
             
-        # SQL параметри
+        # --- ПРАВА ДОСТУПУ ---
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        
+        # Важливо: використовуємо аліас 'l', бо він прописаний у SQL нижче
+        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='l')
+
         params = {
             'species_id': species_id,
             'start_date': start_date_str,
             'end_date': end_date_str
         }
+        params.update(inst_params) # Додаємо параметри установ (:user_inst_ids)
 
-        # 2. SQL Запит для ДЕТЕКЦІЙ (Копія логіки з stats_top_species)
-        # Використовуємо той самий механізм визначення "переможця" (RankedConsensus)
-        
+        # Консенсус CTE (без змін)
         consensus_cte = """
             WITH ObservationConsensus AS (
                 SELECT
@@ -2163,8 +2186,8 @@ def api_distribution_map(lang_code):
             )
         """
         
-        # Основний запит: Групуємо по ЛОКАЦІЯХ, фільтруємо по конкретному ВИДУ
-        query_sql = """
+        # Основний запит з доданим фільтром inst_condition
+        query_sql = f"""
             SELECT
                 l.id, l.name, l.latitude, l.longitude,
                 COUNT(o.id) as det_count
@@ -2175,17 +2198,17 @@ def api_distribution_map(lang_code):
                 rc.species_id = :species_id
                 AND o.status IN ('completed', 'archived')
                 AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+                AND ({inst_condition})
             GROUP BY l.id, l.name, l.latitude, l.longitude
         """
         
         final_query = consensus_cte + query_sql
-        
-        # Виконуємо запит
         detections_result = conn.execute(text(final_query), params).mappings().fetchall()
 
         if not detections_result:
             return jsonify({'summary': {'total_detections': 0, 'total_locations': 0, 'avg_rai': 0}, 'locations': []})
 
+        # Формування результатів (тут логіка залишається такою ж)
         locations_map = {}
         target_location_ids = []
         total_detections = 0
@@ -2193,23 +2216,15 @@ def api_distribution_map(lang_code):
         for row in detections_result:
             loc_id = row['id']
             count = row['det_count']
-            
             locations_map[loc_id] = {
-                'id': loc_id,
-                'name': row['name'],
-                'lat': float(row['latitude']),
-                'lon': float(row['longitude']),
-                'detections': count,
-                'effort': 0,
-                'rai': 0.0
+                'id': loc_id, 'name': row['name'], 
+                'lat': float(row['latitude']), 'lon': float(row['longitude']),
+                'detections': count, 'effort': 0, 'rai': 0.0
             }
             target_location_ids.append(loc_id)
             total_detections += count
 
-        # 3. Розрахунок EFFORT (Трап-днів)
-        # Тут ми залишаємо логіку на основі фотографій, бо це найнадійніший спосіб 
-        # дізнатися, чи була камера фізично активна в ці дні.
-        
+        # Розрахунок EFFORT (Трап-днів)
         # Отримуємо дати активності тільки для локацій, де знайшли вид
         dates_query = session.query(
             Location.id,
