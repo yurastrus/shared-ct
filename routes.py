@@ -1265,38 +1265,37 @@ def get_review_filters(lang_code):
 
 @camera_traps_bp.route('/gallery')
 def gallery(lang_code):
-    """Галерея класифікованих фото з можливістю управління вибраними."""
+    """Галерея класифікованих фото з фільтрацією прав доступу."""
     ct_session = get_ct_session()
-    
     try:
         # Визначаємо права користувача
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        
+        # Отримуємо SQL-фільтр (таблиця locations має аліас 'l')
+        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
+
         can_manage_favorites = False
         if current_user.is_authenticated:
             ct_profile = current_user.get_ct_profile()
             can_manage_favorites = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
 
-        # Отримуємо список видів для фільтра
-        if can_manage_favorites:
-            # Модератори та адміни бачать всі класифіковані фото
-            species_query = ct_session.query(Species)\
-                .join(Identification, Species.id == Identification.species_id)\
-                .join(Photo, Identification.photo_id == Photo.id)\
-                .filter(
-                    Photo.is_favorite == True,
-                    Photo.status.in_(['completed', 'pending', 'archived'])
-                )\
-                .distinct().order_by(Species.common_name_ua).all()
-        else:
-            # Звичайні користувачі бачать тільки реальні види (species_id > 0)
-            species_query = ct_session.query(Species)\
-                .join(Identification, Species.id == Identification.species_id)\
-                .join(Photo, Identification.photo_id == Photo.id)\
-                .filter(
-                    Species.id > 0,
-                    Photo.is_favorite == True,
-                    Photo.status.in_(['completed', 'pending', 'archived'])
-                )\
-                .distinct().order_by(Species.common_name_ua).all()
+        # Базовий запит для списку видів
+        species_query = ct_session.query(Species)\
+            .join(Identification, Species.id == Identification.species_id)\
+            .join(Photo, Identification.photo_id == Photo.id)\
+            .join(Observation, Photo.observation_id == Observation.id)\
+            .join(Location, Observation.location_id == Location.id)\
+            .filter(
+                Photo.is_favorite == True,
+                Photo.status.in_(['completed', 'pending', 'archived']),
+                text(inst_condition)
+            ).params(**inst_params)
+
+        if not can_manage_favorites:
+            species_query = species_query.filter(Species.id > 0)
+
+        species_objects = species_query.distinct().order_by(Species.common_name_ua).all()
 
         species_list = [{'id': 0, 'text': _('-- Всі види --')}]
         
@@ -1328,22 +1327,26 @@ def gallery(lang_code):
 
 @camera_traps_bp.route('/api/gallery/photos')
 def get_gallery_photos(lang_code):
-   """API для отримання фото галереї з фільтром по виду."""
+   """API для отримання фото галереї з врахуванням прав доступу."""
    ct_session = get_ct_session()
-   
    try:
        species_id = request.args.get('species_id', type=int)
-       
        if species_id is None:
            return jsonify({'error': 'Species ID is required'}), 400
 
-       # Визначаємо права користувача (безпечно для неавторизованих)
+       # Права доступу
+       user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+       is_admin = current_user.is_authenticated and current_user.has_role('admin')
+       
+       # Генеруємо фільтр
+       inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
+
        can_manage_favorites = False
        if current_user.is_authenticated:
            ct_profile = current_user.get_ct_profile()
            can_manage_favorites = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
 
-       # Базовий запит
+       # Формуємо запит
        query = ct_session.query(Photo)\
            .join(Identification, Photo.id == Identification.photo_id)\
            .join(Species, Identification.species_id == Species.id)\
@@ -1351,18 +1354,18 @@ def get_gallery_photos(lang_code):
            .join(Location, Observation.location_id == Location.id)\
            .filter(
                Photo.is_favorite == True,
-               Photo.status.in_(['completed', 'pending', 'archived'])
-           )
+               Photo.status.in_(['completed', 'pending', 'archived']),
+               text(inst_condition)
+           ).params(**inst_params)
 
-       # Додаємо фільтр по виду, ТІЛЬКИ ЯКЩО це не "Всі види"
+       # Фільтр по виду
        if species_id > 0:
            query = query.filter(Species.id == species_id)
 
-       # Додаткова фільтрація для не-модераторів (включно з неавторизованими)
+       # Приховуємо спец-категорії (Пусто, Людина і т.д.) для звичайних користувачів
        if not can_manage_favorites:
            query = query.filter(Species.id > 0)
 
-       # Сортування за датою зйомки
        photos = query.order_by(Photo.captured_at.desc()).all()
 
        if not photos:
