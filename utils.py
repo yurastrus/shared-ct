@@ -171,24 +171,35 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
                 f"Could not read EXIF datetime for '{file.filename}'. "
                 f"Falling back to placeholder time: {captured_at}"
             )
-        
-        # Перевірка на дублікат (тепер включаємо batch_id)
-        existing_photo = ct_session.query(Photo).join(Observation).filter(
-            Observation.location_id == location.id,
-            Photo.captured_at == captured_at
-        ).first()
-        
-        if existing_photo:
-            raise ValueError(
-                f"Duplicate photo detected. A photo for location ID {location.id} "
-                f"at {captured_at} already exists (Photo ID: {existing_photo.id})."
-            )
 
-        # Формування імені файлу
+        # 1. Формування оригінального імені файлу перед перевіркою
         original_filename = secure_filename(file.filename)
         if not original_filename:
             original_filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            
+        
+        # 2. Покращена перевірка на дублікат (Локація + Час + Оригінальне ім'я файлу)
+        # Перевіряємо серед вже згрупованих у спостереження фотографій
+        existing_photo = ct_session.query(Photo).join(Observation).filter(
+            Observation.location_id == location.id,
+            Photo.captured_at == captured_at,
+            Photo.original_filename == original_filename
+        ).first()
+        
+        # Якщо там немає, перевіряємо серед тих, що завантажені (або завантажуються зараз), але ще не згруповані
+        if not existing_photo:
+            existing_photo = ct_session.query(Photo).join(UploadBatch).filter(
+                UploadBatch.location_id == location.id,
+                Photo.captured_at == captured_at,
+                Photo.original_filename == original_filename
+            ).first()
+
+        if existing_photo:
+            raise ValueError(
+                f"Duplicate photo detected. File '{original_filename}' for location '{location.name}' "
+                f"at {captured_at} already exists."
+            )
+
+        # 3. Формування системного імені файлу
         lat_str = str(location.latitude).replace('.', '_')
         lon_str = str(location.longitude).replace('.', '_')
         timestamp_str = captured_at.strftime('%Y%m%d_%H%M%S_%f')
