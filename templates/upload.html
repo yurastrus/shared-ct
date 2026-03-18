@@ -86,6 +86,33 @@
 .file-status.error{
     color:#dc3545
 }
+.upload-buttons-vertical {
+    display: flex; /* Вмикаємо Flexbox */
+    flex-direction: column; /* Розміщуємо елементи в колонку */
+    align-items: flex-start; /* Вирівнюємо по лівому краю */
+}
+
+.upload-buttons-vertical .btn-file {
+    margin-bottom: 10px; /* Додаємо відступ знизу до кнопок */
+    width: 150px; /* Можна задати фіксовану ширину для краси */
+}
+.upload-buttons-centered {
+    display: flex;          /* Вмикаємо Flexbox */
+    flex-wrap: wrap;        /* Дозволяємо елементам переноситись на новий рядок */
+    justify-content: center;/* Горизонтально центруємо вміст (кнопки) */
+    align-items: center;      /* Вертикально центруємо для кращого вигляду */
+}
+
+/* Стилі для самих кнопок */
+.upload-buttons-centered .btn-file {
+    margin: 0 5px 10px 5px; /* Відступи: 0 зверху, по 5px з боків, 10px знизу */
+}
+
+/* Стилі для текстового напису */
+.upload-buttons-centered .text-muted {
+    flex-basis: 100%;       /* Змушуємо цей елемент зайняти 100% ширини, що автоматично переносить його на новий рядок */
+    text-align: center;     /* І центруємо текст всередині цього елемента */
+}
 .upload-progress{
     margin:15px 0;display:none
 }
@@ -171,11 +198,11 @@ input[type="text"], textarea {
     <div id="upload-section" class="mt-4" style="display: none;">
         <h3 class="form-section-title">{{ _('Крок 2: Завантажте фотографії') }}</h3>
         <input type="hidden" id="location-id" value="">
-        <div class="file-upload-area">
+        <div class="file-upload-area upload-buttons-centered">
             <span class="btn btn-primary btn-file">{{ _('Вибрати файли') }}
                 <input type="file" id="file-input" multiple accept="image/jpeg,image/jpg">
             </span>
-            <span class="btn btn-secondary btn-file" style="margin-left: 10px;">{{ _('Вибрати папку') }}
+            <span class="btn btn-secondary btn-file">{{ _('Вибрати папку') }}
                 <input type="file" id="folder-input" webkitdirectory directory multiple>
             </span>
             <span class="ml-3 text-muted">{{ _('Дозволені файли: .jpg, .jpeg') }}</span>
@@ -197,14 +224,19 @@ input[type="text"], textarea {
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+<!-- 1. Підключаємо бібліотеки -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<!-- 2. Основний скрипт сторінки -->
 <script>
 $(document).ready(function () {
+    // --- Змінні та константи ---
     const csrfToken = "{{ csrf_token() }}";
     const locationApiUrlPattern = "/{{ g.lang_code }}/camera-traps/api/location/";
 
+    // Елементи DOM
     const locationSelect = $('#{{ form.location.id }}');
     const newLocationFields = $('#new-location-fields');
     const createLocationBtn = $('#create-location-btn');
@@ -212,6 +244,7 @@ $(document).ready(function () {
     const uploadSection = $('#upload-section');
     const locationIdInput = $('#location-id');
     const fileInput = $('#file-input');
+    const folderInput = $('#folder-input');
     const fileList = $('#file-list');
     const uploadBtn = $('#upload-btn');
     const uploadSuccessMessage = $('#upload-success-message');
@@ -220,10 +253,10 @@ $(document).ready(function () {
     const progressText = $('.progress-text');
 
     let selectedFiles = [];
-    
     let map, markers = {};
     let activeLocationId = null;
 
+    // Іконки для карти
     const defaultIcon = L.icon({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -237,74 +270,39 @@ $(document).ready(function () {
         iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
 
+    // --- Функції ---
+
     function initMap() {
         const GEOSERVER_BASE_URL = "{{ geoserver_url }}";
         const geocache = `${GEOSERVER_BASE_URL}/gwc/service/wms`;
+        const kvartals_rsnr = L.tileLayer.wms(geocache, { layers: 'roztochya:kvartals_rsnr', format: 'image/png', transparent: true, pane: 'kvartalsPane' });
+        const vydils_rsnr = L.tileLayer.wms(geocache, { layers: 'roztochya:vydils_rsnr', format: 'image/png', transparent: true, pane: 'vydilsPane' });
         
-        const kvartals_rsnr = L.tileLayer.wms(geocache, {
-            layers: 'roztochya:kvartals_rsnr',
-            format: 'image/png',
-            transparent: true,
-            pane: 'kvartalsPane'
-        });
-
-        const vydils_rsnr = L.tileLayer.wms(geocache, {
-            layers: 'roztochya:vydils_rsnr',
-            format: 'image/png',
-            transparent: true,
-            pane: 'vydilsPane'
-        });
-
         map = L.map('map').setView([49.8, 23.6], 9);
-        
-        map.createPane('vydilsPane');
-        map.getPane('vydilsPane').style.zIndex = 450; // Менший z-index, буде нижче
-        map.createPane('kvartalsPane');
-        map.getPane('kvartalsPane').style.zIndex = 460; // Більший z-index, буде вище
+        map.createPane('vydilsPane').style.zIndex = 450;
+        map.createPane('kvartalsPane').style.zIndex = 460;
 
-        // Базові шари
-        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        });
-        
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 });
         const hybridLayer = L.layerGroup([
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                attribution: '© ESRI',
-                maxZoom: 19
-            }),
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19
-            })
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© ESRI', maxZoom: 19 }),
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        
-        // Додаємо OSM за замовчуванням
         osmLayer.addTo(map);
 
-                // Контроль шарів
-        const baseLayers = {
-            "OSM": osmLayer,
-            "Hybrid": hybridLayer
-        };
-
-        const overlayLayers = {
+        L.control.layers({ "OSM": osmLayer, "Hybrid": hybridLayer }, {
             "{{ _('Квартальна сітка ПЗ Розточчя') }}": kvartals_rsnr,
             "{{ _('Видільна сітка ПЗ Розточчя') }}": vydils_rsnr
-        };
-        
-        L.control.layers(baseLayers, overlayLayers).addTo(map);
+        }).addTo(map);
 
         const locationsData = {{ locations_json_string|safe }};
         const markersGroup = L.featureGroup();
-
         locationsData.forEach(loc => {
-            const marker = L.marker([loc.latitude, loc.longitude], {icon: defaultIcon});
+            const marker = L.marker([loc.latitude, loc.longitude], { icon: defaultIcon });
             marker.locationId = loc.id;
             marker.on('click', () => selectLocation(loc.id));
             markers[loc.id] = marker;
             markersGroup.addLayer(marker);
         });
-
         markersGroup.addTo(map);
         if (markersGroup.getBounds().isValid()) {
             map.fitBounds(markersGroup.getBounds().pad(0.1));
@@ -317,184 +315,257 @@ $(document).ready(function () {
 
     function updateMapSelection(locationId) {
         if (activeLocationId === locationId) return;
-
         if (activeLocationId && markers[activeLocationId]) {
             markers[activeLocationId].setIcon(defaultIcon);
         }
-        
         activeLocationId = locationId;
-
         if (markers[activeLocationId]) {
             markers[activeLocationId].setIcon(selectedIcon);
             map.panTo(markers[activeLocationId].getLatLng());
         }
     }
-    
-    initMap();
 
-    // ... (код для завантаження файлів без змін) ...
-    fileInput.on('change',function(e){selectedFiles=Array.from(e.target.files),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length),uploadSuccessMessage.hide()});function displayFileList(){if(0===selectedFiles.length)return void fileList.html('<div class="text-muted">{{ _("Файли не вибрані") }}</div>');let e="";selectedFiles.forEach((t,o)=>{const i=(t.size/1024/1024).toFixed(1),n=t.webkitRelativePath||t.name;e+=`<div class="file-item" data-index="${o}">${n} (${i} MB)<a href="#" class="file-remove" onclick="removeFile(${o}); return false;">[видалити]</a><span class="file-status" id="status-${o}"></span></div>`}),fileList.html(e)}window.removeFile=function(e){selectedFiles.splice(e,1),displayFileList(),uploadBtn.prop('disabled',0===selectedFiles.length);const t=new DataTransfer;selectedFiles.forEach(e=>t.items.add(e)),fileInput[0].files=t.files},uploadBtn.on('click',function(e){e.preventDefault();const t=locationIdInput.val();0===selectedFiles.length?alert("{{ _('Будь ласка, спочатку виберіть файли для завантаження.') }}"):t&&"-1"!==t&&"0"!==t?uploadFiles(selectedFiles,t):alert("{{ _('Будь ласка, виберіть дійсне місце перед завантаженням.') }}")});function uploadFiles(files,locationId){let currentIndex=0,successCount=0,errorCount=0,batchId=null;function resetUploadState(){uploadProgress.hide(),uploadBtn.prop('disabled',0===selectedFiles.length).text("{{ _('Завантажити та обробити') }}")}function finalizeBatch(){progressText.text('{{ _("Групування фото в серії...") }}'),progressBar.css('width','95%'),$.ajax({url:'/{{ g.lang_code }}/camera-traps/api/finalize-batch',method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},data:JSON.stringify({batch_id:batchId}),success:function(data){progressBar.css('width','100%'),progressText.text(`{{ _('Успішно згруповано') }} ${data.grouped_photos} {{ _('фото в серії') }}`),setTimeout(()=>{resetUploadState(),0===errorCount?(clearFileList(),uploadSuccessMessage.slideDown()):alert(`{{ _('Завантаження завершено:') }} ${successCount} {{ _('успішно,') }} ${errorCount} {{ _('з помилками') }}`)},1e3)},error:function(xhr){const error=xhr.responseJSON?xhr.responseJSON.error:'Помилка групування';alert(`{{ _('Помилка групування:') }} ${error}`),resetUploadState()}})}
+    function displayFileList() {
+        if (selectedFiles.length === 0) {
+            return fileList.html(`<div class="text-muted">{{ _("Файли не вибрані") }}</div>`);
+        }
+        let html = "";
+        selectedFiles.forEach((file, index) => {
+            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+            const displayName = file.webkitRelativePath || file.name;
+            html += `<div class="file-item" data-index="${index}">${displayName} (${sizeMB} MB)<a href="#" class="file-remove" onclick="removeFile(${index}); return false;">[видалити]</a><span class="file-status" id="status-${index}"></span></div>`;
+        });
+        fileList.html(html);
+    }
 
-    $('#folder-input').on('change', function(e) {
-        let files = Array.from(e.target.files);
-        
-        // Фільтруємо, щоб залишити тільки jpg/jpeg
-        const imageRegex = /\.(jpe?g)$/i;
-        selectedFiles = files.filter(file => imageRegex.test(file.name));
-        
-        // Показуємо список і активуємо кнопку
+    window.removeFile = function(index) {
+        selectedFiles.splice(index, 1);
         displayFileList();
         uploadBtn.prop('disabled', selectedFiles.length === 0);
-        uploadSuccessMessage.hide();
-    });
-    
-    async function uploadNextFile(){
-        if(currentIndex >= files.length)
-            return void finalizeBatch();
-            
-        const originalFile = files[currentIndex];
-        
-        // Зчитуємо стан галочки
-        const saveOriginal = $('#save-original-checkbox').is(':checked');
-        
-        let fileToUpload = originalFile;
-        
-        // Якщо галочка НЕ стоїть — стискаємо в браузері
-        if (!saveOriginal) {
-            $('#status-'+currentIndex).text('стиснення...').removeClass('success error');
-            
-            // Налаштування узгоджені з вашим CAMERA_TRAP_CONFIG
-            const options = {
-                maxSizeMB: 1,            // Запобіжник розміру
-                maxWidthOrHeight: 800,   // Збігається з THUMBNAIL_SIZE: (800, 800)
-                useWebWorker: true,
-                preserveExif: true       // ОБОВ'ЯЗКОВО зберігаємо час зйомки!
-            };
+        // Оновлюємо `input` елементи, щоб вони відповідали списку (опціонально, але правильно)
+        const dataTransfer = new DataTransfer();
+        selectedFiles.forEach(file => dataTransfer.items.add(file));
+        fileInput[0].files = dataTransfer.files;
+        folderInput[0].files = dataTransfer.files;
+    };
 
-            try {
-                const compressedBlob = await browserImageCompression(originalFile, options);
-                
-                // Перепаковуємо Blob у File, щоб сервер отримав правильне ім'я файлу
-                fileToUpload = new File([compressedBlob], originalFile.name, {
-                    type: compressedBlob.type,
-                    lastModified: originalFile.lastModified
-                });
-            } catch (error) {
-                console.error('Помилка стиснення на клієнті:', error);
-                fileToUpload = originalFile; // Фолбек: якщо помилка, відправляємо оригінал
-            }
+    function uploadFiles(files, locationId) {
+        let currentIndex = 0, successCount = 0, errorCount = 0, batchId = null;
+
+        function resetUploadState() {
+            uploadProgress.hide();
+            uploadBtn.prop('disabled', selectedFiles.length === 0).text("{{ _('Завантажити та обробити') }}");
         }
 
-        const formData = new FormData();
-        formData.append('location_id', locationId);
-        formData.append('batch_id', batchId);
-        formData.append('file', fileToUpload); // Відправляємо стиснений або оригінальний файл
-        formData.append('save_original', saveOriginal); // Передаємо статус галочки на сервер
-        
-        const uploadProgressPercent = 5 + Math.round(currentIndex / files.length * 85);
-        progressBar.css('width', uploadProgressPercent + '%');
-        progressText.text(`Завантажую файл ${currentIndex+1} з ${files.length}: ${originalFile.name}`);
-        
-        $('#status-'+currentIndex).text('завантажується...').removeClass('success error');
-        
+        function finalizeBatch() {
+            progressText.text('{{ _("Групування фото в серії...") }}');
+            progressBar.css('width', '95%');
+            $.ajax({
+                url: '/{{ g.lang_code }}/camera-traps/api/finalize-batch',
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                data: JSON.stringify({ batch_id: batchId }),
+                success: function(data) {
+                    progressBar.css('width', '100%');
+                    progressText.text(`{{ _('Успішно згруповано') }} ${data.grouped_photos} {{ _('фото в серії') }}`);
+                    setTimeout(() => {
+                        resetUploadState();
+                        if (errorCount === 0) {
+                            uploadSuccessMessage.slideDown();
+                        } else {
+                            alert(`{{ _('Завантаження завершено:') }} ${successCount} {{ _('успішно,') }} ${errorCount} {{ _('з помилками') }}`);
+                        }
+                    }, 1500);
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON ? xhr.responseJSON.error : 'Помилка групування';
+                    alert(`{{ _('Помилка групування:') }} ${error}`);
+                    resetUploadState();
+                }
+            });
+        }
+
+        async function uploadNextFile() {
+            if (currentIndex >= files.length) return finalizeBatch();
+
+            const originalFile = files[currentIndex];
+            const saveOriginal = $('#save-original-checkbox').is(':checked');
+            let fileToUpload = originalFile;
+
+            if (!saveOriginal) {
+                $('#status-' + currentIndex).text('стиснення...').removeClass('success error');
+                const options = {
+                    maxSizeMB: 1,
+                    maxWidthOrHeight: 800,
+                    useWebWorker: true,
+                    preserveExif: true
+                };
+                try {
+                    const compressedBlob = await browserImageCompression(originalFile, options);
+                    fileToUpload = new File([compressedBlob], originalFile.name, {
+                        type: compressedBlob.type,
+                        lastModified: originalFile.lastModified
+                    });
+                } catch (error) {
+                    console.error('Помилка стиснення:', error);
+                    fileToUpload = originalFile;
+                }
+            }
+
+            const formData = new FormData();
+            formData.append('location_id', locationId);
+            formData.append('batch_id', batchId);
+            formData.append('file', fileToUpload);
+            formData.append('save_original', saveOriginal);
+
+            progressBar.css('width', `${5 + Math.round(currentIndex / files.length * 85)}%`);
+            progressText.text(`Завантажую файл ${currentIndex + 1} з ${files.length}: ${originalFile.name}`);
+            $('#status-' + currentIndex).text('завантажується...').removeClass('success error');
+
+            $.ajax({
+                url: '/{{ g.lang_code }}/camera-traps/upload/process-single',
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function() {
+                    successCount++;
+                    $('#status-' + currentIndex).text('завантажено').addClass('success');
+                },
+                error: function(xhr) {
+                    errorCount++;
+                    const error = xhr.responseJSON ? xhr.responseJSON.error : 'Помилка';
+                    $('#status-' + currentIndex).text(`помилка: ${error}`).addClass('error');
+                },
+                complete: function() {
+                    currentIndex++;
+                    setTimeout(uploadNextFile, 100);
+                }
+            });
+        }
+
+        uploadBtn.prop('disabled', true).text("{{ _('Завантаження...') }}");
+        uploadProgress.show();
+        progressText.text('{{ _("Створення batch-сесії...") }}');
+        progressBar.css('width', '5%');
+
         $.ajax({
-            url: '/{{ g.lang_code }}/camera-traps/upload/process-single',
+            url: '/{{ g.lang_code }}/camera-traps/api/create-batch',
             method: 'POST',
-            headers: {'X-CSRFToken': csrfToken},
-            data: formData,
-            processData: false,
-            contentType: false,
-            success: function(data){
-                successCount++;
-                $('#status-'+currentIndex).text('завантажено').addClass('success');
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            data: JSON.stringify({ location_id: parseInt(locationId), total_files: files.length }),
+            success: function(data) {
+                batchId = data.batch_id;
+                uploadNextFile();
             },
-            error: function(xhr){
-                errorCount++;
-                const error = xhr.responseJSON ? xhr.responseJSON.error : 'Помилка сервера';
-                $('#status-'+currentIndex).text(`помилка: ${error}`).addClass('error');
-            },
-            complete: function(){
-                currentIndex++;
-                setTimeout(uploadNextFile, 100);
+            error: function(xhr) {
+                const error = xhr.responseJSON ? xhr.responseJSON.error : 'Помилка створення batch';
+                alert(`Помилка підготовки: ${error}`);
+                resetUploadState();
             }
         });
     }
 
+    // --- Обробники подій ---
+
+    fileInput.on('change', function(e) {
+        selectedFiles = Array.from(e.target.files);
+        displayFileList();
+        uploadBtn.prop('disabled', selectedFiles.length === 0);
+        uploadSuccessMessage.hide();
+    });
+
+    folderInput.on('change', function(e) {
+        let files = Array.from(e.target.files);
+        const imageRegex = /\.(jpe?g)$/i;
+        selectedFiles = files.filter(file => imageRegex.test(file.name));
+        displayFileList();
+        uploadBtn.prop('disabled', selectedFiles.length === 0);
+        uploadSuccessMessage.hide();
+    });
+
+    uploadBtn.on('click', function(e) {
+        e.preventDefault();
+        const locationId = locationIdInput.val();
+        if (selectedFiles.length === 0) {
+            alert("{{ _('Будь ласка, спочатку виберіть файли для завантаження.') }}");
+        } else if (locationId && locationId !== '-1' && locationId !== '0') {
+            uploadFiles(selectedFiles, locationId);
+        } else {
+            alert("{{ _('Будь ласка, виберіть дійсне місце перед завантаженням.') }}");
+        }
+    });
+
     locationSelect.on('change', function () {
         const selectedValue = $(this).val();
         updateMapSelection(selectedValue);
-
-        // Ось тут була неточність у вашій версії
         const allFields = $('#{{ form.new_location_name.id }}, #{{ form.description.id }}, #{{ form.latitude.id }}, #{{ form.longitude.id }}');
 
         if (selectedValue === '0') {
-            newLocationFields.slideDown(); 
-            uploadSection.slideUp(); 
+            newLocationFields.slideDown();
+            uploadSection.slideUp();
             locationIdInput.val('');
-            allFields.val('').prop('readonly', false); // Очищаємо і робимо всі поля доступними
-            createLocationBtn.show(); 
+            allFields.val('').prop('readonly', false);
+            createLocationBtn.show();
             locationFeedback.empty();
         } else if (selectedValue && selectedValue !== '-1') {
-            newLocationFields.slideDown(); 
+            newLocationFields.slideDown();
             locationIdInput.val(selectedValue);
-            const url = locationApiUrlPattern + selectedValue;
-            
-            $.get(url)
-            .done(function(data) {
-                // Заповнюємо всі поля
-                $('#{{ form.new_location_name.id }}').val(data.name);
-                $('#{{ form.description.id }}').val(data.description);
-                $('#{{ form.latitude.id }}').val(data.latitude);
-                $('#{{ form.longitude.id }}').val(data.longitude);
-                
-                allFields.prop('readonly', true); // Блокуємо всі поля
-                createLocationBtn.hide(); 
-                locationFeedback.empty(); 
-                uploadSection.slideDown();
-            })
-            .fail(function() {
-                locationFeedback.removeClass('alert-success').addClass('alert alert-warning')
-                    .text("{{ _('Не вдалося завантажити деталі локації, але ви можете продовжити завантаження.') }}");
-                uploadSection.slideDown(); 
-            });
+            $.get(locationApiUrlPattern + selectedValue)
+                .done(function(data) {
+                    $('#{{ form.new_location_name.id }}').val(data.name);
+                    $('#{{ form.description.id }}').val(data.description);
+                    $('#{{ form.latitude.id }}').val(data.latitude);
+                    $('#{{ form.longitude.id }}').val(data.longitude);
+                    allFields.prop('readonly', true);
+                    createLocationBtn.hide();
+                    locationFeedback.empty();
+                    uploadSection.slideDown();
+                })
+                .fail(function() {
+                    locationFeedback.removeClass('alert-success').addClass('alert alert-warning')
+                        .text("{{ _('Не вдалося завантажити деталі локації.') }}");
+                    uploadSection.slideDown();
+                });
         } else {
-            newLocationFields.slideUp(); 
-            uploadSection.slideUp(); 
+            newLocationFields.slideUp();
+            uploadSection.slideUp();
             locationIdInput.val('');
         }
     });
 
     createLocationBtn.on('click', function () {
         const name = $('#{{ form.new_location_name.id }}').val().trim();
-        const description = $('#{{ form.description.id }}').val().trim(); // Ця частина була правильна
+        const description = $('#{{ form.description.id }}').val().trim();
         const latitude = $('#{{ form.latitude.id }}').val();
         const longitude = $('#{{ form.longitude.id }}').val();
         if (!name || !latitude || !longitude) {
-            alert('{{ _("Назва та координати є обов\"язковими для створення нового місця.") }}'); 
-            return;
+            return alert('{{ _("Назва та координати є обов\"язковими.") }}');
         }
-        
         $.ajax({
             url: '/{{ g.lang_code }}/camera-traps/api/create-location',
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-            data: JSON.stringify({ name, description, latitude, longitude }), // і ця
+            data: JSON.stringify({ name, description, latitude, longitude }),
             success: function(data) {
                 locationFeedback.removeClass('alert-danger').addClass('alert alert-success').text(data.message);
                 if (data.location) {
                     const newOption = new Option(data.location.name, String(data.location.id), true, true);
-                    locationSelect.append(newOption).val(String(data.location.id)).trigger('change');
+                    locationSelect.append(newOption).trigger('change');
                 }
             },
             error: function(xhr) {
-                const error = xhr.responseJSON ? xhr.responseJSON.message : 'Сталася помилка під час створення місця.';
+                const error = xhr.responseJSON ? xhr.responseJSON.message : 'Помилка';
                 locationFeedback.removeClass('alert-success').addClass('alert alert-danger').text(error);
             }
         });
     });
 
-    const v = locationSelect.val();
-    if (v && v !== '-1' && v !== '0') {
+    // --- Початкове завантаження ---
+    initMap();
+    const initialLocationId = locationSelect.val();
+    if (initialLocationId && initialLocationId !== '-1' && initialLocationId !== '0') {
         locationSelect.trigger('change');
     }
 });
