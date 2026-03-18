@@ -401,7 +401,7 @@ $(document).ready(function () {
                     preserveExif: true
                 };
                 try {
-                    const compressedBlob = await browserImageCompression(originalFile, options);
+                    const compressedBlob = await imageCompression(originalFile, options);
                     fileToUpload = new File([compressedBlob], originalFile.name, {
                         type: compressedBlob.type,
                         lastModified: originalFile.lastModified
