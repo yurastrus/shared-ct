@@ -155,16 +155,9 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         captured_at = extract_datetime_from_exif(file)
 
         if captured_at is None:
-            # Використовуємо фіксовану дату, але додаємо унікальний зсув у секундах,
-            # щоб зберегти порядок фотографій та уникнути дублікатів.
             placeholder_date = datetime(1900, 1, 1)
-            
-            # Отримуємо поточний лічильник оброблених файлів з батча
             batch = ct_session.query(UploadBatch).get(batch_id)
-            seconds_offset = 0
-            if batch:
-                seconds_offset = batch.processed_files or 0
-            
+            seconds_offset = batch.processed_files or 0 if batch else 0
             captured_at = placeholder_date + timedelta(seconds=seconds_offset)
 
             current_app.logger.warning(
@@ -172,20 +165,18 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
                 f"Falling back to placeholder time: {captured_at}"
             )
 
-        # 1. Формування оригінального імені файлу перед перевіркою
+        # 1. Формування оригінального імені файлу
         original_filename = secure_filename(file.filename)
         if not original_filename:
             original_filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
         
-        # 2. Покращена перевірка на дублікат (Локація + Час + Оригінальне ім'я файлу)
-        # Перевіряємо серед вже згрупованих у спостереження фотографій
+        # 2. Покращена перевірка на дублікат
         existing_photo = ct_session.query(Photo).join(Observation).filter(
             Observation.location_id == location.id,
             Photo.captured_at == captured_at,
             Photo.original_filename == original_filename
         ).first()
         
-        # Якщо там немає, перевіряємо серед тих, що завантажені (або завантажуються зараз), але ще не згруповані
         if not existing_photo:
             existing_photo = ct_session.query(Photo).join(UploadBatch).filter(
                 UploadBatch.location_id == location.id,
@@ -204,21 +195,30 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         lon_str = str(location.longitude).replace('.', '_')
         timestamp_str = captured_at.strftime('%Y%m%d_%H%M%S_%f')
         
-        # Використовуємо batch_id у назві файлу
         base_name = f"{lat_str}_{lon_str}_{timestamp_str}_{batch_id[:8]}"
         ext = os.path.splitext(original_filename)[1] or '.jpg'
         
+        # === НОВИЙ НАДІЙНИЙ БЛОК ПЕРЕВІРКИ УНІКАЛЬНОСТІ ІМЕНІ ===
         counter = 1
-        system_filename = f"{base_name}_{counter:02d}{ext}"
-        raw_path = os.path.join(raw_folder, system_filename)
-        while os.path.exists(raw_path):
-            counter += 1
+        while True:
             system_filename = f"{base_name}_{counter:02d}{ext}"
             raw_path = os.path.join(raw_folder, system_filename)
+            thumb_path = os.path.join(thumb_folder, system_filename)
+            
+            # Перевіряємо чи є файл на диску (в сирих АБО в мініатюрах)
+            disk_exists = os.path.exists(raw_path) or os.path.exists(thumb_path)
+            
+            if not disk_exists:
+                # Перевіряємо чи немає такого системного імені вже в базі даних!
+                db_exists = ct_session.query(Photo.id).filter_by(system_filename=system_filename).first()
+                if not db_exists:
+                    break # Знайшли абсолютно унікальне ім'я!
+            
+            counter += 1
+        # ========================================================
 
         # Збереження файлів
         file.seek(0)
-        thumb_path = os.path.join(thumb_folder, system_filename)
 
         if save_original:
             # Зберігаємо оригінал і створюємо мініатюру з нього
@@ -228,23 +228,21 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
             # Оригінал не зберігаємо, створюємо мініатюру прямо з потоку
             create_thumbnail(file, thumb_path)
 
-        # Створення запису в БД БЕЗ observation_id
+        # Створення запису в БД
         photo = Photo(
             upload_batch_id=batch_id,
             original_filename=original_filename,
             system_filename=system_filename,
             captured_at=captured_at,
-            status='uploaded'  # Новий статус для негрупованих фото
+            status='uploaded'
         )
         ct_session.add(photo)
         
-        # Оновлюємо лічильник оброблених файлів у батчі
         batch = ct_session.query(UploadBatch).get(batch_id)
         if batch:
             batch.processed_files = (batch.processed_files or 0) + 1
         
         ct_session.commit()
-        current_app.logger.info(f"Successfully processed photo {system_filename} for batch {batch_id}")
         
         return photo.id
         
