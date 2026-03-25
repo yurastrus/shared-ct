@@ -5,6 +5,7 @@
 {% block title %}{{ _('Завантаження даних фотопасток') }}{% endblock %}
 
 {% block head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 
 <style>
@@ -169,8 +170,18 @@ input[type="text"], textarea {
         
         <div class="upload-layout">
             <div class="form-panel">
-                <form id="location-form" method="POST" novalidate>
+<form id="location-form" method="POST" novalidate>
                     {{ form.hidden_tag() }}
+                    <div class="mb-3 d-flex align-items-center">
+                        <label for="institution-select" class="me-2 text-nowrap" style="margin-bottom: 0; margin-right: 10px; padding-top: 3px;">{{ _('Установа/проект') }}</label>
+                        <select id="institution-select" class="form-select" style="max-width: 325px;">
+                            <option value="">{{ _('-- Усі доступні установи --') }}</option>
+                            {% for inst in institutions %}
+                                <option value="{{ inst.id }}">{{ inst.name_uk if g.lang_code == 'uk' else (inst.name_en or inst.name_uk) }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         {{ render_field(form.location, class="form-select") }}
                     </div>
@@ -228,6 +239,7 @@ input[type="text"], textarea {
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <!-- 2. Основний скрипт сторінки -->
 <script>
@@ -255,6 +267,9 @@ $(document).ready(function () {
     let selectedFiles = [];
     let map, markers = {};
     let activeLocationId = null;
+    const institutionSelect = $('#institution-select');
+    const locationsData = {{ locations_json_string|safe }};
+    let isProgrammaticChange = false; // Захист від нескінченного зациклення списків
 
     // Іконки для карти
     const defaultIcon = L.icon({
@@ -294,7 +309,6 @@ $(document).ready(function () {
             "{{ _('Видільна сітка ПЗ Розточчя') }}": vydils_rsnr
         }).addTo(map);
 
-        const locationsData = {{ locations_json_string|safe }};
         const markersGroup = L.featureGroup();
         locationsData.forEach(loc => {
             const marker = L.marker([loc.latitude, loc.longitude], { icon: defaultIcon });
@@ -469,6 +483,50 @@ $(document).ready(function () {
 
     // --- Обробники подій ---
 
+    // Фільтрація локацій та масштабування карти при виборі установи
+    institutionSelect.on('change', function() {
+        const instId = $(this).val();
+        const currentLocId = locationSelect.val(); // Запам'ятовуємо, що було вибрано
+        
+        // Очищаємо список місць
+        locationSelect.empty();
+        locationSelect.append(new Option('{{ _("-- Будь ласка, виберіть --") }}', '-1'));
+        
+        let visibleMarkers =[]; // Збираємо маркери для автомасштабування
+
+        // Фільтруємо місця та карту
+        locationsData.forEach(loc => {
+            const belongsToInst = !instId || (loc.institution_ids && loc.institution_ids.includes(parseInt(instId)));
+            
+            if (belongsToInst) {
+                locationSelect.append(new Option(loc.name, loc.id));
+                if (markers[loc.id] && map) {
+                    if (!map.hasLayer(markers[loc.id])) map.addLayer(markers[loc.id]);
+                    visibleMarkers.push(markers[loc.id]); // Додаємо у список видимих
+                }
+            } else {
+                if (markers[loc.id] && map && map.hasLayer(markers[loc.id])) {
+                    map.removeLayer(markers[loc.id]);
+                }
+            }
+        });
+        
+        locationSelect.append(new Option('{{ _("*** СТВОРИТИ НОВЕ МІСЦЕ ***") }}', '0'));
+
+        // Автомасштабування карти (без анімації, щоб не конфліктувати з вибором конкретної точки)
+        if (visibleMarkers.length > 0 && map) {
+            const group = new L.featureGroup(visibleMarkers);
+            map.fitBounds(group.getBounds().pad(0.1), { animate: false });
+        }
+        
+        // Відновлюємо вибір місця
+        if (locationSelect.find(`option[value="${currentLocId}"]`).length > 0) {
+            locationSelect.val(currentLocId);
+        } else {
+            locationSelect.val('-1').trigger('change');
+        }
+    });
+
     fileInput.on('change', function(e) {
         selectedFiles = Array.from(e.target.files);
         displayFileList();
@@ -499,6 +557,19 @@ $(document).ready(function () {
 
     locationSelect.on('change', function () {
         const selectedValue = $(this).val();
+        
+        // --- Зворотна залежність: підставляємо установу, якщо вибрали місце ---
+        if (selectedValue && selectedValue !== '-1' && selectedValue !== '0') {
+            const loc = locationsData.find(l => String(l.id) === String(selectedValue));
+            if (loc && loc.institution_ids && loc.institution_ids.length > 0) {
+                const currentInst = institutionSelect.val();
+                if (!currentInst || !loc.institution_ids.includes(parseInt(currentInst))) {
+                    // Це автоматично викличе фільтрацію та масштабування карти (код вище)
+                    institutionSelect.val(loc.institution_ids[0]).trigger('change');
+                }
+            }
+        }
+         
         updateMapSelection(selectedValue);
         const allFields = $('#{{ form.new_location_name.id }}, #{{ form.description.id }}, #{{ form.latitude.id }}, #{{ form.longitude.id }}');
 
@@ -541,7 +612,7 @@ $(document).ready(function () {
         const latitude = $('#{{ form.latitude.id }}').val();
         const longitude = $('#{{ form.longitude.id }}').val();
         if (!name || !latitude || !longitude) {
-            return alert('{{ _("Назва та координати є обов\"язковими.") }}');
+            return alert('{{ _("Назва та координати є обов`язковими.") }}');
         }
         $.ajax({
             url: '/{{ g.lang_code }}/camera-traps/api/create-location',

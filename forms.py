@@ -8,7 +8,7 @@ from flask_babel import lazy_gettext as _l # <-- Імпортуємо lazy_gette
 
 class UploadForm(FlaskForm):
     # Всі текстові мітки обгортаємо в _l()
-    location = SelectField(_l('Виберіть існуюче місце'), coerce=int, validators=[Optional()])
+    location = SelectField(_l('Виберіть місце'), coerce=int, validators=[Optional()])
 
     new_location_name = StringField(
         _l('Назва місця'), 

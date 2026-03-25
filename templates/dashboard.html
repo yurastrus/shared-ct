@@ -125,21 +125,43 @@
         </div>
         
         <!-- Розділ швидких дій -->
-        {% if current_user.is_authenticated and ct_profile and ct_profile.camera_trap_role in ['identifier', 'data_user', 'moderator', 'admin'] %}
+        <!-- Розділ швидких дій -->
+    {% if current_user.is_authenticated %}
+
+    {# --- Початок: Визначаємо права доступу з м'яким переходом (стара + нова база) --- #}
+    {% set has_old_profile = ct_profile is defined and ct_profile %}
+
+    {# Перевірка ролі 'identifier' або вище #}
+    {% set is_identifier = (has_old_profile and ct_profile.camera_trap_role in ['identifier', 'data_user', 'moderator', 'admin']) or (current_user.has_role('identifier') or current_user.has_role('data_user') or current_user.has_role('manager') or current_user.has_role('admin')) %}
+    
+    {# Перевірка ролі 'data_user' або вище #}
+    {% set is_data_user = (has_old_profile and ct_profile.camera_trap_role in ['data_user', 'moderator', 'admin']) or (current_user.has_role('data_user') or current_user.has_role('manager') or current_user.has_role('admin')) %}
+
+    {# Перевірка ролі 'moderator' або вище #}
+    {% set is_moderator = (has_old_profile and ct_profile.camera_trap_role in ['moderator', 'admin']) or (current_user.has_role('manager') or current_user.has_role('admin')) %}
+
+    {# Перевірка ролі 'admin' #}
+    {% set is_admin = (has_old_profile and ct_profile.camera_trap_role == 'admin') or current_user.has_role('admin') %}
+    {# --- Кінець: Права доступу визначено --- #}
+
+    {% if is_identifier %} {# Показуємо блок, тільки якщо є хоч якісь права #}
         <div class="dashboard-section">
             <h2 class="section-title">{{ _('Швидкі дії') }}</h2>
             <div class="quick-actions">
-                {% if ct_profile.camera_trap_role in ['identifier', 'data_user', 'moderator', 'admin'] %}
+                {% if is_identifier %}
                     <a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Ідентифікувати') }}</a>
                 {% endif %}
-                {% if ct_profile.camera_trap_role in ['moderator', 'admin'] %}
+
+                {% if is_moderator %}
                     <a href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Завантажити фото') }}</a>
                     <a href="{{ url_for('camera_traps.service_log', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Обслуговування') }}</a>
                 {% endif %}
-                {% if ct_profile.camera_trap_role in ['data_user', 'moderator', 'admin'] %}
+
+                {% if is_data_user %}
                     <a href="{{ url_for('camera_traps.ct_data_export', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Експорт даних') }}</a>
                 {% endif %}
-                {% if ct_profile.camera_trap_role in ['admin'] %}
+
+                {% if is_admin %}
                     <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}" class="btn btn-info">{{ _('Управління локаціями') }}</a>
                     <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
@@ -175,6 +197,7 @@
             </div>
         </div>
         {% endif %}
+    {% endif %}
 
         <!-- Панель фільтрів -->
         <form id="filters-form" method="GET" class="filters-panel">

@@ -18,7 +18,7 @@ from .analytics_calculator import update_analytics_tables
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, UserProfile, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
-from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats 
+from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions
 from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
@@ -331,7 +331,10 @@ def identify(lang_code):
     try:
         form = IdentificationForm()
         ct_profile = current_user.get_ct_profile()
-        can_review = ct_profile.camera_trap_role in ['moderator', 'admin']
+        # ТУТ ТРЕБА БУДЕ ПОПРАВИТИ ПЕРЕВІРКУ ПІСЛЯ ОСТАТОЧНОГО ПРЕХОДУ НА НОВУ СИСТЕМУ АУТЕНТИФІКАЦІЇ
+        can_review_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+        can_review_new = current_user.has_role('moderator') or current_user.has_role('admin')
+        can_review = can_review_old or can_review_new
         
         # --- ПОЧАТОК НОВОЇ, ДИНАМІЧНОЇ ЛОГІКИ ---
 
@@ -402,13 +405,46 @@ def identify(lang_code):
 
 @camera_traps_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
-@role_required('moderator')
+@role_required('moderator','manager')
 def upload(lang_code):
     ct_session = get_ct_session()
     try:
         form = UploadForm()
-        locations = ct_session.query(Location).order_by(Location.name).all()
+        
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+        is_admin = current_user.has_role('admin')
+
+        # --- ПОЧАТОК НОВОЇ, БЕЗПЕЧНОЇ ЛОГІКИ ---
+        if is_admin:
+            # Адміністратор бачить абсолютно всі локації для завантаження
+            locations = ct_session.query(Location).order_by(Location.name).all()
+        elif user_inst_ids:
+            # Модератор бачить ТІЛЬКИ ті локації, які належать його установам.
+            # Публічні локації (visibility_level=0) сюди не потраплять, якщо вони не прив'язані до установи.
+            locations = ct_session.query(Location)\
+                .join(location_institutions, Location.id == location_institutions.c.location_id)\
+                .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
+                .order_by(Location.name).distinct().all()
+        else:
+            # Якщо користувач - модератор, але без жодної установи, він не бачить жодної локації
+            locations = []
+        # --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
+
         form.location.choices = [(-1, _('-- Будь ласка, виберіть --'))] + [(loc.id, loc.name) for loc in locations] + [(0, _('*** СТВОРИТИ НОВЕ МІСЦЕ ***'))]
+        
+        # Отримуємо установи поточного користувача (цей код вже правильний)
+        if is_admin:
+            institutions_list = Institution.query.order_by(Institution.name_uk).all()
+        else:
+            institutions_list = current_user.institutions
+
+        # Цей блок залишається без змін, він потрібен для JavaScript-фільтрації
+        all_loc_inst_records = ct_session.query(location_institutions).all()
+        loc_to_inst = {}
+        for record in all_loc_inst_records:
+            if record.location_id not in loc_to_inst:
+                loc_to_inst[record.location_id] = []
+            loc_to_inst[record.location_id].append(record.institution_id)
         
         locations_data = []
         for loc in locations:
@@ -416,17 +452,18 @@ def upload(lang_code):
                 'id': loc.id,
                 'name': loc.name,
                 'latitude': float(loc.latitude),
-                'longitude': float(loc.longitude)
+                'longitude': float(loc.longitude),
+                'institution_ids': loc_to_inst.get(loc.id, [])
             })
         
         locations_json_string = json.dumps(locations_data)
-        
         geoserver_url = current_app.config['GEOSERVER_URL']
         
         return render_template('upload.html', 
                                form=form,
                                locations_json_string=locations_json_string,
-                               geoserver_url=geoserver_url)
+                               geoserver_url=geoserver_url,
+                               institutions=institutions_list)
     finally:
         close_ct_session()
 
@@ -845,12 +882,15 @@ def submit_identification(lang_code):
         observation = ct_session.query(Observation).get(observation_id)
         if not observation:
             return jsonify({'success': False, 'error': _('Серію не знайдено.')}), 404
-
+        
         ct_profile = ct_session.query(UserProfile).get(current_user.id)
         if not ct_profile:
             return jsonify({'success': False, 'error': _('Профіль користувача для фотопасток не знайдено.')}), 404
 
-        is_moderator = ct_profile.camera_trap_role in ['moderator', 'admin']
+        is_moderator_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+        is_moderator_new = current_user.has_role('moderator') or current_user.has_role('admin')
+        is_moderator = is_moderator_old or is_moderator_new
+
         moderator_override = is_moderator and observation.status == 'completed'
 
         selected_behaviors = ct_session.query(BehaviorType).filter(BehaviorType.id.in_(behavior_ids)).all() if behavior_ids else []
@@ -939,7 +979,10 @@ def next_observation_for_identification(lang_code):
         # Перевіряємо права доступу для review режиму
         if review_mode:
             ct_profile = current_user.get_ct_profile()
-            if ct_profile.camera_trap_role not in ['moderator', 'admin']:
+            has_old_access = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+            has_new_access = current_user.has_role('moderator') or current_user.has_role('admin')
+            
+            if not (has_old_access or has_new_access):
                 return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
         
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
@@ -1278,7 +1321,9 @@ def gallery(lang_code):
         can_manage_favorites = False
         if current_user.is_authenticated:
             ct_profile = current_user.get_ct_profile()
-            can_manage_favorites = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+            can_manage_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+            can_manage_new = current_user.has_role('moderator') or current_user.has_role('admin')
+            can_manage_favorites = can_manage_old or can_manage_new
 
         # Базовий запит для списку видів
         species_query = ct_session.query(Species)\
@@ -1344,7 +1389,9 @@ def get_gallery_photos(lang_code):
        can_manage_favorites = False
        if current_user.is_authenticated:
            ct_profile = current_user.get_ct_profile()
-           can_manage_favorites = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+           can_manage_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
+           can_manage_new = current_user.has_role('moderator') or current_user.has_role('admin')
+           can_manage_favorites = can_manage_old or can_manage_new
 
        # Формуємо запит
        query = ct_session.query(Photo)\
