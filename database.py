@@ -54,8 +54,14 @@ def get_ct_session():
 def close_ct_session():
     """
     Закриває поточну сесію Camera Traps DB.
+    Явний rollback перед remove() гарантує що з'єднання повертається
+    в пул без відкритої транзакції (без 'idle in transaction' в PostgreSQL).
     """
     if _ct_session_factory:
+        try:
+            _ct_session_factory().rollback()
+        except Exception:
+            pass
         _ct_session_factory.remove()
 
 def init_ct_database():
