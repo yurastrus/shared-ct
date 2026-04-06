@@ -1838,13 +1838,34 @@ def api_get_identification_stats(lang_code):
         user_identified_photos = ct_session.query(Identification.photo_id)\
                                              .filter_by(user_id=current_user.id)
 
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+        is_admin = current_user.has_role('admin')
+
+        if not is_admin:
+            if user_inst_ids:
+                allowed_location_ids = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(user_inst_ids)
+                )
+                location_filter = or_(
+                    Location.visibility_level == 0,
+                    Location.id.in_(allowed_location_ids)
+                )
+            else:
+                location_filter = (Location.visibility_level == 0)
+
         # Рахуємо кількість спостережень, які в статусі 'pending' і
         # НЕ містять жодного фото, яке користувач вже ідентифікував
-        remaining_count = ct_session.query(Observation.id)\
+        query = ct_session.query(Observation.id)\
                                     .filter(
                                         Observation.status == 'pending',
                                         ~Observation.photos.any(Photo.id.in_(user_identified_photos))
-                                    ).count()
+                                    )
+
+        if not is_admin:
+            query = query.join(Location, Observation.location_id == Location.id)\
+                .filter(location_filter)
+
+        remaining_count = query.count()
 
         return jsonify({'remaining_count': remaining_count})
 
