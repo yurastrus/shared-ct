@@ -4,7 +4,7 @@ from flask import render_template, g, flash, redirect, url_for, jsonify, request
 from datetime import datetime, date, timedelta
 from flask_login import login_required, current_user
 from flask_babel import gettext as _
-from sqlalchemy import func, distinct, extract, select, text
+from sqlalchemy import func, distinct, extract, select, text, or_
 import io
 import csv
 import os
@@ -986,7 +986,22 @@ def next_observation_for_identification(lang_code):
                 return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
         
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
-        
+
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+        is_admin = current_user.has_role('admin')
+
+        if not is_admin:
+            if user_inst_ids:
+                allowed_location_ids = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(user_inst_ids)
+                )
+                location_filter = or_(
+                    Location.visibility_level == 0,
+                    Location.id.in_(allowed_location_ids)
+                )
+            else:
+                location_filter = (Location.visibility_level == 0)
+
         if review_mode:
             # В review режимі показуємо як pending так і completed з ідентифікаціями
             query = ct_session.query(Observation).filter(
@@ -994,6 +1009,10 @@ def next_observation_for_identification(lang_code):
                 Observation.photos.any(Photo.identifications.any()),
                 ~Observation.photos.any(Photo.id.in_(user_identified_photos))
             )
+
+            if not is_admin:
+                query = query.join(Location, Observation.location_id == Location.id)\
+                    .filter(location_filter)
             
             # Додаємо фільтр по користувачу
             if review_user_id:
@@ -1024,10 +1043,16 @@ def next_observation_for_identification(lang_code):
 
         else:
             # Звичайний режим - тільки pending, завжди випадково
-            observation = ct_session.query(Observation).filter(
-                Observation.status == 'pending', 
+            query = ct_session.query(Observation).filter(
+                Observation.status == 'pending',
                 ~Observation.photos.any(Photo.id.in_(user_identified_photos))
-            ).order_by(func.random()).first()
+            )
+
+            if not is_admin:
+                query = query.join(Location, Observation.location_id == Location.id)\
+                    .filter(location_filter)
+
+            observation = query.order_by(func.random()).first()
         
         if not observation:
             if review_mode:
