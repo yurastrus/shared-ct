@@ -12,7 +12,8 @@ from sqlalchemy import func, extract, select, distinct
 from .database import get_ct_session, close_ct_session
 from .models import (
     Observation, Photo, Identification, Species, Location,
-    LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend
+    LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend,
+    location_institutions
 )
 
 # Налаштовуємо логування, щоб бачити, що відбувається під час виконання
@@ -115,99 +116,132 @@ def _calculate_monthly_activity():
     finally:
         close_ct_session()
 
+def _run_bootstrap(species_id, location_data, scope_locations, all_years, scope_type, scope_id, N_ITERATIONS):
+    """
+    Bootstrap для одного виду і одного скоупу локацій.
+    Повертає список об'єктів SpeciesYearlyTrend.
+    """
+    if not scope_locations or not all_years:
+        return []
+
+    n = len(scope_locations)
+    bootstrap_results = defaultdict(list)
+
+    for _ in range(N_ITERATIONS):
+        sampled = random.choices(scope_locations, k=n)
+        for year in all_years:
+            total_det = total_trap = 0
+            for loc_id in sampled:
+                det, trap = location_data.get(loc_id, {}).get(year, (0, 0))
+                total_det += det
+                total_trap += trap
+            if total_trap > 0:
+                bootstrap_results[year].append((total_det * 100) / total_trap)
+
+    return [
+        SpeciesYearlyTrend(
+            species_id=species_id, year=year,
+            scope_type=scope_type, scope_id=scope_id,
+            mean_dr_index=float(np.mean(results)),
+            lower_ci=float(np.percentile(results, 2.5)),
+            upper_ci=float(np.percentile(results, 97.5))
+        )
+        for year, results in bootstrap_results.items() if results
+    ]
+
+
 def _calculate_yearly_trends_with_bootstrap():
     """
-    Розраховує річні тренди та довірчі інтервали, використовуючи дані
-    з location_monthly_activity, і зберігає їх у species_yearly_trends.
+    Розраховує річні тренди з bootstrap для трьох скоупів:
+      - global (всі локації)
+      - institution (окремо для кожної установи)
+      - ecoregion (для кожного екорегіону)
     """
     session = get_ct_session()
-    # Для тестування ставимо менше ітерацій, для продакшену - 5000-10000
     N_ITERATIONS = 10000
 
     try:
         logging.info("Starting yearly trend calculation with bootstrap...")
 
-        # Крок 1: Очищуємо цільову таблицю
-        logging.info("Truncating SpeciesYearlyTrend table...")
         session.query(SpeciesYearlyTrend).delete()
         session.commit()
 
-        # Крок 2: Знаходимо всі види, для яких є дані в проміжній таблиці
-        species_to_process = session.query(LocationMonthlyActivity.species_id).distinct().all()
-        species_ids = [s[0] for s in species_to_process]
-        logging.info(f"Found {len(species_ids)} species to process.")
+        # Завантажуємо mapping локація → установа з ct_db
+        loc_inst_rows = session.execute(
+            select(location_institutions.c.location_id, location_institutions.c.institution_id)
+        ).fetchall()
+
+        from collections import defaultdict as _dd
+        inst_locations = _dd(set)   # {institution_id: {location_id, ...}}
+        for loc_id, inst_id in loc_inst_rows:
+            inst_locations[inst_id].add(loc_id)
+
+        # Завантажуємо екорегіони установ з головної БД
+        from app.models import Institution
+        institutions = Institution.query.filter(Institution.ecoregion_uk.isnot(None)).all()
+        eco_locations = _dd(set)    # {ecoregion_uk: {location_id, ...}}
+        for inst in institutions:
+            eco_locations[inst.ecoregion_uk].update(inst_locations.get(inst.id, set()))
+
+        # Всі види
+        species_ids = [s[0] for s in session.query(LocationMonthlyActivity.species_id).distinct().all()]
+        logging.info(f"Found {len(species_ids)} species, "
+                     f"{len(inst_locations)} institutions, "
+                     f"{len(eco_locations)} ecoregions.")
 
         final_trends = []
+
         for species_id in species_ids:
             logging.info(f"  Processing species ID: {species_id}...")
 
-            # Крок 3: Агрегуємо щомісячні дані до річних для кожної локації
-            yearly_data_by_location = session.query(
+            yearly_rows = session.query(
                 LocationMonthlyActivity.location_id,
                 LocationMonthlyActivity.year,
                 func.sum(LocationMonthlyActivity.detection_count).label('total_detections'),
                 func.sum(LocationMonthlyActivity.trap_days).label('total_trap_days')
             ).filter(LocationMonthlyActivity.species_id == species_id)\
-            .group_by(LocationMonthlyActivity.location_id, LocationMonthlyActivity.year)\
-            .all()
+             .group_by(LocationMonthlyActivity.location_id, LocationMonthlyActivity.year)\
+             .all()
 
-            if not yearly_data_by_location:
-                logging.warning(f"  No yearly data for species {species_id}, skipping.")
+            if not yearly_rows:
                 continue
 
-            # Крок 4: Готуємо дані для бутстрепу
-            location_data = defaultdict(dict)
-            unique_locations = set()
-            for row in yearly_data_by_location:
+            location_data = _dd(dict)
+            for row in yearly_rows:
                 location_data[row.location_id][row.year] = (row.total_detections, row.total_trap_days)
-                unique_locations.add(row.location_id)
 
-            unique_locations = list(unique_locations)
-            n_locations = len(unique_locations)
-            all_years = sorted(list(set(r.year for r in yearly_data_by_location)))
-            
-            # Словник для зберігання результатів: {рік: [список_індексів_DR]}
-            bootstrap_results = defaultdict(list)
+            available_locs = set(location_data.keys())
+            all_years = sorted(set(r.year for r in yearly_rows))
 
-            # Крок 5: Запускаємо цикл бутстрепу
-            for _ in range(N_ITERATIONS):
-                # Випадково вибираємо локації (з поверненням)
-                sampled_locations = random.choices(unique_locations, k=n_locations)
-                
-                for year in all_years:
-                    yearly_total_detections = 0
-                    yearly_total_trap_days = 0
-                    for loc_id in sampled_locations:
-                        detections, trap_days = location_data.get(loc_id, {}).get(year, (0, 0))
-                        yearly_total_detections += detections
-                        yearly_total_trap_days += trap_days
-                    
-                    if yearly_total_trap_days > 0:
-                        dr_index = (yearly_total_detections * 100) / yearly_total_trap_days
-                        bootstrap_results[year].append(dr_index)
-            
-            # Крок 6: Обраховуємо фінальну статистику (середнє, 95% ДІ)
-            for year, results_for_year in bootstrap_results.items():
-                # --- ВИПРАВЛЕННЯ ТУТ ---
-                # Явно конвертуємо кожен результат у стандартний float
-                mean_dr = float(np.mean(results_for_year))
-                lower_ci, upper_ci = map(float, np.percentile(results_for_year, [2.5, 97.5]))
+            # 1. Global
+            final_trends.extend(_run_bootstrap(
+                species_id, location_data, list(available_locs),
+                all_years, 'global', '', N_ITERATIONS))
 
-                trend = SpeciesYearlyTrend(
-                    species_id=species_id, year=year,
-                    mean_dr_index=mean_dr, lower_ci=lower_ci, upper_ci=upper_ci
-                )
-                final_trends.append(trend)
+            # 2. Per institution
+            for inst_id, locs in inst_locations.items():
+                scope_locs = list(available_locs & locs)
+                if scope_locs:
+                    final_trends.extend(_run_bootstrap(
+                        species_id, location_data, scope_locs,
+                        all_years, 'institution', str(inst_id), N_ITERATIONS))
 
-        # Крок 7: Зберігаємо всі результати в БД
+            # 3. Per ecoregion
+            for eco_uk, locs in eco_locations.items():
+                scope_locs = list(available_locs & locs)
+                if scope_locs:
+                    final_trends.extend(_run_bootstrap(
+                        species_id, location_data, scope_locs,
+                        all_years, 'ecoregion', eco_uk, N_ITERATIONS))
+
         if final_trends:
-            logging.info(f"Adding {len(final_trends)} yearly trend records to the database...")
+            logging.info(f"Saving {len(final_trends)} trend records...")
             session.bulk_save_objects(final_trends)
             session.commit()
-        
+
         return True
     except Exception as e:
-        logging.error(f"An error occurred during bootstrap calculation: {e}", exc_info=True)
+        logging.error(f"Error in bootstrap calculation: {e}", exc_info=True)
         session.rollback()
         return False
     finally:

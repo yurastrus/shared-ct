@@ -17,7 +17,7 @@ from .background_tasks import cleanup_old_photos
 from .analytics_calculator import update_analytics_tables
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
-from .models import Location, Species, Photo, Observation, Identification, BehaviorType, UserProfile, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
+from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions
 from app.models import User, Institution
 from .decorators import role_required
@@ -32,10 +32,7 @@ from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, gen
 def dashboard(lang_code):
     """Відображає дашборд з основною статистикою, ФІЛЬТРОВАНОЮ ЗА ДАТОЮ, ЛОКАЦІЯМИ ТА БІОТОПАМИ."""
     ct_session = get_ct_session()
-    ct_profile = None
     try:
-        if current_user.is_authenticated:
-            ct_profile = current_user.get_ct_profile()
 
         # Дати
         start_date_str = request.args.get('start_date', '2020-08-01')
@@ -194,7 +191,6 @@ def dashboard(lang_code):
                              stats=stats, 
                              start_date=start_date_str, 
                              end_date=end_date_str, 
-                             ct_profile=ct_profile,
                              biotopes=biotopes_list,
                              selected_locations=location_ids_str,
                              selected_biotopes=biotope_ids,
@@ -205,7 +201,7 @@ def dashboard(lang_code):
         current_app.logger.error(f"Error in dashboard: {str(e)}")
         stats = {'total_photos': 0, 'total_locations': 0, 'total_identifications': 0, 'identified_species_count': 0, 'top_contributors': []}
         flash(_('Помилка завантаження статистики.'), 'warning')
-        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), ct_profile=ct_profile, biotopes=[], selected_locations='', selected_biotopes=[])
+        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[])
     finally:
         close_ct_session()
 
@@ -216,31 +212,33 @@ def dashboard(lang_code):
 
 @camera_traps_bp.route('/analysis/species-dashboard')
 def species_dashboard(lang_code):
-    """Сторінка детального аналізу по видах."""
+    """Сторінка детального аналізу трендів по видах з фільтрацією по установах."""
     ct_session = get_ct_session()
     try:
-        # Встановлюємо мінімальну кількість спостережень
         MIN_OBSERVATIONS = 30
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
 
-        # Крок 1: Створюємо підзапит, щоб знайти ID видів,
-        # у яких кількість унікальних спостережень >= MIN_OBSERVATIONS.
-        # Цей запит рахує по "сирим" даних, щоб отримати точну загальну кількість.
-        subquery = ct_session.query(
-            Identification.species_id
-        ).join(Photo, Identification.photo_id == Photo.id)\
-         .join(Observation, Photo.observation_id == Observation.id)\
-         .filter(Observation.status.in_(['completed', 'archived']))\
-         .filter(Identification.species_id > 0) \
-         .group_by(Identification.species_id)\
-         .having(func.count(distinct(Photo.observation_id)) >= MIN_OBSERVATIONS)\
-         .subquery()
+        # Список видів з мінімальною кількістю спостережень
+        species_q = ct_session.query(Identification.species_id)\
+            .join(Photo, Identification.photo_id == Photo.id)\
+            .join(Observation, Photo.observation_id == Observation.id)\
+            .filter(Observation.status.in_(['completed', 'archived']),
+                    Identification.species_id > 0)
 
-        # Крок 2: Тепер вибираємо об'єкти Species, ID яких є в результатах підзапиту.
+        if not is_admin and user_inst_ids:
+            allowed_locs = select(location_institutions.c.location_id).where(
+                location_institutions.c.institution_id.in_(user_inst_ids))
+            species_q = species_q.filter(Observation.location_id.in_(allowed_locs))
+
+        species_subq = species_q.group_by(Identification.species_id)\
+            .having(func.count(distinct(Photo.observation_id)) >= MIN_OBSERVATIONS)\
+            .subquery()
+
         species_query = ct_session.query(Species)\
-            .join(subquery, Species.id == subquery.c.species_id)\
-            .order_by(Species.common_name_ua)\
-            .all()
-            
+            .join(species_subq, Species.id == species_subq.c.species_id)\
+            .order_by(Species.common_name_ua).all()
+
         species_list = []
         for s in species_query:
             display_name = s.scientific_name
@@ -249,17 +247,38 @@ def species_dashboard(lang_code):
             elif g.lang_code == 'en' and s.common_name_en:
                 display_name = f"{s.common_name_en} ({s.scientific_name})"
             species_list.append({'id': s.id, 'text': display_name})
-        
-        all_years = ct_session.query(SpeciesYearlyTrend.year).distinct().order_by(SpeciesYearlyTrend.year).all()
+
+        all_years = ct_session.query(SpeciesYearlyTrend.year)\
+            .filter(SpeciesYearlyTrend.scope_type == 'global')\
+            .distinct().order_by(SpeciesYearlyTrend.year).all()
         available_years = [y[0] for y in all_years]
         start_year = available_years[0] if available_years else date.today().year - 5
         end_year = available_years[-1] if available_years else date.today().year
 
-        return render_template('species_dashboard.html', 
-                             available_species=species_list, 
-                             available_years=available_years,
-                             start_year=start_year, 
-                             end_year=end_year)
+        # Установи та екорегіони для фільтру
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions = sorted(current_user.institutions,
+                                  key=lambda i: i.name_uk or '')
+        else:
+            institutions = []
+
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
+
+        return render_template('species_dashboard.html',
+                               available_species=species_list,
+                               available_years=available_years,
+                               start_year=start_year,
+                               end_year=end_year,
+                               institutions=institutions,
+                               ecoregions=ecoregions,
+                               is_admin=is_admin)
     except Exception:
         current_app.logger.error("Error loading species dashboard", exc_info=True)
         flash(_("Помилка завантаження сторінки аналізу."), 'danger')
@@ -325,16 +344,12 @@ def get_species_ranking():
 
 @camera_traps_bp.route('/identify', methods=['GET'])
 @login_required
-@role_required('identifier')
+@role_required('ct_verifier')
 def identify(lang_code):
     ct_session = get_ct_session()
     try:
         form = IdentificationForm()
-        ct_profile = current_user.get_ct_profile()
-        # ТУТ ТРЕБА БУДЕ ПОПРАВИТИ ПЕРЕВІРКУ ПІСЛЯ ОСТАТОЧНОГО ПРЕХОДУ НА НОВУ СИСТЕМУ АУТЕНТИФІКАЦІЇ
-        can_review_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
-        can_review_new = current_user.has_role('moderator') or current_user.has_role('admin')
-        can_review = can_review_old or can_review_new
+        can_review = current_user.has_role('manager')
         
         # --- ПОЧАТОК НОВОЇ, ДИНАМІЧНОЇ ЛОГІКИ ---
 
@@ -405,7 +420,7 @@ def identify(lang_code):
 
 @camera_traps_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
-@role_required('moderator','manager')
+@role_required('manager')
 def upload(lang_code):
     ct_session = get_ct_session()
     try:
@@ -469,7 +484,7 @@ def upload(lang_code):
 
 @camera_traps_bp.route('/api/create-batch', methods=['POST'])
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def create_batch(lang_code):
     """Створює новий batch для завантаження файлів."""
     try:
@@ -495,7 +510,7 @@ def create_batch(lang_code):
 
 @camera_traps_bp.route('/upload/process-single', methods=['POST'])
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def process_single_upload(lang_code):
     """Обробляє один файл у складі batch."""
     try:
@@ -533,7 +548,7 @@ def process_single_upload(lang_code):
 
 @camera_traps_bp.route('/api/finalize-batch', methods=['POST'])
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def finalize_batch(lang_code):
     """Завершує batch і групує фото в серії."""
     try:
@@ -560,7 +575,7 @@ def finalize_batch(lang_code):
 
 @camera_traps_bp.route('/api/batch-status/<batch_id>')
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def get_batch_status_api(lang_code, batch_id):
     """Повертає статус batch."""
     try:
@@ -820,43 +835,83 @@ def api_species_dynamics(lang_code):
     ct_session = get_ct_session()
     try:
         species_id = request.args.get('species_id', type=int)
-        # --- ЗМІНЕНО: Отримуємо роки замість дат ---
         start_year = request.args.get('start_year', type=int)
         end_year = request.args.get('end_year', type=int)
+        scope_type = request.args.get('scope_type', 'global')
+        scope_id = request.args.get('scope_id', '')
 
         if not all([species_id, start_year, end_year]):
             return jsonify({'error': 'Species ID, start year, and end year are required'}), 400
 
-        # 1. Сезонна активність (з проміжної таблиці)
-        seasonal_query = ct_session.query(
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+
+        # Перевірка прав доступу до запитаного скоупу
+        if not is_admin:
+            if scope_type == 'institution':
+                if not scope_id or int(scope_id) not in user_inst_ids:
+                    return jsonify({'error': 'Access denied'}), 403
+            elif scope_type == 'ecoregion':
+                user_ecoregions = {
+                    inst.ecoregion_uk for inst in current_user.institutions
+                    if inst.ecoregion_uk
+                } if current_user.is_authenticated else set()
+                if scope_id not in user_ecoregions:
+                    return jsonify({'error': 'Access denied'}), 403
+            elif scope_type == 'global' and user_inst_ids:
+                # Для не-адмінів global — фільтруємо сезонні дані по їх локаціях,
+                # але тренд беремо з global скоупу (найближче що є)
+                pass
+
+        # Фільтр локацій для сезонних даних
+        loc_filter = None
+        if scope_type == 'institution' and scope_id:
+            loc_filter = select(location_institutions.c.location_id).where(
+                location_institutions.c.institution_id == int(scope_id))
+        elif scope_type == 'ecoregion' and scope_id:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_id).all()]
+            if eco_inst_ids:
+                loc_filter = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(eco_inst_ids))
+        elif scope_type == 'global' and not is_admin and user_inst_ids:
+            loc_filter = select(location_institutions.c.location_id).where(
+                location_institutions.c.institution_id.in_(user_inst_ids))
+
+        # 1. Сезонна активність
+        seasonal_q = ct_session.query(
             LocationMonthlyActivity.year,
             LocationMonthlyActivity.month,
             func.sum(LocationMonthlyActivity.detection_count).label('observation_count')
         ).filter(
             LocationMonthlyActivity.species_id == species_id,
             LocationMonthlyActivity.year.between(start_year, end_year)
-        ).group_by(LocationMonthlyActivity.year, LocationMonthlyActivity.month)\
-         .order_by(LocationMonthlyActivity.year, LocationMonthlyActivity.month)\
-         .all()
-        
-        seasonal_data = [{'year': r.year, 'month': r.month, 'count': r.observation_count} for r in seasonal_query]
-            
-        # 2. Річна динаміка (з фінальної "вітринної" таблиці)
-        yearly_query = ct_session.query(SpeciesYearlyTrend).filter(
+        )
+        if loc_filter is not None:
+            seasonal_q = seasonal_q.filter(LocationMonthlyActivity.location_id.in_(loc_filter))
+        seasonal_q = seasonal_q.group_by(LocationMonthlyActivity.year, LocationMonthlyActivity.month)\
+            .order_by(LocationMonthlyActivity.year, LocationMonthlyActivity.month).all()
+
+        seasonal_data = [{'year': r.year, 'month': r.month, 'count': r.observation_count}
+                         for r in seasonal_q]
+
+        # 2. Річна динаміка (попередньо розрахована для скоупу)
+        yearly_q = ct_session.query(SpeciesYearlyTrend).filter(
             SpeciesYearlyTrend.species_id == species_id,
-            SpeciesYearlyTrend.year.between(start_year, end_year)
+            SpeciesYearlyTrend.year.between(start_year, end_year),
+            SpeciesYearlyTrend.scope_type == scope_type,
+            SpeciesYearlyTrend.scope_id == scope_id
         ).order_by(SpeciesYearlyTrend.year).all()
 
         yearly_data = [{
-            'year': r.year, 
-            'mean_dr_index': r.mean_dr_index,
-            'lower_ci': r.lower_ci,
-            'upper_ci': r.upper_ci
-        } for r in yearly_query]
+            'year': r.year,
+            'mean_dr_index': float(r.mean_dr_index),
+            'lower_ci': float(r.lower_ci),
+            'upper_ci': float(r.upper_ci)
+        } for r in yearly_q]
 
         return jsonify({'seasonal_activity': seasonal_data, 'yearly_trend': yearly_data})
     except Exception as e:
-        current_app.logger.error(f"Error in api_species_dynamics: {e}")
+        current_app.logger.error(f"Error in api_species_dynamics: {e}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
     finally:
         close_ct_session()
@@ -864,7 +919,7 @@ def api_species_dynamics(lang_code):
 # --- API для ідентифікації та завантаження ---
 @camera_traps_bp.route('/api/submit-identification', methods=['POST'])
 @login_required
-@role_required('identifier')
+@role_required('ct_verifier')
 def submit_identification(lang_code):
     ct_session = get_ct_session()
     try:
@@ -883,13 +938,7 @@ def submit_identification(lang_code):
         if not observation:
             return jsonify({'success': False, 'error': _('Серію не знайдено.')}), 404
         
-        ct_profile = ct_session.query(UserProfile).get(current_user.id)
-        if not ct_profile:
-            return jsonify({'success': False, 'error': _('Профіль користувача для фотопасток не знайдено.')}), 404
-
-        is_moderator_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
-        is_moderator_new = current_user.has_role('moderator') or current_user.has_role('admin')
-        is_moderator = is_moderator_old or is_moderator_new
+        is_moderator = current_user.has_role('manager')
 
         moderator_override = is_moderator and observation.status == 'completed'
 
@@ -977,13 +1026,8 @@ def next_observation_for_identification(lang_code):
         sort_by = request.args.get('sort_by', 'random') # За замовчуванням 'random'
         
         # Перевіряємо права доступу для review режиму
-        if review_mode:
-            ct_profile = current_user.get_ct_profile()
-            has_old_access = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
-            has_new_access = current_user.has_role('moderator') or current_user.has_role('admin')
-            
-            if not (has_old_access or has_new_access):
-                return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
+        if review_mode and not current_user.has_role('manager'):
+            return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
         
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
 
@@ -1137,7 +1181,7 @@ def next_observation_for_identification(lang_code):
 
 @camera_traps_bp.route('/api/create-location', methods=['POST'])
 @login_required
-@role_required('identifier')
+@role_required('ct_verifier')
 def create_location(lang_code):
     ct_session = get_ct_session()
     try:
@@ -1177,7 +1221,7 @@ def create_location(lang_code):
 
 @camera_traps_bp.route('/upload/process', methods=['POST'])
 @login_required
-@role_required('identifier')
+@role_required('ct_verifier')
 def process_upload(lang_code):
     """Приймає файли та передає їх на обробку."""
     location_id = request.form.get('location_id')
@@ -1294,7 +1338,7 @@ def recalculate_consensus(lang_code):
 
 @camera_traps_bp.route('/api/review-filters')
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def get_review_filters(lang_code):
     """Повертає список користувачів та видів для review фільтрів."""
     ct_session = get_ct_session()
@@ -1343,12 +1387,7 @@ def gallery(lang_code):
         # Отримуємо SQL-фільтр (таблиця locations має аліас 'l')
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
-        can_manage_favorites = False
-        if current_user.is_authenticated:
-            ct_profile = current_user.get_ct_profile()
-            can_manage_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
-            can_manage_new = current_user.has_role('moderator') or current_user.has_role('admin')
-            can_manage_favorites = can_manage_old or can_manage_new
+        can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
         # Базовий запит для списку видів
         species_query = ct_session.query(Species)\
@@ -1411,12 +1450,7 @@ def get_gallery_photos(lang_code):
        # Генеруємо фільтр
        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
-       can_manage_favorites = False
-       if current_user.is_authenticated:
-           ct_profile = current_user.get_ct_profile()
-           can_manage_old = ct_profile and ct_profile.camera_trap_role in ['moderator', 'admin']
-           can_manage_new = current_user.has_role('moderator') or current_user.has_role('admin')
-           can_manage_favorites = can_manage_old or can_manage_new
+       can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
        # Формуємо запит
        query = ct_session.query(Photo)\
@@ -1506,7 +1540,7 @@ def get_gallery_photos(lang_code):
 
 @camera_traps_bp.route('/api/gallery/remove-favorite', methods=['POST'])
 @login_required
-@role_required('moderator')
+@role_required('manager')
 def remove_from_favorites(lang_code):
     """API для видалення фото з вибраного (тільки для модераторів)."""
     ct_session = get_ct_session()
@@ -1658,11 +1692,11 @@ def manual_run_analytics(lang_code):
 
 @camera_traps_bp.route('/data-export')
 @login_required
-@role_required('data_user', 'analyst')
+@role_required('analyst')
 def ct_data_export(lang_code):
     """
     Сторінка для підготовки та експорту даних з модуля фотопасток.
-    Доступно: analyst, manager, admin (нова система); data_user+ (стара CT-система).
+    Доступно: analyst, manager, admin.
     """
     g.lang_code = lang_code
     try:
@@ -1789,7 +1823,7 @@ def _get_export_institution_ids():
 
 @camera_traps_bp.route('/api/data-preview')
 @login_required
-@role_required('data_user', 'analyst')
+@role_required('analyst')
 def api_ct_data_preview(lang_code):
     """API для попереднього перегляду даних з фотопасток."""
     try:
@@ -1819,7 +1853,7 @@ def api_ct_data_preview(lang_code):
 
 @camera_traps_bp.route('/api/data-download')
 @login_required
-@role_required('data_user', 'analyst')
+@role_required('analyst')
 def api_ct_data_download(lang_code):
     """API для завантаження CSV-файлу з даними фотопасток."""
     try:
@@ -1861,7 +1895,7 @@ def api_ct_data_download(lang_code):
     
 @camera_traps_bp.route('/api/identification-stats')
 @login_required
-@role_required('identifier')
+@role_required('ct_verifier')
 def api_get_identification_stats(lang_code):
     """
     Підраховує та повертає кількість серій, що залишились для ідентифікації поточним користувачем.
@@ -1915,7 +1949,7 @@ def api_get_identification_stats(lang_code):
 
 @camera_traps_bp.route('/service-log')
 @login_required
-@role_required('identifier') # Доступ для ідентифікаторів і вище
+@role_required('manager')
 def service_log(lang_code):
     """Відображає сторінку для ведення журналу обслуговування фотопасток."""
     ct_session = get_ct_session()
@@ -2072,7 +2106,7 @@ def api_get_service_history(lang_code, location_id):
 
 @camera_traps_bp.route('/api/service-log/create', methods=['POST'])
 @login_required
-@role_required('identifier')
+@role_required('manager')
 def api_create_service_visit(lang_code):
     """API для створення нового запису в журналі обслуговування."""
     print("---!!! ЗАПИТ ДІЙШОВ ДО ФУНКЦІЇ api_create_service_visit !!!---")
@@ -2143,7 +2177,7 @@ def api_create_service_visit(lang_code):
 
 @camera_traps_bp.route('/api/run-stats-calculation', methods=['POST'])
 @login_required
-@role_required('moderator') # Доступ для модераторів та адмінів
+@role_required('manager') # Доступ для модераторів та адмінів
 def run_stats_calculation(lang_code):
     """Запускає повний перерахунок статистики для локацій."""
     try:

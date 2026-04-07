@@ -260,21 +260,24 @@ class LocationMonthlyActivity(CTBase):
 class SpeciesYearlyTrend(CTBase):
     """
     Фінальна таблиця з розрахованими річними трендами та довірчими інтервалами.
-    Використовується для побудови графіків.
+    scope_type: 'global' | 'institution' | 'ecoregion'
+    scope_id:   '' для global, str(institution.id) для institution, ecoregion_uk для ecoregion
     """
     __tablename__ = 'species_yearly_trends'
-    
+
     species_id = Column(Integer, ForeignKey('species.id'), primary_key=True)
     year = Column(Integer, primary_key=True)
-    
+    scope_type = Column(String(20), primary_key=True)
+    scope_id = Column(String(100), primary_key=True)
+
     mean_dr_index = Column(Numeric(10, 4), nullable=False)
     lower_ci = Column(Numeric(10, 4), nullable=False)
     upper_ci = Column(Numeric(10, 4), nullable=False)
-    
+
     species = relationship('Species')
 
     def __repr__(self):
-        return f'<Trend: SpID {self.species_id}, Year {self.year}>'
+        return f'<Trend: SpID {self.species_id}, Year {self.year}, {self.scope_type}:{self.scope_id}>'
 
 class CalculationLog(CTBase):
     """

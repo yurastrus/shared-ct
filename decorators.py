@@ -6,14 +6,14 @@ from flask_babel import gettext as _
 def role_required(*required_roles):
     """
     Декоратор для перевірки, чи має користувач необхідну роль для доступу.
-    Підтримує передачу декількох ролей, наприклад: @role_required('identifier', 'data_user').
-    Враховує ієрархію ролей та забезпечує м'який перехід (перевіряє і нову, і стару бази).
+    Підтримує передачу декількох ролей, наприклад: @role_required('analyst', 'manager').
+    Ролі перевіряються тільки по новій системі (головна база даних).
     """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Ієрархія ролей: кожна наступна роль включає права попередньої.
-            role_hierarchy = ['viewer', 'identifier', 'data_user', 'moderator', 'manager', 'admin']
+            # Ієрархія ролей нової системи.
+            role_hierarchy = ['viewer', 'ct_verifier', 'analyst', 'manager', 'admin']
 
             if not current_user.is_authenticated:
                 return redirect(url_for('auth.login', lang_code=g.lang_code))
@@ -29,20 +29,10 @@ def role_required(*required_roles):
                     # Якщо роль нестандартна (не з ієрархії), просто додаємо її
                     allowed_roles.add(req_role)
 
-            # 1. ПЕРЕВІРКА ЗА НОВОЮ СИСТЕМОЮ (Головна база)
+            # Перевірка за новою системою (головна база)
             has_new_access = any(current_user.has_role(role) for role in allowed_roles)
 
-            # 2. ПЕРЕВІРКА ЗА СТАРОЮ СИСТЕМОЮ (М'який перехід, public.user_profiles)
-            has_old_access = False
-            try:
-                user_profile = current_user.get_ct_profile()
-                if user_profile and user_profile.camera_trap_role in allowed_roles:
-                    has_old_access = True
-            except Exception:
-                pass # Якщо раптом профілю немає або сталась помилка, просто ігноруємо
-
-            # Якщо є доступ хоча б по одній із систем — пускаємо
-            if has_new_access or has_old_access:
+            if has_new_access:
                 return f(*args, **kwargs)
             else:
                 flash(_('У вас недостатньо прав для доступу до цієї сторінки.'), 'danger')
