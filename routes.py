@@ -1658,14 +1658,24 @@ def manual_run_analytics(lang_code):
 
 @camera_traps_bp.route('/data-export')
 @login_required
-@role_required('data_user')
+@role_required('data_user', 'analyst')
 def ct_data_export(lang_code):
     """
     Сторінка для підготовки та експорту даних з модуля фотопасток.
+    Доступно: analyst, manager, admin (нова система); data_user+ (стара CT-система).
     """
     g.lang_code = lang_code
     try:
-        return render_template('ct_data_export.html')
+        is_admin = current_user.has_role('admin')
+        name_col = Institution.name_en if lang_code == 'en' else Institution.name_uk
+        if is_admin:
+            user_institutions = Institution.query.order_by(name_col).all()
+        else:
+            sort_key = (lambda i: i.name_en or i.name_uk) if lang_code == 'en' else (lambda i: i.name_uk)
+            user_institutions = sorted(current_user.institutions, key=sort_key)
+        return render_template('ct_data_export.html',
+                               user_institutions=user_institutions,
+                               is_admin=is_admin)
     except Exception as e:
         current_app.logger.error(f"Error loading CT Data export page: {e}", exc_info=True)
         flash('Помилка завантаження сторінки експорту.', 'danger')
@@ -1755,9 +1765,31 @@ def api_get_ct_taxonomic_filters(lang_code):
         if session:
             session.close()
 
+def _get_export_institution_ids():
+    """
+    Повертає список institution_ids для поточного запиту з урахуванням прав.
+    - admin: може вибирати будь-які; якщо не передано — None (без обмеження).
+    - інші: перетин запитаних і власних; якщо не передано — всі власні.
+    """
+    is_admin = current_user.has_role('admin')
+    allowed_ids = None if is_admin else {i.id for i in current_user.institutions}
+
+    raw = request.args.get('institution_ids', '')
+    if raw:
+        requested = [int(x) for x in raw.split(',') if x.strip().isdigit()]
+        if is_admin:
+            return requested if requested else None
+        # Фільтруємо лише ті, що входять в дозволені
+        valid = [i for i in requested if i in allowed_ids]
+        return valid if valid else list(allowed_ids)
+    else:
+        # Нічого не передано — для admin без обмеження, для інших — всі власні
+        return None if is_admin else list(allowed_ids)
+
+
 @camera_traps_bp.route('/api/data-preview')
 @login_required
-@role_required('data_user')
+@role_required('data_user', 'analyst')
 def api_ct_data_preview(lang_code):
     """API для попереднього перегляду даних з фотопасток."""
     try:
@@ -1771,11 +1803,12 @@ def api_ct_data_preview(lang_code):
             'end_date': request.args.get('end_date'),
             'aggregation': request.args.get('aggregation', 'none'),
             'institution_code': request.args.get('institution_code', 'RSNR'),
-            'filter_type': request.args.get('filter_type', 'species_only')
+            'filter_type': request.args.get('filter_type', 'species_only'),
+            'institution_ids': _get_export_institution_ids(),
         }
-        
+
         result = get_ct_occurrence_data(filters, limit=20)
-        
+
         return jsonify({
             'preview_data': result['data'],
             'total_count': result['total_count']
@@ -1786,7 +1819,7 @@ def api_ct_data_preview(lang_code):
 
 @camera_traps_bp.route('/api/data-download')
 @login_required
-@role_required('data_user')
+@role_required('data_user', 'analyst')
 def api_ct_data_download(lang_code):
     """API для завантаження CSV-файлу з даними фотопасток."""
     try:
@@ -1800,7 +1833,8 @@ def api_ct_data_download(lang_code):
             'end_date': request.args.get('end_date'),
             'aggregation': request.args.get('aggregation', 'none'),
             'institution_code': request.args.get('institution_code', 'WNBO-CT'),
-            'filter_type': request.args.get('filter_type', 'species_only')
+            'filter_type': request.args.get('filter_type', 'species_only'),
+            'institution_ids': _get_export_institution_ids(),
         }
         
         result = get_ct_occurrence_data(filters, limit=None)

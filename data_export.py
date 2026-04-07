@@ -8,6 +8,10 @@ def get_ct_occurrence_data(filters, limit=None):
     Отримує дані спостережень та їх загальну кількість з модуля фотопасток.
     (ВЕРСІЯ 3: Збагачена даними про ідентифікаторів).
     Повертає словник: {'data': [...], 'total_count': N}
+
+    filters може містити:
+      institution_ids: list[int] — обмежити лише локаціями цих інституцій;
+                                    None або відсутнє = без обмеження (тільки для admin).
     """
     engine = get_ct_engine()
     try:
@@ -38,6 +42,19 @@ def get_ct_occurrence_data(filters, limit=None):
 
             filter_type = filters.get('filter_type', 'species_only')
             species_filter_condition = "AND c.species_id > 0" if filter_type == 'species_only' else ""
+
+            # --- Фільтр по інституціях ---
+            institution_ids = filters.get('institution_ids')
+            if institution_ids:
+                inst_cond = """
+                    AND EXISTS (
+                        SELECT 1 FROM location_institutions li_exp
+                        WHERE li_exp.location_id = l.id
+                          AND li_exp.institution_id = ANY(:export_inst_ids)
+                    )"""
+                params['export_inst_ids'] = list(institution_ids)
+            else:
+                inst_cond = ""
 
             # --- ОНОВЛЕНИЙ SQL-ЗАПИТ З ДОДАТКОВИМ CTE ---
 
@@ -90,6 +107,7 @@ def get_ct_occurrence_data(filters, limit=None):
                         AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
                         {species_filter_condition}
                         {taxo_where}
+                        {inst_cond}
                 )
             """
 

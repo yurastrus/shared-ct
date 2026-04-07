@@ -39,6 +39,15 @@
         <h1 class="page-header">{{ _('Підготовка даних для експорту - фотопастки') }}</h1>
 
         <form id="data-filters-form" class="filters-panel">
+            <div class="filter-group full-width">
+                <label for="institution-select">{{ _('Інституції:') }}</label>
+                <select id="institution-select" class="form-control" multiple>
+                    {% for inst in user_institutions %}
+                    <option value="{{ inst.id }}" data-code="{{ inst.code or '' }}">{{ inst.name_en if g.lang_code == 'en' and inst.name_en else inst.name_uk }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">{{ _('Оберіть одну або декілька. Без вибору — всі доступні.') }}</small>
+            </div>
             <div class="filter-group"><label for="class-select">{{ _('Клас:') }}</label><select id="class-select" class="form-control tax-filter"></select></div>
             <div class="filter-group"><label for="order-select">{{ _('Ряд:') }}</label><select id="order-select" class="form-control tax-filter"></select></div>
             <div class="filter-group"><label for="family-select">{{ _('Родина:') }}</label><select id="family-select" class="form-control tax-filter"></select></div>
@@ -51,8 +60,8 @@
             <div class="filter-group"><label for="end-date-select">{{ _('Дата завершення:') }}</label><input type="date" id="end-date-select" class="form-control"></div>
             <div class="filter-group"><label for="filter-type-select">{{ _('Тип даних для експорту:') }}</label><select id="filter-type-select" class="form-control"><option value="species_only" selected>{{ _('Тільки тварини') }}</option><option value="all">{{ _('Всі записи') }}</option></select></div>
             <div class="filter-group"><label for="aggregation-level">{{ _('Рівень агрегації:') }}</label><select id="aggregation-level" class="form-control"><option value="none" selected>{{ _('Без агрегації') }}</option><option value="location_day">{{ _('Агрегувати до дня і локації') }}</option></select></div>
-            <div class="filter-group"><label for="institution-code">{{ _('Код інституції:') }}</label><input type="text" id="institution-code" class="form-control" value="RSNR" placeholder="{{ _('За замовчуванням: RSNR') }}"></div>
-            
+            <div class="filter-group"><label for="institution-code">{{ _('Код інституції (для DwC):') }}</label><input type="text" id="institution-code" class="form-control" value="RSNR" placeholder="{{ _('За замовчуванням: RSNR') }}"></div>
+
             <div class="filter-group full-width" style="flex-direction: row; justify-content: center;">
                 <button type="button" id="prepare-btn" class="btn">{{ _('Підготувати дані') }}</button>
                 <button type="button" id="reset-btn" class="btn btn-secondary">{{ _('Скинути фільтри') }}</button>
@@ -73,6 +82,28 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
+        // --- Ініціалізація Select2 для інституцій ---
+        $('#institution-select').select2({
+            placeholder: '{{ _("Всі доступні інституції") }}',
+            allowClear: true,
+            width: '100%'
+        });
+
+        // Якщо є лише одна інституція — обираємо її автоматично
+        const instOptions = $('#institution-select option');
+        if (instOptions.length === 1) {
+            $('#institution-select').val(instOptions.first().val()).trigger('change');
+        }
+
+        // При зміні вибору інституції — оновлюємо поле DwC-коду (якщо одна)
+        $('#institution-select').on('change', function() {
+            const selected = $(this).find('option:selected');
+            if (selected.length === 1) {
+                const code = selected.data('code');
+                if (code) { $('#institution-code').val(code); }
+            }
+        });
+
         const filters = {
             'class': $('#class-select'),
             'order': $('#order-select'),
@@ -156,7 +187,15 @@
                 filters[key].val(null).trigger('change.select2');
             }
             filters.species.val(null).trigger('change.select2');
-            
+
+            // Скидаємо інституції: якщо одна — залишаємо обраною
+            const instOptions = $('#institution-select option');
+            if (instOptions.length === 1) {
+                $('#institution-select').val(instOptions.first().val()).trigger('change');
+            } else {
+                $('#institution-select').val(null).trigger('change');
+            }
+
             fetchAllFilterOptions();
             // Скидаємо дати
             const formatLocalDate = (date) => {
@@ -171,10 +210,10 @@
 
             $('#start-date-select').val(formatLocalDate(startOfYear));
             $('#end-date-select').val(formatLocalDate(today));
-            
+
             $('#aggregation-level').val('none');
             $('#institution-code').val('RSNR');
-            $('#filter-type-select').val('species_only')
+            $('#filter-type-select').val('species_only');
             $('#results-area').hide();
         }
         
@@ -182,12 +221,19 @@
         resetToDefaults();
         
         function getApiParams() {
-             const params = new URLSearchParams();
+            const params = new URLSearchParams();
+
+            // Інституції
+            const selectedInst = $('#institution-select').val();
+            if (selectedInst && selectedInst.length > 0) {
+                params.append('institution_ids', selectedInst.join(','));
+            }
+
             if (filters.class.val()) params.append('class', filters.class.val());
             if (filters.order.val()) params.append('order', filters.order.val());
             if (filters.family.val()) params.append('family', filters.family.val());
             if (filters.genus.val()) params.append('genus', filters.genus.val());
-            
+
             const selectedSpecies = filters.species.val();
             if (selectedSpecies && selectedSpecies.length > 0) {
                 params.append('species_ids', selectedSpecies.join(','));
