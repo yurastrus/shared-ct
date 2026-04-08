@@ -618,7 +618,7 @@ $(document).ready(function () {
             url: '/{{ g.lang_code }}/camera-traps/api/create-location',
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-            data: JSON.stringify({ name, description, latitude, longitude }),
+            data: JSON.stringify({ name, description, latitude, longitude, institution_id: institutionSelect.val() || null }),
             success: function(data) {
                 locationFeedback.removeClass('alert-danger').addClass('alert alert-success').text(data.message);
                 if (data.location) {

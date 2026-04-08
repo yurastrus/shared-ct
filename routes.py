@@ -1186,30 +1186,40 @@ def create_location(lang_code):
     ct_session = get_ct_session()
     try:
         data = request.json
-        # -- ОСЬ ВИПРАВЛЕННЯ --
         name = data.get('name')
         lat = data.get('latitude')
         lon = data.get('longitude')
-        description = data.get('description') 
+        description = data.get('description')
+        institution_id = data.get('institution_id')
 
         if not all([name, lat, lon]):
             return jsonify({'success': False, 'message': _('Назва та координати є обов\'язковими.')}), 400
-        
+
         existing = ct_session.query(Location).filter(
-            func.round(Location.latitude, 5) == round(float(lat), 5), 
+            func.round(Location.latitude, 5) == round(float(lat), 5),
             func.round(Location.longitude, 5) == round(float(lon), 5)
         ).first()
         if existing:
             return jsonify({'success': False, 'message': _('Місце з такими координатами вже існує: ') + existing.name}), 409
-        
+
         new_location = Location(
-            name=name, 
-            latitude=lat, 
-            longitude=lon, 
-            description=description, 
+            name=name,
+            latitude=lat,
+            longitude=lon,
+            description=description,
             created_by_id=current_user.id
         )
         ct_session.add(new_location)
+        ct_session.flush()
+
+        if institution_id:
+            ct_session.execute(
+                location_institutions.insert().values(
+                    location_id=new_location.id,
+                    institution_id=int(institution_id)
+                )
+            )
+
         ct_session.commit()
         return jsonify({'success': True, 'message': _('Нове місце успішно створено!'), 'location': {'id': new_location.id, 'name': new_location.name}}), 201
     except Exception as e:
