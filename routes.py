@@ -1702,11 +1702,11 @@ def manual_run_analytics(lang_code):
 
 @camera_traps_bp.route('/data-export')
 @login_required
-@role_required('analyst')
+@role_required('ct_verifier')
 def ct_data_export(lang_code):
     """
     Сторінка для підготовки та експорту даних з модуля фотопасток.
-    Доступно: analyst, manager, admin.
+    Доступно: будь-який користувач з can_export=True хоча б для однієї установи; admin — без обмежень.
     """
     g.lang_code = lang_code
     try:
@@ -1716,7 +1716,7 @@ def ct_data_export(lang_code):
             user_institutions = Institution.query.order_by(name_col).all()
         else:
             sort_key = (lambda i: i.name_en or i.name_uk) if lang_code == 'en' else (lambda i: i.name_uk)
-            user_institutions = sorted(current_user.institutions, key=sort_key)
+            user_institutions = sorted(current_user.export_institutions, key=sort_key)
         return render_template('ct_data_export.html',
                                user_institutions=user_institutions,
                                is_admin=is_admin)
@@ -1813,27 +1813,27 @@ def _get_export_institution_ids():
     """
     Повертає список institution_ids для поточного запиту з урахуванням прав.
     - admin: може вибирати будь-які; якщо не передано — None (без обмеження).
-    - інші: перетин запитаних і власних; якщо не передано — всі власні.
+    - інші: перетин запитаних і тих, де can_export=True; якщо не передано — всі дозволені.
     """
     is_admin = current_user.has_role('admin')
-    allowed_ids = None if is_admin else {i.id for i in current_user.institutions}
+    allowed_ids = None if is_admin else {i.id for i in current_user.export_institutions}
 
     raw = request.args.get('institution_ids', '')
     if raw:
         requested = [int(x) for x in raw.split(',') if x.strip().isdigit()]
         if is_admin:
             return requested if requested else None
-        # Фільтруємо лише ті, що входять в дозволені
+        # Фільтруємо лише ті, що входять в дозволені для експорту
         valid = [i for i in requested if i in allowed_ids]
         return valid if valid else list(allowed_ids)
     else:
-        # Нічого не передано — для admin без обмеження, для інших — всі власні
+        # Нічого не передано — для admin без обмеження, для інших — всі дозволені
         return None if is_admin else list(allowed_ids)
 
 
 @camera_traps_bp.route('/api/data-preview')
 @login_required
-@role_required('analyst')
+@role_required('ct_verifier')
 def api_ct_data_preview(lang_code):
     """API для попереднього перегляду даних з фотопасток."""
     try:
@@ -1863,7 +1863,7 @@ def api_ct_data_preview(lang_code):
 
 @camera_traps_bp.route('/api/data-download')
 @login_required
-@role_required('analyst')
+@role_required('ct_verifier')
 def api_ct_data_download(lang_code):
     """API для завантаження CSV-файлу з даними фотопасток."""
     try:
