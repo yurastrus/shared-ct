@@ -1702,7 +1702,7 @@ def manual_run_analytics(lang_code):
 
 @camera_traps_bp.route('/data-export')
 @login_required
-@role_required('ct_verifier')
+@role_required('analyst')
 def ct_data_export(lang_code):
     """
     Сторінка для підготовки та експорту даних з модуля фотопасток.
@@ -1833,7 +1833,7 @@ def _get_export_institution_ids():
 
 @camera_traps_bp.route('/api/data-preview')
 @login_required
-@role_required('ct_verifier')
+@role_required('analyst')
 def api_ct_data_preview(lang_code):
     """API для попереднього перегляду даних з фотопасток."""
     try:
@@ -1863,7 +1863,7 @@ def api_ct_data_preview(lang_code):
 
 @camera_traps_bp.route('/api/data-download')
 @login_required
-@role_required('ct_verifier')
+@role_required('analyst')
 def api_ct_data_download(lang_code):
     """API для завантаження CSV-файлу з даними фотопасток."""
     try:
