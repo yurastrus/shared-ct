@@ -42,7 +42,7 @@ def send_identification_reminders():
         ct_session = Session()
         try:
             count = _count_pending_for_user(ct_session, user)
-            if count > 0:
+            if count >= 10:
                 _send_reminder_email(user, count)
                 sent += 1
                 current_app.logger.info(
@@ -101,17 +101,17 @@ def _count_pending_for_user(ct_session, user):
 
 
 def _send_reminder_email(user, count):
-    site_url = current_app.config.get('SITE_URL', 'https://biomon.org.ua')
+    site_url = current_app.config.get('SITE_URL', 'http://91.99.138.240:82')
     identify_url = f"{site_url}/uk/camera-traps/identify"
     name = user.full_name
 
     series_word = _pluralize_uk(count, 'серія', 'серії', 'серій')
 
     msg = Message(
-        subject=f"У вас {count} {series_word} для ідентифікації — BioMon",
+        subject=f"У вас {count} {series_word} для ідентифікації — biomon",
         recipients=[user.email],
     )
-    msg.body = f"""Вітаємо, {name}!
+    msg.body = f"""Вітаю, {name}!
 
 У системі фотопасток є {count} {series_word} фотографій, що очікують на вашу ідентифікацію.
 
@@ -119,7 +119,7 @@ def _send_reminder_email(user, count):
 {identify_url}
 
 ---
-Це автоматичне тижневе нагадування від системи BioMon.
+Це автоматичне тижневе нагадування від системи biomon.
 Якщо у вас є питання, зверніться до адміністратора.
 """
     mail.send(msg)
