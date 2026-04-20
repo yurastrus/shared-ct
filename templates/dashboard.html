@@ -144,7 +144,10 @@
 
                 {% if is_moderator %}
                     <a href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Завантажити фото') }}</a>
-                    <a href="{{ url_for('camera_traps.service_log', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Обслуговування') }}</a>
+                {% endif %}
+
+                {% if is_moderator or is_admin %}
+                    <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}" class="btn btn-info">{{ _('Управління локаціями') }}</a>
                 {% endif %}
 
                 {% if is_data_user %}
@@ -152,7 +155,6 @@
                 {% endif %}
 
                 {% if is_admin %}
-                    <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}" class="btn btn-info">{{ _('Управління локаціями') }}</a>
                     <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">

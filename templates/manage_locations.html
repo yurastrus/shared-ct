@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ _('Управління локаціями') }}{% endblock %}
+{% block title %}{{ _('Управління локаціями фотопасток') }}{% endblock %}
 
 {% block head_extra %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -8,10 +8,64 @@
 <style>
     .page-layout {
         display: grid;
-        grid-template-columns: 300px 1fr 500px;
-        gap: 20px;
-        height: calc(100vh - 150px);
+        grid-template-columns: 280px 1fr 420px;
+        gap: 16px;
+        height: calc(100vh - 185px);
     }
+
+    /* Верхня панель фільтрів */
+    .top-filter-bar {
+        background: #fff;
+        padding: 10px 16px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+    .map-mode-toggle {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .mode-pill-toggle {
+        display: flex;
+        background-color: #f0f2f5;
+        border: 1px solid #d0d4da;
+        border-radius: 6px;
+        padding: 2px;
+        gap: 2px;
+        flex-shrink: 0;
+    }
+    .mode-pill-option {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: #666;
+        transition: all 0.18s ease;
+        user-select: none;
+        white-space: nowrap;
+    }
+    .mode-pill-option.active {
+        background-color: #0d6efd;
+        color: #fff;
+        box-shadow: 0 1px 4px rgba(13,110,253,0.35);
+    }
+    .mode-pill-option:hover:not(.active) {
+        background-color: #e2e6ea;
+        color: #333;
+    }
+
+    /* Лівий список */
     .locations-list-panel {
         border: 1px solid #ddd;
         border-radius: 4px;
@@ -24,52 +78,125 @@
         margin: 0;
     }
     .locations-list li {
-        padding: 10px 15px;
+        padding: 9px 14px;
         border-bottom: 1px solid #eee;
+        border-left: 4px solid transparent;
         cursor: pointer;
-        transition: background-color 0.2s;
+        font-size: 0.9rem;
+        transition: background-color 0.15s;
     }
     .locations-list li:hover, .locations-list li.active {
         background-color: #e3f2fd;
     }
-    .map-panel {
+    .locations-list li.loc-no-biotope  { border-left-color: #ffc107; background-color: #fffdf0; }
+    .locations-list li.loc-no-description { border-left-color: #e783b0; background-color: #fff5f9; }
+    .locations-list li.loc-no-biotope:hover,
+    .locations-list li.loc-no-biotope.active,
+    .locations-list li.loc-no-description:hover,
+    .locations-list li.loc-no-description.active {
+        background-color: #e3f2fd;
+    }
+
+    /* Карта */
+    .map-panel { display: flex; flex-direction: column; }
+    #map { height: 100%; border-radius: 4px; border: 1px solid #ddd; }
+    .leaflet-marker-icon.marker-inactive { opacity: 0.45 !important; filter: grayscale(80%); }
+    .marker-selected-icon { filter: brightness(0) invert(1) drop-shadow(0 0 3px rgba(0,0,0,0.6)); }
+
+    /* Права панель */
+    .right-panel {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #f9f9f9;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
     }
-    #map {
+    #placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         height: 100%;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-    }
-    .form-container {
-        border: 1px solid #ddd;
-        border-radius: 4px;
         padding: 20px;
-        background: #f9f9f9;
+    }
+    #panel-content {
+        display: none;
+        height: 100%;
         overflow-y: auto;
+        padding: 14px;
     }
+
+    /* Журнал */
+    .history-item { border-bottom: 1px solid #eee; padding: 9px 0; font-size: 0.88rem; }
+    .history-item:last-child { border-bottom: none; }
+    .history-meta { font-size: 0.82em; color: #666; }
+
+    /* Форма редагування */
     .select2-container { width: 100% !important; }
-    
-    .leaflet-marker-icon.marker-selected {
-        filter: hue-rotate(120deg) saturate(3);
-    }
-    
-    .button-group {
-        text-align: center;
-        margin-top: 30px;
-        padding-top: 20px;
-    }
-    
-    .button-group .btn {
-        margin: 0 5px;
-    }
+    #coord-hint { display: none; }
+
+    /* Легенда кольорів (режим маркерів) */
+    .marker-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.78rem; margin-top: 6px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* Легенда ПЗФ на карті */
+    .info { padding: 6px 8px; background: rgba(255,255,255,0.88); box-shadow: 0 0 12px rgba(0,0,0,0.2); border-radius: 5px; font-size: 0.78rem; }
+    .info.legend { line-height: 20px; color: #555; }
+    .info.legend h4 { margin: 0 0 4px; font-size: 0.82rem; font-weight: 600; color: #444; }
+    .info.legend .legend-item { display: block; clear: both; }
+    .info.legend i { width: 15px; height: 15px; float: left; margin-right: 6px; opacity: 0.75; display: inline-block; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-3">
-    <div class="page-header">
-        <h1>{{ _('Управління локаціями фотопасток') }}</h1>
+    <div class="page-header mb-2 d-flex justify-content-between align-items-center">
+        <h2 style="font-size:1.4rem;">{{ _('Управління локаціями фотопасток') }}</h2>
+        <div class="d-flex gap-2 align-items-center">
+            {% if can_edit %}
+            <button type="button" id="new-location-btn" class="btn btn-success btn-sm">
+                <i class="fas fa-plus me-1"></i>{{ _('Нова локація') }}
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Верхня панель: фільтр установ + перемикач режиму карти -->
+    <div class="top-filter-bar">
+        {% if filter_institutions %}
+        <label for="global-inst-filter" style="font-weight:500; margin:0; white-space:nowrap;">
+            <i class="fas fa-filter text-primary me-1"></i>{{ _('Установа:') }}
+        </label>
+        <select id="global-inst-filter" class="form-control form-control-sm" style="max-width:280px;">
+            <option value="">{{ _('Всі доступні мені') }}</option>
+            {% for inst in filter_institutions %}
+                <option value="{{ inst.id }}">{{ inst.name_en if g.lang_code != 'uk' and inst.name_en else inst.name_uk }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        <div class="map-mode-toggle">
+            <div class="mode-pill-toggle">
+                <div class="mode-pill-option active" id="mode-btn-data" title="{{ _('Показати стан заповненості даних') }}">
+                    <i class="fas fa-layer-group"></i> {{ _('Дані') }}
+                </div>
+                <div class="mode-pill-option" id="mode-btn-service" title="{{ _('Показати статус обслуговування') }}">
+                    <i class="fas fa-wrench"></i> {{ _('Сервіс') }}
+                </div>
+            </div>
+            <div class="marker-legend" id="legend-data">
+                <span class="legend-item"><span class="legend-dot" style="background:#2a81cb"></span>{{ _('Повна') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>{{ _('Без біотопу') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#e783b0"></span>{{ _('Без опису') }}</span>
+            </div>
+            <div class="marker-legend" id="legend-service" style="display:none;">
+                <span class="legend-item"><span class="legend-dot" style="background:#2aad27"></span>{{ _('OK') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#f0a500"></span>{{ _('Увага') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#cb2b3e"></span>{{ _('Критично') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#9e9e9e"></span>{{ _('Невідомо') }}</span>
+            </div>
+        </div>
     </div>
 
     <div class="page-layout">
@@ -77,7 +204,10 @@
         <div class="locations-list-panel">
             <ul class="locations-list">
                 {% for loc in locations %}
-                    <li data-location-id="{{ loc.id }}">{{ loc.name }}</li>
+                    <li data-location-id="{{ loc.id }}"
+                        class="{% if not loc.biotope_ids %}loc-no-biotope{% elif not loc.has_description %}loc-no-description{% endif %}">
+                        {{ loc.name }}
+                    </li>
                 {% endfor %}
             </ul>
         </div>
@@ -87,51 +217,159 @@
             <div id="map"></div>
         </div>
 
-        <!-- Права панель: Форма редагування -->
-        <div class="form-container">
-            <div id="placeholder" style="display: flex; align-items: center; justify-content: center; height: 100%;">
-                <p class="text-muted text-center">{{ _('Виберіть локацію зі списку або на карті, щоб почати редагування.') }}</p>
+        <!-- Права панель -->
+        <div class="right-panel">
+            <div id="placeholder">
+                <p class="text-muted text-center small">{{ _('Виберіть локацію зі списку або на карті.') }}</p>
             </div>
-            <div id="form-wrapper" style="display: none;">
-                <h3 id="form-title"></h3>
+
+            <div id="panel-content" class="panel-body">
+
+                {% if can_edit %}
+                <!-- ── Редагування локації ── -->
+                <h6 id="edit-form-title" class="text-primary mb-2"
+                    style="font-size:1rem; border-bottom:1px solid #ddd; padding-bottom:8px;"></h6>
                 <form id="edit-form">
                     <input type="hidden" id="location-id">
-                    <div class="mb-3">
-                        <label for="location-name" class="form-label">{{ _('Назва локації') }}</label>
-                        <input type="text" class="form-control" id="location-name" required style="width:100%;">
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">{{ _('Назва') }}</label>
+                        <input type="text" class="form-control form-control-sm" id="location-name" required>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label for="location-description" class="form-label">{{ _('Опис локації') }}</label>
-                        <input type="text" class="form-control" id="location-description" required style="width:100%;">
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm text-muted">{{ _('Опис') }}</label>
+                        <input type="text" class="form-control form-control-sm" id="location-description"
+                               placeholder="{{ _('Коротка характеристика локації') }}">
                     </div>
-                    
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="location-lat" class="form-label">{{ _('Широта (Lat)') }}</label>
-                            <input type="number" step="0.00001" class="form-control" id="location-lat" required>
+                        <div class="col-6 mb-2">
+                            <label class="form-label form-label-sm text-muted">{{ _('Широта') }}</label>
+                            <input type="number" step="0.00001" class="form-control form-control-sm" id="location-lat" placeholder="49.85000">
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="location-lon" class="form-label">{{ _('Довгота (Lng)') }}</label>
-                            <input type="number" step="0.00001" class="form-control" id="location-lon" required>
+                        <div class="col-6 mb-2">
+                            <label class="form-label form-label-sm text-muted">{{ _('Довгота') }}</label>
+                            <input type="number" step="0.00001" class="form-control form-control-sm" id="location-lon" placeholder="23.65000">
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="biotope-select" class="form-label">{{ _('Біотопи') }}</label>
-                        <select id="biotope-select" class="form-control" multiple>
+                    <small id="coord-hint" class="text-info d-block mb-2">
+                        <i class="fas fa-map-marker-alt me-1"></i>{{ _('Клацніть на карті або введіть координати вручну.') }}
+                    </small>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">{{ _('Біотопи') }}</label>
+                        <select id="biotope-select" class="form-control form-control-sm" multiple>
                             {% for b in biotopes %}
                                 <option value="{{ b.id }}">{{ b.get_name(g.lang_code) }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="button-group">
-                        <button type="submit" class="btn btn-primary">{{ _('Зберегти зміни') }}</button>
-                        <button type="button" id="cancel-btn" class="btn btn-secondary">{{ _('Скасувати') }}</button>
+                    <!-- Вибір установи — тільки при створенні нової локації -->
+                    <div class="mb-2" id="institution-row" style="display:none;">
+                        <label class="form-label form-label-sm">{{ _('Установа') }}</label>
+                        <select id="institution-select" class="form-control form-control-sm">
+                            <option value="">{{ _('-- Без установи --') }}</option>
+                            {% for inst in user_institutions %}
+                                <option value="{{ inst.id }}">{{ inst.name_en if g.lang_code != 'uk' and inst.name_en else inst.name_uk }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if not is_admin and user_institutions|length == 1 %}
+                        <small class="text-muted">{{ _('Локацію буде додано до вашої установи.') }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2 mt-3 pt-2 border-top">
+                        <button type="submit" id="save-btn" class="btn btn-primary btn-sm flex-fill">{{ _('Зберегти') }}</button>
+                        <button type="button" id="cancel-btn" class="btn btn-outline-secondary btn-sm">{{ _('Скасувати') }}</button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
+                <hr class="my-3">
+                {% endif %}
+
+                <!-- ── Журнал обслуговування ── -->
+                <h6 id="service-form-title" class="text-muted mb-2"
+                    style="font-size:0.85rem; text-transform:uppercase; letter-spacing:.04em;">
+                    <i class="fas fa-plus-circle me-1"></i>{{ _('Новий запис') }}
+                </h6>
+                <div id="service-form-placeholder" class="text-muted small mb-2">
+                    {{ _('Виберіть локацію, щоб додати запис.') }}
+                </div>
+                <form id="service-log-form" style="display:none;">
+                    <input type="hidden" id="service-location-id">
+                    <input type="hidden" id="service-visit-id">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">{{ _('Дата і час') }}</label>
+                            <input type="datetime-local" class="form-control form-control-sm" id="visit-datetime" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">{{ _('Результат візиту') }}</label>
+                            <select id="visit-purpose" class="form-control form-control-sm" required>
+                                <option value="">{{ _('-- Виберіть --') }}</option>
+                                {% for p in visit_purposes %}
+                                    <option value="{{ p.id }}">{{ p.get_name(g.lang_code) }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">{{ _('Заміна елементів живлення') }}</label>
+                            <select id="battery-type" class="form-control form-control-sm">
+                                <option value="">{{ _('-- Без заміни --') }}</option>
+                                {% for b in battery_types %}
+                                    <option value="{{ b.id }}">{{ b.get_name(g.lang_code) }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">{{ _('Стан камери') }}</label>
+                            <div class="d-flex gap-2 mt-1">
+                                <div class="form-check form-check-inline me-0">
+                                    <input class="form-check-input" type="radio" name="is-operational" id="op-yes" value="true">
+                                    <label class="form-check-label small" for="op-yes">{{ _('Так') }}</label>
+                                </div>
+                                <div class="form-check form-check-inline me-0">
+                                    <input class="form-check-input" type="radio" name="is-operational" id="op-no" value="false">
+                                    <label class="form-check-label small" for="op-no">{{ _('Ні') }}</label>
+                                </div>
+                                <div class="form-check form-check-inline me-0">
+                                    <input class="form-check-input" type="radio" name="is-operational" id="op-unknown" value="" checked>
+                                    <label class="form-check-label small" for="op-unknown">{{ _('?') }}</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="sd-card-changed">
+                                <label class="form-check-label small" for="sd-card-changed">{{ _('SD-карта замінена') }}</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">{{ _('К-ть фото на карті') }}</label>
+                            <input type="number" class="form-control form-control-sm" id="photos-on-card" placeholder="{{ _('необов\'язково') }}">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">{{ _('Коментарі') }}</label>
+                        <textarea class="form-control form-control-sm" id="comments" rows="2"></textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" id="service-save-btn" class="btn btn-primary btn-sm flex-fill">{{ _('Зберегти запис') }}</button>
+                        <button type="button" id="service-cancel-edit-btn" class="btn btn-outline-secondary btn-sm" style="display:none;">{{ _('Скасувати') }}</button>
+                    </div>
+                </form>
+
+                <hr class="my-3">
+
+                <!-- ── Історія ── -->
+                <h6 class="text-muted mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:.04em;">
+                    <i class="fas fa-history me-1"></i>{{ _('Історія') }}
+                </h6>
+                <div id="history-placeholder" class="text-muted small">{{ _('Немає даних.') }}</div>
+                <div id="history-content"></div>
+
+            </div><!-- end panel-content -->
+        </div><!-- end right-panel -->
+    </div><!-- end page-layout -->
 </div>
 {% endblock %}
 
@@ -141,190 +379,340 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Ініціалізація
-    $('#biotope-select').select2();
-    const formWrapper = $('#form-wrapper');
-    const placeholder = $('#placeholder');
-    const locationsListItems = $('.locations-list li');
-    let map, markers = {};
+    {% if can_edit %}
+    $('#biotope-select').select2({ placeholder: "{{ _('Виберіть біотопи...') }}" });
+    {% endif %}
+    $('#visit-purpose, #battery-type').select2({ placeholder: "{{ _('-- Виберіть --') }}", width: '100%' });
+
+    // ─── ДАНІ ─────────────────────────────────────────────────────────────
+    const locationsData = {{ locations_json_string|safe }};
+    let markers = {};
+    let markersGroup;
     let activeLocationId = null;
-    
-    // Створюємо кастомні іконки
+    let mode = 'edit'; // 'edit' | 'create'
+    let tempMarker = null;
+    let mapMode = 'data';     // 'data' | 'service'
+    let serviceStatus = {};   // location_id -> status string
+
+    const canEdit = {{ 'true' if can_edit else 'false' }};
+    const isAdmin = {{ 'true' if is_admin else 'false' }};
+    {% if not is_admin and user_institutions|length == 1 %}
+    const singleInstitutionId = {{ user_institutions[0].id }};
+    {% else %}
+    const singleInstitutionId = null;
+    {% endif %}
+
+    // ─── ІКОНКИ ───────────────────────────────────────────────────────────
+    const CM = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
+    const shadow = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
+    const iconOpts = { iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowUrl: shadow };
+
     const defaultIcon = L.icon({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        popupAnchor: [1, -34],
-        shadowSize: [41, 41]
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        ...iconOpts
     });
-    
-    const selectedIcon = L.icon({
-        iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        popupAnchor: [1, -34],
-        shadowSize: [41, 41]
-    });
+    const selectedIcon     = L.icon({ iconUrl: CM+'marker-icon-grey.png',   iconRetinaUrl: CM+'marker-icon-2x-grey.png',   ...iconOpts, className: 'marker-selected-icon' });
+    const noBiotopeIcon    = L.icon({ iconUrl: CM+'marker-icon-gold.png',   iconRetinaUrl: CM+'marker-icon-2x-gold.png',   ...iconOpts });
+    const noDescriptionIcon= L.icon({ iconUrl: CM+'marker-icon-violet.png', iconRetinaUrl: CM+'marker-icon-2x-violet.png', ...iconOpts });
 
-    // Ініціалізація карти
+    function mkServiceIcon(color, cls='') {
+        return L.icon({ iconUrl: CM+'marker-icon-'+color+'.png', iconRetinaUrl: CM+'marker-icon-2x-'+color+'.png', ...iconOpts, className: cls });
+    }
+    const serviceIcons = {
+        ok:       mkServiceIcon('green'),
+        warning:  mkServiceIcon('yellow'),
+        critical: mkServiceIcon('red'),
+        unknown:  mkServiceIcon('grey'),
+        inactive: mkServiceIcon('grey', 'marker-inactive')
+    };
+
+    function getStatusIcon(loc) {
+        if (!loc.biotope_ids || loc.biotope_ids.length === 0) return noBiotopeIcon;
+        if (!loc.has_description) return noDescriptionIcon;
+        return defaultIcon;
+    }
+
+    function getMarkerIcon(loc) {
+        if (loc.id == activeLocationId) return selectedIcon;
+        if (mapMode === 'service') {
+            const s = serviceStatus[loc.id];
+            return s ? (serviceIcons[s] || serviceIcons.unknown) : serviceIcons.unknown;
+        }
+        return getStatusIcon(loc);
+    }
+
+    function applyListClass(listItem, loc) {
+        listItem.removeClass('loc-no-biotope loc-no-description');
+        if (!loc.biotope_ids || loc.biotope_ids.length === 0) listItem.addClass('loc-no-biotope');
+        else if (!loc.has_description)                        listItem.addClass('loc-no-description');
+    }
+
+    function refreshAllMarkers() {
+        locationsData.forEach(loc => {
+            if (markers[loc.id]) markers[loc.id].setIcon(getMarkerIcon(loc));
+        });
+    }
+
+    // ─── КАРТА ────────────────────────────────────────────────────────────
     function initMap() {
-        const GEOSERVER_BASE_URL = "{{ geoserver_url }}";
-        const geocache = `${GEOSERVER_BASE_URL}/gwc/service/wms`;
-        
-        const kvartals_rsnr = L.tileLayer.wms(geocache, {
-            layers: 'roztochya:kvartals_rsnr',
-            format: 'image/png',
-            transparent: true,
-            pane: 'kvartalsPane'
-        });
-
-        const vydils_rsnr = L.tileLayer.wms(geocache, {
-            layers: 'roztochya:vydils_rsnr',
-            format: 'image/png',
-            transparent: true,
-            pane: 'vydilsPane'
-        });
+        const wmsUrl = `{{ geoserver_url }}/wms`;
+        const wdpaLayerData = [
+            { name: "{{ _('Національні природні парки') }}",    cql: "desig_eng='National nature park'",    color: '#4daf4a' },
+            { name: "{{ _('Біосферні заповідники') }}",         cql: "desig_eng='Biosphere reserve'",       color: '#ff7f00' },
+            { name: "{{ _('Регіональні ландшафтні парки') }}", cql: "desig_eng='Regional landscape park'", color: '#984ea3' },
+            { name: "{{ _('Заказники') }}",                     cql: "desig_eng='Zakaznik'",                color: '#377eb8' },
+            { name: "{{ _('Природні заповідники') }}",          cql: "desig_eng='Nature reserve'",          color: '#e41a1c' },
+            { name: "{{ _('Пам\'ятки природи') }}",             cql: "desig_eng='Natural monument'",        color: '#ffff33' },
+            { name: "{{ _('Заповідні урочища') }}",             cql: "desig_eng='Zapovidne Urochyshche'",   color: '#a65628' }
+        ];
+        const wmsWdpaOpts = { layers: 'baselayers:wdpa_ua', format: 'image/png', transparent: true, attribution: 'WDPA Ukraine', pane: 'wdpaPane', opacity: 0.7 };
 
         map = L.map('map').setView([49.8, 23.6], 9);
+        map.createPane('wdpaPane').style.zIndex = 400;
 
-        map.createPane('vydilsPane');
-        map.getPane('vydilsPane').style.zIndex = 450; // Менший z-index, буде нижче
-        map.createPane('kvartalsPane');
-        map.getPane('kvartalsPane').style.zIndex = 460; // Більший z-index, буде вище
-        
-        // Базові шари
-        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        });
-        
+        const osmLayer    = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
         const hybridLayer = L.layerGroup([
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                attribution: '© ESRI',
-                maxZoom: 19
-            }),
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19
-            })
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-
-        // Додаємо OSM за замовчуванням
         hybridLayer.addTo(map);
-        
-        // Контроль шарів
-        const baseLayers = {
-            "Hybrid": hybridLayer,
-            "OSM": osmLayer
-        };
 
-        const overlayLayers = {
-            "{{ _('Квартальна сітка ПЗ Розточчя') }}": kvartals_rsnr,
-            "{{ _('Видільна сітка ПЗ Розточчя') }}": vydils_rsnr
-        };
-        
-        L.control.layers(baseLayers, overlayLayers).addTo(map);
+        const overlayMaps = {};
+        wdpaLayerData.forEach(item => {
+            item.layer = L.tileLayer.wms(wmsUrl, { ...wmsWdpaOpts, cql_filter: item.cql });
+            overlayMaps[item.name] = item.layer;
+        });
+        L.control.layers({ "Hybrid": hybridLayer, "OSM": osmLayer }, overlayMaps).addTo(map);
 
-        const locationsData = {{ locations_json_string|safe }};
-        
-        const markersGroup = L.featureGroup();
+        // Динамічна легенда ПЗФ
+        const WdpaLegendControl = L.Control.extend({
+            onAdd: function() {
+                this._div = L.DomUtil.create('div', 'info legend');
+                this._div.style.display = 'none';
+                return this._div;
+            },
+            update: function(active) {
+                if (!this._div) return;
+                this._div.innerHTML = '<h4>{{ _("Території ПЗФ") }}</h4>';
+                if (!active || Object.keys(active).length === 0) { this._div.style.display = 'none'; return; }
+                this._div.style.display = 'block';
+                for (const name in active) {
+                    this._div.innerHTML += `<div class="legend-item"><i style="background:${active[name].color}"></i> ${name}</div>`;
+                }
+            }
+        });
+        const wdpaLegend = new WdpaLegendControl({ position: 'bottomright' }).addTo(map);
+        const activeWdpaLayers = {};
+        map.on('overlayadd', e => {
+            const item = wdpaLayerData.find(i => i.name === e.name);
+            if (item) { activeWdpaLayers[e.name] = item; wdpaLegend.update(activeWdpaLayers); }
+        });
+        map.on('overlayremove', e => {
+            if (activeWdpaLayers[e.name]) { delete activeWdpaLayers[e.name]; wdpaLegend.update(activeWdpaLayers); }
+        });
 
+        markersGroup = L.featureGroup();
         locationsData.forEach(loc => {
-            const marker = L.marker([loc.latitude, loc.longitude], {icon: defaultIcon});
+            const marker = L.marker([loc.latitude, loc.longitude], { icon: getStatusIcon(loc) });
             marker.locationId = loc.id;
             marker.on('click', () => selectLocation(loc.id));
             markers[loc.id] = marker;
             markersGroup.addLayer(marker);
         });
-
         markersGroup.addTo(map);
-        if (markersGroup.getBounds().isValid()) {
-            map.fitBounds(markersGroup.getBounds().pad(0.1));
-        }
+        if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
+
+        // Клік по карті — координати при створенні
+        map.on('click', function(e) {
+            if (mode !== 'create') return;
+            const lat = parseFloat(e.latlng.lat.toFixed(5));
+            const lng = parseFloat(e.latlng.lng.toFixed(5));
+            $('#location-lat').val(lat);
+            $('#location-lon').val(lng);
+            if (tempMarker) map.removeLayer(tempMarker);
+            tempMarker = L.marker([lat, lng], { icon: selectedIcon }).addTo(map);
+        });
     }
     initMap();
 
-    // Вибір локації
-    locationsListItems.on('click', function() {
+    // Ручний ввід координат
+    function updateTempMarkerFromInputs() {
+        if (mode !== 'create') return;
+        const lat = parseFloat($('#location-lat').val());
+        const lon = parseFloat($('#location-lon').val());
+        if (isNaN(lat) || isNaN(lon)) return;
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
+        if (tempMarker) map.removeLayer(tempMarker);
+        tempMarker = L.marker([lat, lon], { icon: selectedIcon }).addTo(map);
+        map.panTo([lat, lon]);
+    }
+    $('#location-lat, #location-lon').on('change', updateTempMarkerFromInputs);
+
+    // ─── ПЕРЕМИКАЧ РЕЖИМУ МАРКЕРІВ ────────────────────────────────────────
+    function setMapMode(newMode) {
+        if (newMode === mapMode) return;
+        mapMode = newMode;
+        $('#mode-btn-data').toggleClass('active', mapMode === 'data');
+        $('#mode-btn-service').toggleClass('active', mapMode === 'service');
+        $('#legend-data').toggle(mapMode === 'data');
+        $('#legend-service').toggle(mapMode === 'service');
+        if (mapMode === 'service') loadServiceStatus();
+        else refreshAllMarkers();
+    }
+    $('#mode-btn-data').on('click', () => setMapMode('data'));
+    $('#mode-btn-service').on('click', () => setMapMode('service'));
+
+    // ─── ФІЛЬТР УСТАНОВ ───────────────────────────────────────────────────
+    $('#global-inst-filter').on('change', function() {
+        const selectedId = $(this).val();
+        locationsData.forEach(loc => {
+            const instIds = loc.institution_ids ? loc.institution_ids.map(Number) : [];
+            const isMatch = !selectedId || instIds.includes(Number(selectedId));
+            const listItem = $(`.locations-list li[data-location-id="${loc.id}"]`);
+            isMatch ? listItem.show() : listItem.hide();
+            if (markers[loc.id]) {
+                if (isMatch) { if (!markersGroup.hasLayer(markers[loc.id])) markersGroup.addLayer(markers[loc.id]); }
+                else         { if (markersGroup.hasLayer(markers[loc.id])) markersGroup.removeLayer(markers[loc.id]); }
+            }
+        });
+        deselectAll();
+        if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
+        if (mapMode === 'service') loadServiceStatus();
+    });
+
+    async function loadServiceStatus() {
+        const url = `/{{ g.lang_code }}/camera-traps/api/locations-with-status`;
+        try {
+            const r = await fetch(url);
+            const data = await r.json();
+            if (data.error) { console.error(data.error); setMapMode('data'); return; }
+            serviceStatus = {};
+            data.forEach(loc => { serviceStatus[loc.id] = loc.status; });
+            refreshAllMarkers();
+        } catch(e) {
+            console.error('Помилка завантаження статусів:', e);
+            setMapMode('data');
+        }
+    }
+
+    // ─── ВИБІР ЛОКАЦІЇ ────────────────────────────────────────────────────
+    $('.locations-list').on('click', 'li', function() {
         selectLocation($(this).data('location-id'));
     });
 
     function selectLocation(locationId) {
+        if (mode === 'create') deselectAll();
         if (activeLocationId === locationId) return;
-        
-        // Скидаємо попередню вибрану точку
-        if (activeLocationId && markers[activeLocationId]) {
-            markers[activeLocationId].setIcon(defaultIcon);
-        }
-        
-        activeLocationId = locationId;
 
-        locationsListItems.removeClass('active');
-        $(`.locations-list li[data-location-id=${locationId}]`).addClass('active');
+        // Скидаємо попередню іконку
+        if (activeLocationId && markers[activeLocationId]) {
+            const prevId = activeLocationId;
+            activeLocationId = null;
+            const prevLoc = locationsData.find(l => l.id == prevId);
+            markers[prevId].setIcon(prevLoc ? getMarkerIcon(prevLoc) : defaultIcon);
+        }
+
+        activeLocationId = locationId;
+        mode = 'edit';
+
+        $('.locations-list li').removeClass('active');
+        $(`.locations-list li[data-location-id="${locationId}"]`).addClass('active');
 
         if (markers[locationId]) {
             markers[locationId].setIcon(selectedIcon);
             map.panTo(markers[locationId].getLatLng());
         }
 
+        showPanel();
+
+        {% if can_edit %}
         fetch(`/{{ g.lang_code }}/camera-traps/api/location/${locationId}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) throw new Error(data.error);
-                populateForm(data);
-            })
-            .catch(err => {
-                alert(`{{ _('Помилка завантаження даних:') }} ${err.message}`);
-                deselectAll();
-            });
+            .then(r => r.json())
+            .then(data => { if (!data.error) populateEditForm(data); })
+            .catch(() => {});
+        {% endif %}
+
+        // Журнал
+        $('#service-form-placeholder').hide();
+        $('#service-log-form').show();
+        $('#service-location-id').val(locationId);
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        $('#visit-datetime').val(now.toISOString().slice(0, 16));
+        loadHistory(locationId);
     }
 
-    function populateForm(data) {
+    function showPanel() {
+        $('#placeholder').hide();
+        $('#panel-content').show().scrollTop(0);
+    }
+
+    // ─── ФОРМА РЕДАГУВАННЯ ────────────────────────────────────────────────
+    {% if can_edit %}
+    function populateEditForm(data) {
         $('#location-id').val(data.id);
-        $('#form-title').text(`{{ _('Редагування:') }} ${data.name}`);
+        $('#edit-form-title').text(`{{ _('Редагування:') }} ${data.name}`);
+        $('#save-btn').text('{{ _("Зберегти") }}');
+        $('#coord-hint').hide();
         $('#location-name').val(data.name);
-        $('#location-description').val(data.description); // <-- ДОДАНО: заповнюємо поле опису
+        $('#location-description').val(data.description || '');
         $('#location-lat').val(data.latitude);
         $('#location-lon').val(data.longitude);
         $('#biotope-select').val(data.biotope_ids).trigger('change');
-        
-        placeholder.hide();
-        formWrapper.show();
     }
 
-    // Збереження форми
+    $('#new-location-btn').on('click', function() {
+        deselectAll();
+        mode = 'create';
+        $('#edit-form-title').text('{{ _("Нова локація") }}');
+        $('#save-btn').text('{{ _("Створити") }}');
+        $('#coord-hint').show();
+        // Показуємо вибір установи; якщо одна — автоматично вибираємо її
+        $('#institution-row').show();
+        if (singleInstitutionId) {
+            $('#institution-select').val(singleInstitutionId);
+        }
+        showPanel();
+    });
+
     $('#edit-form').on('submit', function(e) {
         e.preventDefault();
+        if (mode === 'create') submitCreateLocation();
+        else submitUpdateLocation();
+    });
+
+    function submitUpdateLocation() {
         const locationId = $('#location-id').val();
-        
         const dataToSave = {
             name: $('#location-name').val(),
-            description: $('#location-description').val(), // <-- ДОДАНО: зчитуємо опис з форми
-            latitude: $('#location-lat').val(),
-            longitude: $('#location-lon').val(),
+            description: $('#location-description').val(),
+            latitude: parseFloat($('#location-lat').val()),
+            longitude: parseFloat($('#location-lon').val()),
             biotope_ids: $('#biotope-select').val().map(Number)
         };
-        
         fetch(`/{{ g.lang_code }}/camera-traps/api/update-location/${locationId}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token() }}'
-            },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
             body: JSON.stringify(dataToSave)
         })
-        .then(res => res.json())
+        .then(r => r.json())
         .then(response => {
             if (response.success) {
                 alert(response.message);
-                const newName = dataToSave.name;
-                $(`.locations-list li[data-location-id=${locationId}]`).text(newName);
-                if(markers[locationId]) {
-                    const newLatLng = [dataToSave.latitude, dataToSave.longitude];
-                    markers[locationId].setLatLng(newLatLng);
+                const listItem = $(`.locations-list li[data-location-id="${locationId}"]`);
+                listItem.text(dataToSave.name);
+                const locIndex = locationsData.findIndex(l => l.id == locationId);
+                if (locIndex > -1) {
+                    locationsData[locIndex].biotope_ids = dataToSave.biotope_ids;
+                    locationsData[locIndex].has_description = !!(dataToSave.description && dataToSave.description.trim());
+                    applyListClass(listItem, locationsData[locIndex]);
+                    if (markers[locationId]) markers[locationId].setIcon(getStatusIcon(locationsData[locIndex]));
+                    if (markers[locationId] && (dataToSave.latitude !== locationsData[locIndex].latitude || dataToSave.longitude !== locationsData[locIndex].longitude)) {
+                        markers[locationId].setLatLng([dataToSave.latitude, dataToSave.longitude]);
+                        locationsData[locIndex].latitude = dataToSave.latitude;
+                        locationsData[locIndex].longitude = dataToSave.longitude;
+                    }
                 }
                 deselectAll();
             } else {
@@ -332,19 +720,217 @@ $(document).ready(function() {
             }
         })
         .catch(err => alert(`{{ _('Помилка збереження:') }} ${err.message}`));
-    });
+    }
+
+    function submitCreateLocation() {
+        const lat = parseFloat($('#location-lat').val());
+        const lon = parseFloat($('#location-lon').val());
+        if (!$('#location-name').val().trim()) { alert('{{ _("Вкажіть назву локації.") }}'); return; }
+        if (isNaN(lat) || isNaN(lon)) { alert('{{ _("Вкажіть координати: клацніть на карті або введіть вручну.") }}'); return; }
+
+        const dataToSend = {
+            name: $('#location-name').val().trim(),
+            description: $('#location-description').val().trim(),
+            lat: lat, lon: lon,
+            biotope_ids: $('#biotope-select').val().map(Number),
+            institution_id: $('#institution-select').val() || null
+        };
+
+        fetch(`/{{ g.lang_code }}/camera-traps/api/location/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+            body: JSON.stringify(dataToSend)
+        })
+        .then(r => r.json())
+        .then(response => {
+            if (response.success) {
+                alert(response.message);
+                const newLoc = {
+                    id: response.location_id,
+                    name: dataToSend.name,
+                    latitude: lat, longitude: lon,
+                    biotope_ids: dataToSend.biotope_ids,
+                    has_description: !!(dataToSend.description && dataToSend.description.trim()),
+                    institution_ids: dataToSend.institution_id ? [Number(dataToSend.institution_id)] : []
+                };
+                locationsData.push(newLoc);
+                const listItem = $(`<li data-location-id="${response.location_id}">${dataToSend.name}</li>`);
+                applyListClass(listItem, newLoc);
+                $('.locations-list').append(listItem);
+                const marker = L.marker([lat, lon], { icon: getStatusIcon(newLoc) });
+                marker.locationId = response.location_id;
+                marker.on('click', () => selectLocation(response.location_id));
+                markers[response.location_id] = marker;
+                markersGroup.addLayer(marker);
+                deselectAll();
+            } else {
+                throw new Error(response.error);
+            }
+        })
+        .catch(err => alert(`{{ _('Помилка:') }} ${err.message}`));
+    }
 
     $('#cancel-btn').on('click', deselectAll);
+    {% endif %}
 
+    // ─── ЖУРНАЛ ОБСЛУГОВУВАННЯ ────────────────────────────────────────────
+    function loadHistory(locationId) {
+        $('#history-content').html('<div class="text-center text-muted small py-2">{{ _("Завантаження...") }}</div>');
+        $('#history-placeholder').hide();
+        fetch(`/{{ g.lang_code }}/camera-traps/api/location/${locationId}/service-history`)
+            .then(r => r.json())
+            .then(data => {
+                $('#history-content').empty();
+                if (!data.length) { $('#history-placeholder').show(); return; }
+                data.forEach(v => {
+                    const opBadge = v.is_operational === true
+                        ? '<span class="badge bg-success">{{ _("Так") }}</span>'
+                        : v.is_operational === false
+                        ? '<span class="badge bg-danger">{{ _("Ні") }}</span>'
+                        : '<span class="badge bg-secondary">{{ _("?") }}</span>';
+                    const sdBadge = v.sd_card_changed
+                        ? '<span class="badge bg-info text-dark">{{ _("Замінено") }}</span>'
+                        : '<span class="badge bg-light text-dark border">{{ _("Ні") }}</span>';
+                    const photosInfo = v.photos_on_card ? ` | {{ _('Фото:') }} ${v.photos_on_card}` : '';
+                    const editBtn = (canEdit || v.is_own)
+                        ? `<button type="button" class="edit-visit-btn"
+                            style="background:none; border:1px solid #adb5bd; border-radius:3px; padding:1px 5px; font-size:0.78rem; cursor:pointer; color:#555; flex-shrink:0;"
+                            data-visit='${JSON.stringify(v).replace(/'/g, "&#39;")}'>&#9998;</button>`
+                        : '';
+                    const item = `
+                        <div class="history-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <strong class="small">${v.purpose}</strong>
+                                <span class="history-meta d-flex align-items-center gap-1">
+                                    ${v.visit_datetime}<br><em>${v.user}</em>
+                                    ${editBtn}
+                                </span>
+                            </div>
+                            <div class="small mt-1">
+                                {{ _('Камера:') }} ${opBadge} |
+                                {{ _('Бат.:') }} ${v.battery_info} |
+                                {{ _('SD:') }} ${sdBadge}${photosInfo}
+                            </div>
+                            ${v.comments ? `<p class="mt-1 mb-0 fst-italic small text-muted">"${v.comments}"</p>` : ''}
+                        </div>`;
+                    $('#history-content').append(item);
+                });
+            })
+            .catch(() => {
+                $('#history-content').html('<div class="alert alert-danger small py-1">{{ _("Помилка завантаження.") }}</div>');
+            });
+    }
+
+    // Клік на кнопку редагування запису
+    $('#history-content').on('click', '.edit-visit-btn', function() {
+        const v = JSON.parse($(this).attr('data-visit'));
+        $('#service-form-title').html('<i class="fas fa-pen me-1"></i>{{ _("Редагування запису") }}');
+        $('#service-visit-id').val(v.id);
+        $('#visit-datetime').val(v.visit_datetime_raw);
+        $('#visit-purpose').val(v.visit_purpose_id).trigger('change');
+        $('#battery-type').val(v.battery_type_id || '').trigger('change');
+        $('#sd-card-changed').prop('checked', v.sd_card_changed);
+        $('#photos-on-card').val(v.photos_on_card || '');
+        if (v.is_operational === true)       $('input[name="is-operational"][value="true"]').prop('checked', true);
+        else if (v.is_operational === false) $('input[name="is-operational"][value="false"]').prop('checked', true);
+        else                                 $('input[name="is-operational"][value=""]').prop('checked', true);
+        $('#comments').val(v.comments || '');
+        $('#service-save-btn').text('{{ _("Зберегти зміни") }}');
+        $('#service-cancel-edit-btn').show();
+        $('#service-log-form').show();
+        $('#service-form-placeholder').hide();
+        const scrollTo = $('#service-form-title').offset().top - $('#panel-content').offset().top + $('#panel-content').scrollTop();
+        $('#panel-content').animate({ scrollTop: scrollTo }, 300);
+    });
+
+    $('#service-cancel-edit-btn').on('click', resetServiceForm);
+
+    function resetServiceForm() {
+        $('#service-visit-id').val('');
+        $('#service-form-title').html('<i class="fas fa-plus-circle me-1"></i>{{ _("Новий запис") }}');
+        $('#service-save-btn').text('{{ _("Зберегти запис") }}');
+        $('#service-cancel-edit-btn').hide();
+        $('#visit-purpose').val('').trigger('change');
+        $('#battery-type').val('').trigger('change');
+        $('input[name="is-operational"][value=""]').prop('checked', true);
+        $('#sd-card-changed').prop('checked', false);
+        $('#photos-on-card').val('');
+        $('#comments').val('');
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        $('#visit-datetime').val(now.toISOString().slice(0, 16));
+    }
+
+    $('#service-log-form').on('submit', function(e) {
+        e.preventDefault();
+        const btn = $('#service-save-btn');
+        const origText = btn.html();
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        const visitId = $('#service-visit-id').val();
+        const formData = {
+            location_id: $('#service-location-id').val(),
+            visit_datetime: $('#visit-datetime').val(),
+            visit_purpose_id: $('#visit-purpose').val(),
+            battery_type_id: $('#battery-type').val(),
+            is_camera_operational: $('input[name="is-operational"]:checked').val(),
+            sd_card_changed: $('#sd-card-changed').is(':checked'),
+            photos_on_card: $('#photos-on-card').val(),
+            comments: $('#comments').val()
+        };
+        const url = visitId
+            ? `/{{ g.lang_code }}/camera-traps/api/service-visit/${visitId}/update`
+            : `/{{ g.lang_code }}/camera-traps/api/service-log/create`;
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+            body: JSON.stringify(formData)
+        })
+        .then(r => r.json().then(d => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+            if (ok) {
+                alert(d.message);
+                resetServiceForm();
+                loadHistory($('#service-location-id').val());
+                if (mapMode === 'service') loadServiceStatus();
+            } else {
+                throw new Error(d.error || '{{ _("Невідома помилка") }}');
+            }
+        })
+        .catch(err => alert(`{{ _('Помилка:') }} ${err.message}`))
+        .finally(() => btn.prop('disabled', false).html(origText));
+    });
+
+    // ─── СКИДАННЯ ВИБОРУ ──────────────────────────────────────────────────
     function deselectAll() {
+        mode = 'edit';
+        if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
         if (activeLocationId && markers[activeLocationId]) {
-            markers[activeLocationId].setIcon(defaultIcon);
+            const prevId = activeLocationId;
+            activeLocationId = null;
+            const prevLoc = locationsData.find(l => l.id == prevId);
+            markers[prevId].setIcon(prevLoc ? getMarkerIcon(prevLoc) : defaultIcon);
+        } else {
+            activeLocationId = null;
         }
-        activeLocationId = null;
-        locationsListItems.removeClass('active');
-        formWrapper.hide();
-        placeholder.show();
+        $('.locations-list li').removeClass('active');
+
+        $('#panel-content').hide();
+        $('#placeholder').show();
+
+        {% if can_edit %}
+        $('#coord-hint').hide();
+        $('#institution-row').hide();
+        $('#institution-select').val('');
+        $('#save-btn').text('{{ _("Зберегти") }}');
         $('#edit-form')[0].reset();
+        $('#biotope-select').val(null).trigger('change');
+        {% endif %}
+
+        resetServiceForm();
+        $('#service-log-form').hide();
+        $('#service-form-placeholder').show();
+        $('#history-content').empty();
+        $('#history-placeholder').show();
     }
 });
 </script>

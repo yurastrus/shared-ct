@@ -1585,36 +1585,93 @@ def remove_from_favorites(lang_code):
 
 @camera_traps_bp.route('/manage-locations')
 @login_required
-@role_required('admin')
+@role_required('manager')
 def manage_locations(lang_code):
-    """Відображає сторінку для редагування локацій."""
+    """Відображає об'єднану сторінку управління локаціями та журналу обслуговування."""
     ct_session = get_ct_session()
     try:
-        locations_objects = ct_session.query(Location).order_by(Location.name).all()
-        biotopes = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
 
-        # Створюємо список словників, як і раніше
+        # Фільтрація локацій за установами, як в upload
+        if is_admin:
+            locations_objects = ct_session.query(Location).order_by(Location.name).all()
+        elif user_inst_ids:
+            locations_objects = (
+                ct_session.query(Location)
+                .join(location_institutions, Location.id == location_institutions.c.location_id)
+                .filter(location_institutions.c.institution_id.in_(user_inst_ids))
+                .order_by(Location.name).distinct().all()
+            )
+        else:
+            locations_objects = []
+
+        biotopes = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
+        battery_types = ct_session.query(BatteryType).order_by(BatteryType.name_ua).all()
+        visit_purposes = ct_session.query(VisitPurpose).order_by(VisitPurpose.name_ua).all()
+
+        # Підтягуємо зв'язки локацій з установами одним запитом
+        loc_ids = [loc.id for loc in locations_objects]
+        if loc_ids:
+            inst_rows = ct_session.execute(
+                select(location_institutions.c.location_id, location_institutions.c.institution_id)
+                .where(location_institutions.c.location_id.in_(loc_ids))
+            ).fetchall()
+            loc_inst_map = {}
+            for row in inst_rows:
+                loc_inst_map.setdefault(row.location_id, []).append(row.institution_id)
+        else:
+            loc_inst_map = {}
+
+        # Установи для фільтра — тільки ті, що є у видимих локаціях
+        used_inst_ids = set()
+        for ids in loc_inst_map.values():
+            used_inst_ids.update(ids)
+        if is_admin and used_inst_ids:
+            filter_institutions = Institution.query.filter(
+                Institution.id.in_(used_inst_ids)
+            ).order_by(Institution.name_uk).all()
+        elif used_inst_ids:
+            filter_institutions = [i for i in current_user.institutions if i.id in used_inst_ids]
+        else:
+            filter_institutions = []
+
         locations_data = []
         for loc in locations_objects:
             locations_data.append({
                 'id': loc.id,
                 'name': loc.name,
                 'latitude': float(loc.latitude),
-                'longitude': float(loc.longitude)
+                'longitude': float(loc.longitude),
+                'biotope_ids': [b.id for b in loc.biotopes],
+                'has_description': bool(loc.description and loc.description.strip()),
+                'institution_ids': loc_inst_map.get(loc.id, [])
             })
-        
-        # <-- НОВИЙ НАДІЙНИЙ ПІДХІД -->
-        # Серіалізуємо дані в JSON-рядок за допомогою стандартної бібліотеки Python
-        locations_json_string = json.dumps(locations_data)
 
+        locations_json_string = json.dumps(locations_data)
         geoserver_url = current_app.config['GEOSERVER_URL']
-        
-        return render_template('manage_locations.html', 
-                               locations=locations_data, # Ця змінна для HTML-списку зліва
+
+        # Менеджер з установами теж може редагувати/створювати локації
+        can_edit = is_admin or bool(user_inst_ids)
+
+        # Список установ для форми створення локації
+        if is_admin:
+            user_institutions = Institution.query.order_by(Institution.name_uk).all()
+        else:
+            user_institutions = list(current_user.institutions)
+
+        return render_template('manage_locations.html',
+                               locations=locations_data,
                                biotopes=biotopes,
+                               battery_types=battery_types,
+                               visit_purposes=visit_purposes,
                                locations_json_string=locations_json_string,
-                               geoserver_url=geoserver_url) # Цей готовий рядок для JavaScript
-                               
+                               geoserver_url=geoserver_url,
+                               can_edit=can_edit,
+                               user_institutions=user_institutions,
+                               is_admin=is_admin,
+                               filter_institutions=filter_institutions)
+
     except Exception as e:
         current_app.logger.error(f"Error loading location management page: {e}", exc_info=True)
         flash(_("Помилка завантаження сторінки управління локаціями."), 'danger')
@@ -1624,11 +1681,27 @@ def manage_locations(lang_code):
 
 @camera_traps_bp.route('/api/update-location/<int:location_id>', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def update_location(lang_code, location_id):
-    """API для оновлення даних локації."""
+    """API для оновлення даних локації. Менеджер може оновлювати тільки локації своїх установ."""
     ct_session = get_ct_session()
     try:
+        is_admin = current_user.has_role('admin')
+
+        # Перевірка доступу до локації за установою
+        if not is_admin:
+            user_inst_ids = [inst.id for inst in current_user.institutions]
+            if not user_inst_ids:
+                return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
+            access = ct_session.execute(
+                select(location_institutions.c.location_id).where(
+                    (location_institutions.c.location_id == location_id) &
+                    (location_institutions.c.institution_id.in_(user_inst_ids))
+                ).limit(1)
+            ).fetchone()
+            if not access:
+                return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
+
         data = request.json
         location = ct_session.query(Location).get(location_id)
         if not location:
@@ -1637,13 +1710,10 @@ def update_location(lang_code, location_id):
         location.name = data.get('name', location.name)
         location.latitude = data.get('latitude', location.latitude)
         location.longitude = data.get('longitude', location.longitude)
-        location.description = data.get('description', location.description) # <-- ДОДАНО: оновлюємо поле опису
+        location.description = data.get('description', location.description)
 
-        # Оновлення біотопів (зв'язок M2M)
         biotope_ids = data.get('biotope_ids', [])
-        # Отримуємо об'єкти біотопів з БД
         selected_biotopes = ct_session.query(Biotope).filter(Biotope.id.in_(biotope_ids)).all()
-        # Повністю замінюємо список біотопів для цієї локації
         location.biotopes = selected_biotopes
 
         ct_session.commit()
@@ -1652,6 +1722,72 @@ def update_location(lang_code, location_id):
         ct_session.rollback()
         current_app.logger.error(f"Error updating location {location_id}: {e}")
         return jsonify({'success': False, 'error': _('Помилка збереження даних.')}), 500
+    finally:
+        close_ct_session()
+
+@camera_traps_bp.route('/api/location/create', methods=['POST'])
+@login_required
+@role_required('manager')
+def api_create_location_admin(lang_code):
+    """API для створення нової локації. Менеджер створює тільки для своїх установ."""
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+
+        data = request.json
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        lat = data.get('lat')
+        lon = data.get('lon')
+        biotope_ids = data.get('biotope_ids', [])
+        institution_id = data.get('institution_id')  # може бути None
+
+        if not name:
+            return jsonify({'success': False, 'error': _('Вкажіть назву локації.')}), 400
+        if lat is None or lon is None:
+            return jsonify({'success': False, 'error': _('Вкажіть координати.')}), 400
+
+        # Перевірка: менеджер може призначати тільки свої установи
+        if institution_id and not is_admin:
+            if int(institution_id) not in user_inst_ids:
+                return jsonify({'success': False, 'error': _('Немає доступу до цієї установи.')}), 403
+
+        new_location = Location(
+            name=name,
+            description=description or None,
+            latitude=lat,
+            longitude=lon,
+            created_by_id=current_user.id
+        )
+        if biotope_ids:
+            selected_biotopes = ct_session.query(Biotope).filter(Biotope.id.in_(biotope_ids)).all()
+            new_location.biotopes = selected_biotopes
+
+        ct_session.add(new_location)
+        ct_session.flush()
+        location_id = new_location.id
+
+        # Прив'язуємо до установи
+        if institution_id:
+            ct_session.execute(
+                location_institutions.insert().values(
+                    location_id=location_id,
+                    institution_id=int(institution_id)
+                )
+            )
+
+        ct_session.commit()
+
+        current_app.logger.info(
+            f"User {current_user.username} created CT location '{name}' (id={location_id}, inst={institution_id})"
+        )
+        return jsonify({'success': True, 'message': _('Локацію створено успішно!'), 'location_id': location_id}), 201
+
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error creating CT location: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка сервера при створенні локації.')}), 500
     finally:
         close_ct_session()
 
@@ -1961,34 +2097,17 @@ def api_get_identification_stats(lang_code):
 @login_required
 @role_required('manager')
 def service_log(lang_code):
-    """Відображає сторінку для ведення журналу обслуговування фотопасток."""
-    ct_session = get_ct_session()
-    try:
-        # Отримуємо довідники для заповнення випадаючих списків у формі
-        battery_types = ct_session.query(BatteryType).order_by(BatteryType.name_ua).all()
-        visit_purposes = ct_session.query(VisitPurpose).order_by(VisitPurpose.name_ua).all()
-        
-        # Отримуємо URL Geoserver з конфігурації
-        geoserver_url = current_app.config['GEOSERVER_URL']
-
-        return render_template('service_log.html',
-                               battery_types=battery_types,
-                               visit_purposes=visit_purposes,
-                               geoserver_url=geoserver_url)
-                               
-    except Exception as e:
-        current_app.logger.error(f"Error loading service log page: {e}", exc_info=True)
-        flash(_("Помилка завантаження сторінки журналу обслуговування."), 'danger')
-        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
-    finally:
-        close_ct_session()
+    """Перенаправляє на об'єднану сторінку управління локаціями."""
+    return redirect(url_for('camera_traps.manage_locations', lang_code=lang_code))
 
 @camera_traps_bp.route('/api/locations-with-status')
 @login_required
+@role_required('manager')
 def api_get_locations_with_status(lang_code):
     """
     API, що повертає список локацій з їхнім прогнозованим статусом.
     ФІНАЛЬНА ВЕРСІЯ: Враховує неактивні камери та обирає "найгірший" прогноз.
+    Фільтрує за установами поточного користувача (адмін бачить все).
     """
     ct_session = get_ct_session()
     try:
@@ -1997,11 +2116,24 @@ def api_get_locations_with_status(lang_code):
         TIME_CRITICAL_DAYS = 300
         PHOTO_WARNING_COUNT = 5000
         PHOTO_CRITICAL_COUNT = 10000
-        
+
         # Створюємо словник для визначення "ваги" статусу
         status_severity = {'ok': 0, 'warning': 1, 'critical': 2}
-        
-        locations = ct_session.query(Location).all()
+
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+
+        if is_admin:
+            locations = ct_session.query(Location).all()
+        elif user_inst_ids:
+            locations = (
+                ct_session.query(Location)
+                .join(location_institutions, Location.id == location_institutions.c.location_id)
+                .filter(location_institutions.c.institution_id.in_(user_inst_ids))
+                .distinct().all()
+            )
+        else:
+            return jsonify([])
         response_data = []
         
         for loc in locations:
@@ -2079,14 +2211,29 @@ def api_get_locations_with_status(lang_code):
 
 @camera_traps_bp.route('/api/location/<int:location_id>/service-history')
 @login_required
+@role_required('manager')
 def api_get_service_history(lang_code, location_id):
     """API для отримання історії обслуговування для конкретної локації."""
     ct_session = get_ct_session()
     try:
+        # Перевірка доступу: адмін бачить все, менеджер — тільки свої установи
+        if not current_user.has_role('admin'):
+            user_inst_ids = [inst.id for inst in current_user.institutions]
+            if not user_inst_ids:
+                return jsonify({'error': _('Немає доступу.')}), 403
+            access = ct_session.execute(
+                select(location_institutions.c.location_id).where(
+                    (location_institutions.c.location_id == location_id) &
+                    (location_institutions.c.institution_id.in_(user_inst_ids))
+                ).limit(1)
+            ).fetchone()
+            if not access:
+                return jsonify({'error': _('Немає доступу до цієї локації.')}), 403
+
         visits = ct_session.query(ServiceVisit)\
             .filter(ServiceVisit.location_id == location_id)\
             .order_by(ServiceVisit.visit_datetime.desc())\
-            .limit(20).all() # Обмежимо 20 останніми записами для швидкодії
+            .limit(20).all()
 
         history_data = []
         for v in visits:
@@ -2097,13 +2244,17 @@ def api_get_service_history(lang_code, location_id):
             history_data.append({
                 'id': v.id,
                 'visit_datetime': v.visit_datetime.strftime('%d.%m.%Y %H:%M'),
+                'visit_datetime_raw': v.visit_datetime.strftime('%Y-%m-%dT%H:%M'),
                 'purpose': v.visit_purpose.get_name(g.lang_code),
+                'visit_purpose_id': v.visit_purpose_id,
                 'user': username,
                 'is_operational': v.is_camera_operational,
                 'battery_info': v.battery_type.get_name(g.lang_code) if v.battery_type else _('Не замінювались'),
+                'battery_type_id': v.battery_type_id,
                 'sd_card_changed': v.sd_card_changed,
                 'photos_on_card': v.photos_on_card,
-                'comments': v.comments
+                'comments': v.comments,
+                'is_own': v.user_id == current_user.id
             })
         
         return jsonify(history_data)
@@ -2119,11 +2270,10 @@ def api_get_service_history(lang_code, location_id):
 @role_required('manager')
 def api_create_service_visit(lang_code):
     """API для створення нового запису в журналі обслуговування."""
-    print("---!!! ЗАПИТ ДІЙШОВ ДО ФУНКЦІЇ api_create_service_visit !!!---")
     ct_session = get_ct_session()
     try:
         data = request.json
-        
+
         # --- Валідація та отримання даних ---
         location_id = data.get('location_id')
         visit_purpose_id = data.get('visit_purpose_id')
@@ -2131,6 +2281,20 @@ def api_create_service_visit(lang_code):
 
         if not all([location_id, visit_purpose_id, visit_datetime_str]):
             return jsonify({'success': False, 'error': _('Не всі обов\'язкові поля заповнені.')}), 400
+
+        # --- Перевірка доступу до локації за установою ---
+        if not current_user.has_role('admin'):
+            user_inst_ids = [inst.id for inst in current_user.institutions]
+            if not user_inst_ids:
+                return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
+            access = ct_session.execute(
+                select(location_institutions.c.location_id).where(
+                    (location_institutions.c.location_id == int(location_id)) &
+                    (location_institutions.c.institution_id.in_(user_inst_ids))
+                ).limit(1)
+            ).fetchone()
+            if not access:
+                return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
 
         # --- Перетворення типів даних ---
         visit_datetime = datetime.fromisoformat(visit_datetime_str)
@@ -2182,6 +2346,78 @@ def api_create_service_visit(lang_code):
         ct_session.rollback()
         current_app.logger.error(f"Error creating service visit: {e}", exc_info=True)
         return jsonify({'success': False, 'error': _('Помилка сервера при збереженні запису.')}), 500
+    finally:
+        close_ct_session()
+
+@camera_traps_bp.route('/api/service-visit/<int:visit_id>/update', methods=['POST'])
+@login_required
+@role_required('manager')
+def api_update_service_visit(lang_code, visit_id):
+    """API для редагування існуючого запису в журналі обслуговування."""
+    ct_session = get_ct_session()
+    try:
+        visit = ct_session.query(ServiceVisit).get(visit_id)
+        if not visit:
+            return jsonify({'success': False, 'error': _('Запис не знайдено.')}), 404
+
+        is_admin = current_user.has_role('admin')
+
+        if not is_admin:
+            # Перевірка власності запису
+            if visit.user_id != current_user.id:
+                return jsonify({'success': False, 'error': _('Недостатньо прав для редагування цього запису.')}), 403
+            # Перевірка доступу до локації за установою
+            user_inst_ids = [inst.id for inst in current_user.institutions]
+            if not user_inst_ids:
+                return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
+            access = ct_session.execute(
+                select(location_institutions.c.location_id).where(
+                    (location_institutions.c.location_id == visit.location_id) &
+                    (location_institutions.c.institution_id.in_(user_inst_ids))
+                ).limit(1)
+            ).fetchone()
+            if not access:
+                return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
+
+        data = request.json
+        visit_datetime_str = data.get('visit_datetime')
+        visit_purpose_id = data.get('visit_purpose_id')
+
+        if not all([visit_datetime_str, visit_purpose_id]):
+            return jsonify({'success': False, 'error': _("Не всі обов'язкові поля заповнені.")}), 400
+
+        visit.visit_datetime = datetime.fromisoformat(visit_datetime_str)
+        visit.visit_purpose_id = int(visit_purpose_id)
+
+        battery_type_id = data.get('battery_type_id')
+        visit.battery_type_id = int(battery_type_id) if battery_type_id else None
+
+        is_operational_str = data.get('is_camera_operational')
+        if is_operational_str == 'true':
+            visit.is_camera_operational = True
+        elif is_operational_str == 'false':
+            visit.is_camera_operational = False
+        else:
+            visit.is_camera_operational = None
+
+        visit.sd_card_changed = bool(data.get('sd_card_changed', False))
+
+        photos_on_card = data.get('photos_on_card')
+        visit.photos_on_card = int(photos_on_card) if photos_on_card else None
+
+        visit.comments = (data.get('comments') or '').strip() or None
+
+        ct_session.commit()
+        current_app.logger.info(f"User {current_user.username} updated CT service visit {visit_id}")
+        return jsonify({'success': True, 'message': _('Запис оновлено успішно!')})
+
+    except (ValueError, TypeError) as e:
+        ct_session.rollback()
+        return jsonify({'success': False, 'error': _('Некоректні дані.')}), 400
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error updating CT service visit {visit_id}: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка сервера.')}), 500
     finally:
         close_ct_session()
 
