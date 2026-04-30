@@ -406,7 +406,7 @@ $(document).ready(function() {
         }
         const selectedInsts = $('#institution-select').val();
         if (selectedInsts && selectedInsts.length > 0) {
-            mapApiUrl.searchParams.set('institution_id', selectedInsts.join(','));
+            selectedInsts.forEach(id => mapApiUrl.searchParams.append('institution_id', id));
         }
 
         fetch(mapApiUrl)
