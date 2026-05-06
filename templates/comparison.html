@@ -1,0 +1,670 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Порівняння регіонів') }}{% endblock %}
+
+{% block head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+.comparison-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+.page-header h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #1a202c;
+    margin-bottom: 0.5rem;
+}
+.page-header p {
+    color: #6c757d;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+/* Панель глобальних фільтрів */
+.global-filters {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+}
+.global-filters .filter-item {
+    display: flex;
+    flex-direction: column;
+}
+.global-filters .filter-item label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #4a5568;
+    margin-bottom: 0.3rem;
+}
+.global-filters .filter-item input,
+.global-filters .filter-item select {
+    height: 36px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    padding: 0 0.65rem;
+    font-size: 0.875rem;
+}
+
+/* Панель фільтрів порівняння */
+.scope-filters {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: start;
+}
+.scope-panel {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.scope-panel.left { border-left: 4px solid #0d6efd; }
+.scope-panel.right { border-left: 4px solid #dc3545; }
+.scope-panel h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+.scope-panel.left h4 { color: #0d6efd; }
+.scope-panel.right h4 { color: #dc3545; }
+.scope-panel label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #4a5568;
+    display: block;
+    margin-bottom: 0.3rem;
+}
+.scope-panel select.form-control {
+    height: 36px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    width: 100%;
+}
+
+.scope-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 2.5rem;
+    color: #a0aec0;
+    font-size: 1.5rem;
+    font-weight: 300;
+}
+
+.apply-bar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.btn {
+    padding: 0.5rem 1.25rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+.btn-primary { background: #0d6efd; color: white; }
+.btn-primary:hover { background: #0b5ed7; }
+.btn-secondary { background: #6c757d; color: white; }
+.btn-secondary:hover { background: #5a6268; color: white; }
+
+/* Спінер */
+.spinner-border {
+    width: 2rem; height: 2rem;
+    border: 0.25rem solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    margin: 0 auto 1rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.message-box {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    color: #6c757d;
+}
+.message-box.info { background: #e7f3ff; border-color: #b3d9ff; color: #004085; }
+.message-box.error { background: #ffe7e7; border-color: #ffb3b3; color: #721c24; }
+
+/* Таблиця статистики */
+.stats-table-wrapper {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
+}
+.stats-table-wrapper h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d3748;
+    padding: 1rem 1.25rem 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin: 0;
+}
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.stats-table th {
+    padding: 0.65rem 1.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+    border-bottom: 1px solid #e2e8f0;
+}
+.stats-table th:first-child { text-align: left; color: #4a5568; }
+.stats-table th.left-col { color: #0d6efd; }
+.stats-table th.right-col { color: #dc3545; }
+.stats-table td {
+    padding: 0.6rem 1.25rem;
+    font-size: 0.875rem;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: center;
+}
+.stats-table td:first-child { text-align: left; color: #4a5568; font-weight: 500; }
+.stats-table tr:last-child td { border-bottom: none; }
+.stats-table tr:hover td { background: #f8f9fa; }
+
+/* Блок з графіком */
+.chart-section {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
+}
+.chart-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 1rem;
+}
+.chart-container {
+    position: relative;
+    width: 100%;
+}
+
+/* Блок індексів подібності */
+.indices-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.index-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.index-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+.index-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #f7f7f7;
+    font-size: 0.875rem;
+}
+.index-row:last-child { border-bottom: none; }
+.index-name { color: #4a5568; }
+.index-value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 50px;
+    text-align: right;
+}
+.index-bar-wrap {
+    flex: 1;
+    margin: 0 0.75rem;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+.index-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+}
+
+/* Venn-таблиця */
+.venn-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.venn-panel {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.venn-panel h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+.venn-panel.left-only h4 { color: #0d6efd; }
+.venn-panel.shared h4 { color: #198754; text-align: center; }
+.venn-panel.right-only h4 { color: #dc3545; }
+.venn-panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.8rem;
+    color: #4a5568;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.venn-panel ul li { padding: 0.2rem 0; border-bottom: 1px solid #f5f5f5; }
+.venn-panel ul li:last-child { border-bottom: none; }
+.venn-count {
+    display: inline-block;
+    background: #e2e8f0;
+    border-radius: 12px;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+.venn-count.left { background: #dbeafe; color: #1e40af; }
+.venn-count.right { background: #fee2e2; color: #991b1b; }
+.venn-count.shared { background: #dcfce7; color: #166534; }
+
+@media (max-width: 992px) {
+    .scope-filters, .indices-grid, .venn-grid { grid-template-columns: 1fr; }
+    .scope-divider { display: none; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="comparison-page">
+    <div class="page-header">
+        <h1>{{ _('Порівняння регіонів / установ') }}</h1>
+        <p style="text-align:center; margin-left:auto; margin-right:auto;">{{ _('Виберіть два регіони або установи для порівняння статистики детекцій і видового різноманіття.') }}</p>
+    </div>
+
+    <!-- Глобальні фільтри (дати + біотоп) -->
+    <div class="global-filters">
+        <div class="filter-item">
+            <label for="start-date">{{ _('Від:') }}</label>
+            <input type="date" id="start-date" value="{{ start_date }}">
+        </div>
+        <div class="filter-item">
+            <label for="end-date">{{ _('До:') }}</label>
+            <input type="date" id="end-date" value="{{ end_date }}">
+        </div>
+        <div class="filter-item" style="min-width: 220px; flex: 1;">
+            <label for="biotope-select">{{ _('Біотоп:') }}</label>
+            <select id="biotope-select" class="form-control" multiple>
+                {% for bio in biotopes %}
+                <option value="{{ bio.id }}">{{ bio.get_name(g.lang_code) }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <!-- Фільтри порівняння (ліво / право) -->
+    <div class="scope-filters">
+        <div class="scope-panel left">
+            <h4>{{ _('Ліво (синій)') }}</h4>
+            <label for="left-scope">{{ _('Установа або екорегіон:') }}</label>
+            <select id="left-scope" class="form-control">
+                <option value="">{{ _('— Оберіть —') }}</option>
+                {% if institutions %}
+                <optgroup label="{{ _('Установи') }}">
+                    {% for inst in institutions %}
+                    <option value="institution:{{ inst.id }}">
+                        {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if ecoregions %}
+                <optgroup label="{{ _('Екорегіони') }}">
+                    {% for eco_key, eco_name in ecoregions.items() %}
+                    <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+            </select>
+        </div>
+
+        <div class="scope-divider">⇄</div>
+
+        <div class="scope-panel right">
+            <h4>{{ _('Право (червоний)') }}</h4>
+            <label for="right-scope">{{ _('Установа або екорегіон:') }}</label>
+            <select id="right-scope" class="form-control">
+                <option value="">{{ _('— Оберіть —') }}</option>
+                {% if institutions %}
+                <optgroup label="{{ _('Установи') }}">
+                    {% for inst in institutions %}
+                    <option value="institution:{{ inst.id }}">
+                        {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if ecoregions %}
+                <optgroup label="{{ _('Екорегіони') }}">
+                    {% for eco_key, eco_name in ecoregions.items() %}
+                    <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+            </select>
+        </div>
+    </div>
+
+    <div class="apply-bar">
+        <button id="compare-btn" class="btn btn-primary">{{ _('Порівняти') }}</button>
+        <a href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('До загального аналізу') }}</a>
+    </div>
+
+    <!-- Контент -->
+    <div id="comparison-content">
+        <div class="message-box info">
+            <p>{{ _('Оберіть ліво та право і натисніть «Порівняти».') }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(document).ready(function () {
+    let chartInstance = null;
+
+    $('#biotope-select').select2({
+        placeholder: '{{ _("— Всі біотопи —") }}',
+        allowClear: true,
+        width: '100%'
+    });
+
+    $('#compare-btn').on('click', runComparison);
+
+    function runComparison() {
+        const leftVal = $('#left-scope').val();
+        const rightVal = $('#right-scope').val();
+        if (!leftVal || !rightVal) {
+            alert('{{ _("Будь ласка, оберіть обидва регіони.") }}');
+            return;
+        }
+
+        const [leftType, leftId] = leftVal.split(':');
+        const [rightType, rightId] = rightVal.split(':');
+        const startDate = $('#start-date').val();
+        const endDate = $('#end-date').val();
+        const biotopeIds = $('#biotope-select').val() || [];
+
+        showLoading();
+
+        const url = new URL("{{ url_for('camera_traps.api_comparison', lang_code=g.lang_code, _external=True) }}");
+        url.searchParams.set('start_date', startDate);
+        url.searchParams.set('end_date', endDate);
+        url.searchParams.set('left_scope_type', leftType);
+        url.searchParams.set('left_scope_id', leftId);
+        url.searchParams.set('right_scope_type', rightType);
+        url.searchParams.set('right_scope_id', rightId);
+        if (biotopeIds.length) {
+            url.searchParams.set('biotopes', biotopeIds.join(','));
+        }
+
+        fetch(url)
+            .then(r => {
+                if (!r.ok) return r.json().then(e => { throw new Error(e.error || 'Error'); });
+                return r.json();
+            })
+            .then(renderAll)
+            .catch(err => showError(err.message));
+    }
+
+    function showLoading() {
+        $('#comparison-content').html(`
+            <div class="message-box">
+                <div class="spinner-border" role="status"></div>
+                <p>{{ _("Завантаження...") }}</p>
+            </div>`);
+    }
+
+    function showError(msg) {
+        $('#comparison-content').html(`<div class="message-box error">${msg}</div>`);
+    }
+
+    function fmt(val, decimals) {
+        if (val === null || val === undefined) return '—';
+        return Number(val).toFixed(decimals !== undefined ? decimals : 0);
+    }
+
+    function renderAll(data) {
+        const lbl = data.left_label;
+        const rbr = data.right_label;
+        const L = data.left;
+        const R = data.right;
+        const sim = data.similarity;
+        const species = data.species;
+
+        const statsRows = [
+            ['{{ _("Пасткодні (trap-days)") }}', fmt(L.trap_days), fmt(R.trap_days)],
+            ['{{ _("Активних локацій") }}', fmt(L.active_locations), fmt(R.active_locations)],
+            ['{{ _("Видів (спостережено)") }}', fmt(L.species_count), fmt(R.species_count)],
+            ['{{ _("Всього детекцій") }}', fmt(L.total_detections), fmt(R.total_detections)],
+            ['{{ _("Шеннон H\'") }}', fmt(L.shannon, 3), fmt(R.shannon, 3)],
+            ['{{ _("Сімпсон (1-D)") }}', fmt(L.simpson, 3), fmt(R.simpson, 3)],
+            ['{{ _("Рівномірність Пієлу J\'") }}', fmt(L.pielou, 3), fmt(R.pielou, 3)],
+        ];
+
+        const statsHtml = `
+            <div class="stats-table-wrapper">
+                <h3>{{ _("Порівняльна статистика") }}</h3>
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>{{ _("Показник") }}</th>
+                            <th class="left-col">${lbl}</th>
+                            <th class="right-col">${rbr}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${statsRows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+
+        const chartHtml = `
+            <div class="chart-section">
+                <h3>{{ _("Індекс відносної чисельності (RAI) за видами") }}</h3>
+                <div class="chart-container" style="height:${Math.max(300, species.length * 28)}px;">
+                    <canvas id="raiChart"></canvas>
+                </div>
+            </div>`;
+
+        const simRows = [
+            { name: 'Jaccard', val: sim.jaccard, tip: '{{ _("Частка спільних видів від усіх зустрінутих (за присутністю/відсутністю)") }}' },
+            { name: 'Sørensen-Dice', val: sim.sorensen, tip: '{{ _("Схожий на Jaccard, але більш чутливий до спільних видів") }}' },
+            { name: 'Bray-Curtis (1−BC)', val: 1 - sim.bray_curtis, tip: '{{ _("Подібність за чисельністю (1 = повний збіг; розбіжність = 1 − це значення)") }}' },
+            { name: 'Morisita-Horn', val: sim.morisita_horn, tip: '{{ _("Стійкий до різниці обсягу вибірки. Найрекомендованіший для фотопасток.") }}' },
+        ];
+        const simHtml = simRows.map(row => {
+            const pct = Math.min(1, Math.max(0, row.val || 0)) * 100;
+            const color = pct > 60 ? '#198754' : pct > 35 ? '#fd7e14' : '#dc3545';
+            return `
+                <div class="index-row" title="${row.tip}">
+                    <span class="index-name">${row.name}</span>
+                    <div class="index-bar-wrap">
+                        <div class="index-bar" style="width:${pct}%;background:${color};"></div>
+                    </div>
+                    <span class="index-value" style="color:${color}">${fmt(row.val, 3)}</span>
+                </div>`;
+        }).join('');
+
+        const indicesHtml = `
+            <div class="indices-grid">
+                <div class="index-card">
+                    <h4>{{ _("Індекси подібності між регіонами") }}</h4>
+                    ${simHtml}
+                    <p style="font-size:0.75rem;color:#9ca3af;margin-top:0.75rem;margin-bottom:0;">
+                        {{ _("0 = немає спільних видів, 1 = ідентичні угруповання") }}
+                    </p>
+                </div>
+                <div class="index-card">
+                    <h4>{{ _("Різноманіття (підсумок)") }}</h4>
+                    <div class="index-row">
+                        <span class="index-name" style="color:#0d6efd;font-weight:600;">${lbl}</span>
+                        <span class="index-value" style="color:#4a5568;font-size:0.8rem;">
+                            H'=${fmt(L.shannon,3)} &nbsp; 1-D=${fmt(L.simpson,3)} &nbsp; J'=${fmt(L.pielou,3)}
+                        </span>
+                    </div>
+                    <div class="index-row">
+                        <span class="index-name" style="color:#dc3545;font-weight:600;">${rbr}</span>
+                        <span class="index-value" style="color:#4a5568;font-size:0.8rem;">
+                            H'=${fmt(R.shannon,3)} &nbsp; 1-D=${fmt(R.simpson,3)} &nbsp; J'=${fmt(R.pielou,3)}
+                        </span>
+                    </div>
+                    <hr style="margin: 0.75rem 0; border-color: #f0f0f0;">
+                    <div style="font-size:0.8rem;color:#4a5568;">
+                        <p style="margin:0.2rem 0;"><b>H' (Шеннон)</b> — {{ _("зважене різноманіття. Вищий = більш різноманітна фауна.") }}</p>
+                        <p style="margin:0.2rem 0;"><b>1-D (Сімпсон)</b> — {{ _("ймовірність що 2 особини різних видів. Від 0 до 1.") }}</p>
+                        <p style="margin:0.2rem 0;"><b>J' (Пієлу)</b> — {{ _("рівномірність. 1 = всі види однаково часті.") }}</p>
+                    </div>
+                </div>
+            </div>`;
+
+        const leftOnly = sim.left_only_species;
+        const rightOnly = sim.right_only_species;
+        const sharedSpecies = sim.shared_species || [];
+
+        const leftOnlyList = leftOnly.length
+            ? leftOnly.map(n => `<li>${n}</li>`).join('')
+            : `<li style="color:#9ca3af;font-style:italic;">{{ _("—") }}</li>`;
+        const rightOnlyList = rightOnly.length
+            ? rightOnly.map(n => `<li>${n}</li>`).join('')
+            : `<li style="color:#9ca3af;font-style:italic;">{{ _("—") }}</li>`;
+        const sharedList = sharedSpecies.length
+            ? sharedSpecies.slice(0, 20).map(s => `<li>${s}</li>`).join('')
+            : `<li style="color:#9ca3af;font-style:italic;">{{ _("—") }}</li>`;
+
+        const vennHtml = `
+            <div class="venn-grid">
+                <div class="venn-panel left-only">
+                    <h4>{{ _("Тільки в лівому") }} <span class="venn-count left">${sim.left_only_count}</span></h4>
+                    <ul>${leftOnlyList}</ul>
+                    ${sim.left_only_count > 20 ? `<p style="font-size:0.75rem;color:#9ca3af;margin-top:0.5rem;">{{ _("…та ще") }} ${sim.left_only_count - 20} {{ _("видів") }}</p>` : ''}
+                </div>
+                <div class="venn-panel shared">
+                    <h4>{{ _("Спільні") }} <span class="venn-count shared">${sim.shared_count}</span></h4>
+                    <ul>${sharedList}</ul>
+                    ${sim.shared_count > 20 ? `<p style="font-size:0.75rem;color:#9ca3af;margin-top:0.5rem;">{{ _("…та ще") }} ${sim.shared_count - 20} {{ _("видів") }}</p>` : ''}
+                </div>
+                <div class="venn-panel right-only">
+                    <h4>{{ _("Тільки в правому") }} <span class="venn-count right">${sim.right_only_count}</span></h4>
+                    <ul>${rightOnlyList}</ul>
+                    ${sim.right_only_count > 20 ? `<p style="font-size:0.75rem;color:#9ca3af;margin-top:0.5rem;">{{ _("…та ще") }} ${sim.right_only_count - 20} {{ _("видів") }}</p>` : ''}
+                </div>
+            </div>`;
+
+        $('#comparison-content').html(statsHtml + chartHtml + indicesHtml + vennHtml);
+
+        // Будуємо барчарт RAI
+        if (chartInstance) chartInstance.destroy();
+        if (species.length === 0) {
+            $('#raiChart').parent().html('<p class="message-box" style="text-align:center;">{{ _("Немає даних для графіка.") }}</p>');
+            return;
+        }
+        const ctx = document.getElementById('raiChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: species.map(s => s.name),
+                datasets: [
+                    {
+                        label: lbl,
+                        data: species.map(s => s.left_rai),
+                        backgroundColor: 'rgba(13, 110, 253, 0.65)',
+                        borderColor: 'rgba(13, 110, 253, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: rbr,
+                        data: species.map(s => s.right_rai),
+                        backgroundColor: 'rgba(220, 53, 69, 0.65)',
+                        borderColor: 'rgba(220, 53, 69, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'RAI (детекцій / 100 пасткоднів)' }
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                const sp = species[ctx.dataIndex];
+                                const isLeft = ctx.datasetIndex === 0;
+                                const cnt = isLeft ? sp.left_count : sp.right_count;
+                                return ` RAI: ${ctx.parsed.x.toFixed(3)}  (${cnt} {{ _("детекцій") }})`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

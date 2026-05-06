@@ -286,6 +286,46 @@ def species_dashboard(lang_code):
     finally:
         close_ct_session()
 #
+# --- СТОРІНКА ПОРІВНЯННЯ ДВОХ РЕГІОНІВ ---
+#
+@camera_traps_bp.route('/analysis/comparison')
+def comparison_dashboard(lang_code):
+    """Сторінка порівняння статистики двох регіонів/установ."""
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+        else:
+            institutions = []
+
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
+
+        biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
+
+        return render_template('comparison.html',
+                               institutions=institutions,
+                               ecoregions=ecoregions,
+                               biotopes=biotopes_list,
+                               is_admin=is_admin,
+                               start_date='2020-08-01',
+                               end_date=date.today().strftime('%Y-%m-%d'))
+    except Exception:
+        current_app.logger.error("Error loading comparison dashboard", exc_info=True)
+        flash(_("Помилка завантаження сторінки порівняння."), 'danger')
+        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+    finally:
+        close_ct_session()
+
+#
 # --- СТОРІНКА ІДЕНТИФІКАЦІЇ ---
 #
 
@@ -916,6 +956,268 @@ def api_species_dynamics(lang_code):
     finally:
         close_ct_session()
         
+# --- API для сторінки порівняння регіонів ---
+@camera_traps_bp.route('/api/stats/comparison')
+def api_comparison(lang_code):
+    """Повертає статистику, RAI видів та екологічні індекси для двох вибраних регіонів."""
+    import math
+
+    ct_session = get_ct_session()
+    try:
+        start_date_str = request.args.get('start_date', '2020-08-01')
+        end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Invalid date format'}), 400
+
+        biotope_ids_str = request.args.get('biotopes', '')
+        biotope_ids = [int(x) for x in biotope_ids_str.split(',') if x.isdigit()]
+
+        left_scope_type = request.args.get('left_scope_type', '')
+        left_scope_id = request.args.get('left_scope_id', '')
+        right_scope_type = request.args.get('right_scope_type', '')
+        right_scope_id = request.args.get('right_scope_id', '')
+
+        if not left_scope_id or not right_scope_id:
+            return jsonify({'error': 'Both scopes must be selected'}), 400
+
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+
+        def check_scope_access(scope_type, scope_id):
+            if is_admin:
+                return True
+            if scope_type == 'institution':
+                return str(scope_id).isdigit() and int(scope_id) in user_inst_ids
+            elif scope_type == 'ecoregion':
+                user_ecos = {i.ecoregion_uk for i in current_user.institutions if i.ecoregion_uk} if current_user.is_authenticated else set()
+                return scope_id in user_ecos
+            return False
+
+        if not check_scope_access(left_scope_type, left_scope_id):
+            return jsonify({'error': 'Access denied to left scope'}), 403
+        if not check_scope_access(right_scope_type, right_scope_id):
+            return jsonify({'error': 'Access denied to right scope'}), 403
+
+        def get_scope_label(scope_type, scope_id):
+            if scope_type == 'institution' and str(scope_id).isdigit():
+                inst = Institution.query.get(int(scope_id))
+                if inst:
+                    return inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk)
+            elif scope_type == 'ecoregion':
+                return scope_id
+            return scope_id
+
+        def get_scope_location_ids(scope_type, scope_id):
+            if scope_type == 'institution' and str(scope_id).isdigit():
+                q = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id == int(scope_id))
+            elif scope_type == 'ecoregion':
+                eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_id).all()]
+                if not eco_inst_ids:
+                    return []
+                q = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(eco_inst_ids))
+            else:
+                return []
+            return [r[0] for r in ct_session.execute(q).fetchall()]
+
+        left_loc_ids = get_scope_location_ids(left_scope_type, left_scope_id)
+        right_loc_ids = get_scope_location_ids(right_scope_type, right_scope_id)
+
+        if not left_loc_ids and not right_loc_ids:
+            return jsonify({'error': 'No locations found for selected scopes'}), 404
+
+        # Фільтр біотопів по локаціях
+        if biotope_ids:
+            bio_q = select(Location.id).join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+            bio_loc_ids = {r[0] for r in ct_session.execute(bio_q).fetchall()}
+            left_loc_ids = [l for l in left_loc_ids if l in bio_loc_ids]
+            right_loc_ids = [r for r in right_loc_ids if r in bio_loc_ids]
+
+        start_ym = start_date.year * 100 + start_date.month
+        end_ym = end_date.year * 100 + end_date.month
+
+        def get_scope_data(loc_ids):
+            if not loc_ids:
+                return {}, 0, 0
+
+            ym_expr = LocationMonthlyActivity.year * 100 + LocationMonthlyActivity.month
+
+            species_rows = ct_session.query(
+                LocationMonthlyActivity.species_id,
+                func.sum(LocationMonthlyActivity.detection_count).label('total')
+            ).filter(
+                LocationMonthlyActivity.location_id.in_(loc_ids),
+                LocationMonthlyActivity.species_id > 0,
+                ym_expr >= start_ym,
+                ym_expr <= end_ym
+            ).group_by(LocationMonthlyActivity.species_id).all()
+            species_counts = {r.species_id: int(r.total) for r in species_rows}
+
+            trap_rows = ct_session.query(
+                LocationMonthlyActivity.location_id,
+                LocationMonthlyActivity.year,
+                LocationMonthlyActivity.month,
+                func.max(LocationMonthlyActivity.trap_days).label('td')
+            ).filter(
+                LocationMonthlyActivity.location_id.in_(loc_ids),
+                ym_expr >= start_ym,
+                ym_expr <= end_ym
+            ).group_by(
+                LocationMonthlyActivity.location_id,
+                LocationMonthlyActivity.year,
+                LocationMonthlyActivity.month
+            ).all()
+
+            total_trap_days = int(sum(r.td for r in trap_rows)) if trap_rows else 0
+            active_locs = len({r.location_id for r in trap_rows})
+            return species_counts, total_trap_days, active_locs
+
+        left_counts, left_trap_days, left_locs = get_scope_data(left_loc_ids)
+        right_counts, right_trap_days, right_locs = get_scope_data(right_loc_ids)
+
+        # Сирі ідентифікації для Venn-аналізу (ловить рідкісні види, яких немає в pre-computed таблиці)
+        def get_all_species_ids(loc_ids):
+            if not loc_ids:
+                return set()
+            rows = ct_session.query(func.distinct(Identification.species_id)).join(
+                Photo, Identification.photo_id == Photo.id
+            ).join(
+                Observation, Photo.observation_id == Observation.id
+            ).filter(
+                Observation.location_id.in_(loc_ids),
+                Observation.status.in_(['completed', 'archived']),
+                Identification.species_id > 0,
+                Photo.captured_at >= start_date,
+                Photo.captured_at < end_date + timedelta(days=1)
+            ).all()
+            return {r[0] for r in rows}
+
+        left_all_spp = get_all_species_ids(left_loc_ids)
+        right_all_spp = get_all_species_ids(right_loc_ids)
+
+        # species_map для ВСІХ видів (pre-computed + сирі)
+        all_ids_for_names = set(left_counts.keys()) | set(right_counts.keys()) | left_all_spp | right_all_spp
+        species_map = {}
+        if all_ids_for_names:
+            for s in ct_session.query(Species).filter(Species.id.in_(all_ids_for_names)).all():
+                if g.lang_code == 'uk' and s.common_name_ua:
+                    species_map[s.id] = s.common_name_ua
+                elif g.lang_code == 'en' and s.common_name_en:
+                    species_map[s.id] = s.common_name_en
+                else:
+                    species_map[s.id] = s.scientific_name
+
+        def compute_rai(counts, trap_days):
+            if not trap_days:
+                return {}
+            return {sid: (cnt / trap_days) * 100 for sid, cnt in counts.items()}
+
+        left_rai = compute_rai(left_counts, left_trap_days)
+        right_rai = compute_rai(right_counts, right_trap_days)
+
+        def diversity_indices(rai_dict):
+            if not rai_dict:
+                return {'shannon': None, 'simpson': None, 'pielou': None}
+            total = sum(rai_dict.values())
+            if total == 0:
+                return {'shannon': None, 'simpson': None, 'pielou': None}
+            props = [v / total for v in rai_dict.values()]
+            shannon = -sum(p * math.log(p) for p in props if p > 0)
+            simpson = 1 - sum(p ** 2 for p in props)
+            s = len(props)
+            pielou = (shannon / math.log(s)) if s > 1 else None
+            return {
+                'shannon': round(shannon, 3),
+                'simpson': round(simpson, 3),
+                'pielou': round(pielou, 3) if pielou is not None else None
+            }
+
+        # Venn: за сирими ідентифікаціями (повніше, ніж pre-computed таблиця)
+        left_only_spp = left_all_spp - right_all_spp
+        right_only_spp = right_all_spp - left_all_spp
+        shared_spp = left_all_spp & right_all_spp
+        union_spp = left_all_spp | right_all_spp
+
+        # Jaccard і Sørensen — за присутністю/відсутністю (сирі дані)
+        jaccard = round(len(shared_spp) / len(union_spp), 3) if union_spp else 0
+        sorensen_denom = len(left_all_spp) + len(right_all_spp)
+        sorensen = round(2 * len(shared_spp) / sorensen_denom, 3) if sorensen_denom else 0
+
+        # Bray-Curtis і Morisita-Horn — за чисельністю (pre-computed RAI)
+        rai_union = set(left_counts.keys()) | set(right_counts.keys())
+        sum_min = sum(min(left_counts.get(s, 0), right_counts.get(s, 0)) for s in rai_union)
+        sum_all = sum(left_counts.get(s, 0) for s in rai_union) + sum(right_counts.get(s, 0) for s in rai_union)
+        bray_curtis = round(1 - (2 * sum_min / sum_all), 3) if sum_all else 0
+
+        n_a = sum(left_counts.values()) or 1
+        n_b = sum(right_counts.values()) or 1
+        da = sum(v ** 2 for v in left_counts.values()) / (n_a ** 2) if n_a else 0
+        db = sum(v ** 2 for v in right_counts.values()) / (n_b ** 2) if n_b else 0
+        mh_num = 2 * sum(left_counts.get(s, 0) * right_counts.get(s, 0) for s in rai_union)
+        mh_den = (da + db) * n_a * n_b
+        morisita_horn = round(mh_num / mh_den, 3) if mh_den else 0
+
+        # Барчарт: топ-30 за сумарним RAI
+        sorted_species = sorted(rai_union,
+                                key=lambda s: (left_rai.get(s, 0) + right_rai.get(s, 0)),
+                                reverse=True)
+        species_list = []
+        for sid in sorted_species[:30]:
+            species_list.append({
+                'id': sid,
+                'name': species_map.get(sid, f'Species {sid}'),
+                'left_count': left_counts.get(sid, 0),
+                'right_count': right_counts.get(sid, 0),
+                'left_rai': round(left_rai.get(sid, 0), 3),
+                'right_rai': round(right_rai.get(sid, 0), 3)
+            })
+
+        left_only_names = sorted(species_map.get(s, f'Species {s}') for s in left_only_spp)
+        right_only_names = sorted(species_map.get(s, f'Species {s}') for s in right_only_spp)
+        shared_names = sorted(species_map.get(s, f'Species {s}') for s in shared_spp)
+
+        return jsonify({
+            'left_label': get_scope_label(left_scope_type, left_scope_id),
+            'right_label': get_scope_label(right_scope_type, right_scope_id),
+            'left': {
+                'trap_days': left_trap_days,
+                'species_count': len(left_all_spp),
+                'total_detections': sum(left_counts.values()),
+                'active_locations': left_locs,
+                **diversity_indices(left_rai)
+            },
+            'right': {
+                'trap_days': right_trap_days,
+                'species_count': len(right_all_spp),
+                'total_detections': sum(right_counts.values()),
+                'active_locations': right_locs,
+                **diversity_indices(right_rai)
+            },
+            'species': species_list,
+            'similarity': {
+                'jaccard': jaccard,
+                'sorensen': sorensen,
+                'bray_curtis': bray_curtis,
+                'morisita_horn': morisita_horn,
+                'shared_count': len(shared_spp),
+                'left_only_count': len(left_only_spp),
+                'right_only_count': len(right_only_spp),
+                'left_only_species': left_only_names[:20],
+                'right_only_species': right_only_names[:20],
+                'shared_species': shared_names[:20]
+            }
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Error in api_comparison: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        close_ct_session()
+
 # --- API для ідентифікації та завантаження ---
 @camera_traps_bp.route('/api/submit-identification', methods=['POST'])
 @login_required
