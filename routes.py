@@ -1298,16 +1298,21 @@ def get_location_details(lang_code, location_id):
         if not location:
             return jsonify({'error': _('Локацію не знайдено.')}), 404
         
-        # Отримуємо ID біотопів, пов'язаних з цією локацією
         biotope_ids = [biotope.id for biotope in location.biotopes]
-        
+        inst_rows = ct_session.execute(
+            select(location_institutions.c.institution_id)
+            .where(location_institutions.c.location_id == location_id)
+        ).fetchall()
+        institution_ids = [row.institution_id for row in inst_rows]
+
         return jsonify({
             'id': location.id,
             'name': location.name,
             'latitude': float(location.latitude),
             'longitude': float(location.longitude),
             'biotope_ids': biotope_ids,
-            'description': location.description or '' # <-- ДОДАНО: повертаємо опис або порожній рядок
+            'description': location.description or '',
+            'institution_ids': institution_ids
         }), 200
         
     except Exception as e:
@@ -2018,6 +2023,30 @@ def update_location(lang_code, location_id):
         selected_biotopes = ct_session.query(Biotope).filter(Biotope.id.in_(biotope_ids)).all()
         location.biotopes = selected_biotopes
 
+        # Оновлення установ
+        new_inst_ids = data.get('institution_ids')
+        if new_inst_ids is not None:
+            if not is_admin:
+                if not all(i_id in user_inst_ids for i_id in new_inst_ids):
+                    return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
+                ct_session.execute(
+                    location_institutions.delete().where(
+                        (location_institutions.c.location_id == location_id) &
+                        (location_institutions.c.institution_id.in_(user_inst_ids))
+                    )
+                )
+            else:
+                ct_session.execute(
+                    location_institutions.delete().where(
+                        location_institutions.c.location_id == location_id
+                    )
+                )
+            if new_inst_ids:
+                ct_session.execute(
+                    location_institutions.insert(),
+                    [{'location_id': location_id, 'institution_id': i_id} for i_id in new_inst_ids]
+                )
+
         ct_session.commit()
         return jsonify({'success': True, 'message': _('Дані локації оновлено успішно!')})
     except Exception as e:
@@ -2043,7 +2072,7 @@ def api_create_location_admin(lang_code):
         lat = data.get('lat')
         lon = data.get('lon')
         biotope_ids = data.get('biotope_ids', [])
-        institution_id = data.get('institution_id')  # може бути None
+        institution_ids = [int(i) for i in (data.get('institution_ids') or []) if i]
 
         if not name:
             return jsonify({'success': False, 'error': _('Вкажіть назву локації.')}), 400
@@ -2051,8 +2080,8 @@ def api_create_location_admin(lang_code):
             return jsonify({'success': False, 'error': _('Вкажіть координати.')}), 400
 
         # Перевірка: менеджер може призначати тільки свої установи
-        if institution_id and not is_admin:
-            if int(institution_id) not in user_inst_ids:
+        if institution_ids and not is_admin:
+            if not all(i_id in user_inst_ids for i_id in institution_ids):
                 return jsonify({'success': False, 'error': _('Немає доступу до цієї установи.')}), 403
 
         new_location = Location(
@@ -2070,19 +2099,16 @@ def api_create_location_admin(lang_code):
         ct_session.flush()
         location_id = new_location.id
 
-        # Прив'язуємо до установи
-        if institution_id:
+        if institution_ids:
             ct_session.execute(
-                location_institutions.insert().values(
-                    location_id=location_id,
-                    institution_id=int(institution_id)
-                )
+                location_institutions.insert(),
+                [{'location_id': location_id, 'institution_id': i_id} for i_id in institution_ids]
             )
 
         ct_session.commit()
 
         current_app.logger.info(
-            f"User {current_user.username} created CT location '{name}' (id={location_id}, inst={institution_id})"
+            f"User {current_user.username} created CT location '{name}' (id={location_id}, inst={institution_ids})"
         )
         return jsonify({'success': True, 'message': _('Локацію створено успішно!'), 'location_id': location_id}), 201
 

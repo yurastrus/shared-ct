@@ -261,18 +261,15 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <!-- Вибір установи — тільки при створенні нової локації -->
-                    <div class="mb-2" id="institution-row" style="display:none;">
-                        <label class="form-label form-label-sm">{{ _('Установа') }}</label>
-                        <select id="institution-select" class="form-control form-control-sm">
-                            <option value="">{{ _('-- Без установи --') }}</option>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm text-success">
+                            <i class="fas fa-university me-1"></i>{{ _('Установи') }}
+                        </label>
+                        <select id="institution-select" class="form-control form-control-sm" multiple>
                             {% for inst in user_institutions %}
                                 <option value="{{ inst.id }}">{{ inst.name_en if g.lang_code != 'uk' and inst.name_en else inst.name_uk }}</option>
                             {% endfor %}
                         </select>
-                        {% if not is_admin and user_institutions|length == 1 %}
-                        <small class="text-muted">{{ _('Локацію буде додано до вашої установи.') }}</small>
-                        {% endif %}
                     </div>
                     <div class="d-flex gap-2 mt-3 pt-2 border-top">
                         <button type="submit" id="save-btn" class="btn btn-primary btn-sm flex-fill">{{ _('Зберегти') }}</button>
@@ -381,6 +378,7 @@
 $(document).ready(function() {
     {% if can_edit %}
     $('#biotope-select').select2({ placeholder: "{{ _('Виберіть біотопи...') }}" });
+    $('#institution-select').select2({ placeholder: "{{ _('Виберіть установи...') }}" });
     {% endif %}
     $('#visit-purpose, #battery-type').select2({ placeholder: "{{ _('-- Виберіть --') }}", width: '100%' });
 
@@ -660,6 +658,7 @@ $(document).ready(function() {
         $('#location-lat').val(data.latitude);
         $('#location-lon').val(data.longitude);
         $('#biotope-select').val(data.biotope_ids).trigger('change');
+        $('#institution-select').val(data.institution_ids).trigger('change');
     }
 
     $('#new-location-btn').on('click', function() {
@@ -668,10 +667,8 @@ $(document).ready(function() {
         $('#edit-form-title').text('{{ _("Нова локація") }}');
         $('#save-btn').text('{{ _("Створити") }}');
         $('#coord-hint').show();
-        // Показуємо вибір установи; якщо одна — автоматично вибираємо її
-        $('#institution-row').show();
         if (singleInstitutionId) {
-            $('#institution-select').val(singleInstitutionId);
+            $('#institution-select').val([singleInstitutionId]).trigger('change');
         }
         showPanel();
     });
@@ -689,7 +686,8 @@ $(document).ready(function() {
             description: $('#location-description').val(),
             latitude: parseFloat($('#location-lat').val()),
             longitude: parseFloat($('#location-lon').val()),
-            biotope_ids: $('#biotope-select').val().map(Number)
+            biotope_ids: $('#biotope-select').val().map(Number),
+            institution_ids: $('#institution-select').val().map(Number)
         };
         fetch(`/{{ g.lang_code }}/camera-traps/api/update-location/${locationId}`, {
             method: 'POST',
@@ -705,6 +703,7 @@ $(document).ready(function() {
                 const locIndex = locationsData.findIndex(l => l.id == locationId);
                 if (locIndex > -1) {
                     locationsData[locIndex].biotope_ids = dataToSave.biotope_ids;
+                    locationsData[locIndex].institution_ids = dataToSave.institution_ids;
                     locationsData[locIndex].has_description = !!(dataToSave.description && dataToSave.description.trim());
                     applyListClass(listItem, locationsData[locIndex]);
                     if (markers[locationId]) markers[locationId].setIcon(getStatusIcon(locationsData[locIndex]));
@@ -733,7 +732,7 @@ $(document).ready(function() {
             description: $('#location-description').val().trim(),
             lat: lat, lon: lon,
             biotope_ids: $('#biotope-select').val().map(Number),
-            institution_id: $('#institution-select').val() || null
+            institution_ids: $('#institution-select').val().map(Number)
         };
 
         fetch(`/{{ g.lang_code }}/camera-traps/api/location/create`, {
@@ -751,7 +750,7 @@ $(document).ready(function() {
                     latitude: lat, longitude: lon,
                     biotope_ids: dataToSend.biotope_ids,
                     has_description: !!(dataToSend.description && dataToSend.description.trim()),
-                    institution_ids: dataToSend.institution_id ? [Number(dataToSend.institution_id)] : []
+                    institution_ids: dataToSend.institution_ids
                 };
                 locationsData.push(newLoc);
                 const listItem = $(`<li data-location-id="${response.location_id}">${dataToSend.name}</li>`);
@@ -919,11 +918,10 @@ $(document).ready(function() {
 
         {% if can_edit %}
         $('#coord-hint').hide();
-        $('#institution-row').hide();
-        $('#institution-select').val('');
         $('#save-btn').text('{{ _("Зберегти") }}');
         $('#edit-form')[0].reset();
         $('#biotope-select').val(null).trigger('change');
+        $('#institution-select').val(null).trigger('change');
         {% endif %}
 
         resetServiceForm();
