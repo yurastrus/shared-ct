@@ -3,6 +3,7 @@
 {% block title %}{{ _('Завантаження даних фотопасток') }}{% endblock %}
 
 {% block head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <style>
@@ -214,10 +215,10 @@
 
                 <!-- Institution filter -->
                 <div class="mb-2 d-flex align-items-center gap-2">
-                    <label style="font-size:0.83rem;white-space:nowrap;color:#495057;margin:0;">
+                    <label style="white-space:nowrap;color:#495057;margin:0;">
                         {{ _('Установа:') }}
                     </label>
-                    <select id="institution-select" class="form-select form-select-sm">
+                    <select id="institution-select" class="form-select">
                         <option value="">{{ _('-- Усі доступні установи --') }}</option>
                         {% for inst in institutions %}
                             <option value="{{ inst.id }}">
@@ -228,7 +229,7 @@
                 </div>
 
                 <!-- Location select -->
-                <select id="location-select" class="form-select form-select-sm">
+                <select id="location-select" class="form-select">
                     {% for val, label in form.location.choices %}
                         <option value="{{ val }}">{{ label }}</option>
                     {% endfor %}
@@ -243,35 +244,35 @@
                 <div id="new-location-fields" style="display:none;">
                     <div class="panel-title">{{ _('Нове місце зйомки') }}</div>
                     <div class="mb-2">
-                        <label class="form-label form-label-sm">{{ _('Назва') }} *</label>
-                        <input type="text" class="form-control form-control-sm" id="new-loc-name"
+                        <label class="form-label">{{ _('Назва') }} *</label>
+                        <input type="text" class="form-control" id="new-loc-name"
                                placeholder="{{ _('напр. Яворівський НПП — точка 1') }}">
                     </div>
                     <div class="mb-2">
-                        <label class="form-label form-label-sm text-muted">{{ _('Опис') }}</label>
-                        <input type="text" class="form-control form-control-sm" id="new-loc-description"
+                        <label class="form-label text-muted">{{ _('Опис') }}</label>
+                        <input type="text" class="form-control" id="new-loc-description"
                                placeholder="{{ _('Коротка характеристика') }}">
                     </div>
                     <div style="display:flex; gap:8px; margin-bottom:8px;">
                         <div style="flex:1;">
-                            <label class="form-label form-label-sm text-muted">{{ _('Широта') }} *</label>
-                            <input type="number" step="0.00001" class="form-control form-control-sm"
+                            <label class="form-label text-muted">{{ _('Широта') }} *</label>
+                            <input type="number" step="0.00001" class="form-control"
                                    id="new-loc-lat" placeholder="49.85000">
                         </div>
                         <div style="flex:1;">
-                            <label class="form-label form-label-sm text-muted">{{ _('Довгота') }} *</label>
-                            <input type="number" step="0.00001" class="form-control form-control-sm"
+                            <label class="form-label text-muted">{{ _('Довгота') }} *</label>
+                            <input type="number" step="0.00001" class="form-control"
                                    id="new-loc-lon" placeholder="23.65000">
                         </div>
                     </div>
                     <div id="location-feedback" class="mb-2"></div>
                     <div style="display:flex; gap:8px;">
                         <button type="button" id="create-location-btn"
-                                class="btn btn-primary btn-sm flex-fill">
+                                class="btn btn-primary flex-fill">
                             {{ _('Створити та вибрати місце') }}
                         </button>
                         <button type="button" id="cancel-create-loc"
-                                class="btn btn-outline-secondary btn-sm">
+                                class="btn btn-outline-secondary">
                             {{ _('Скасувати') }}
                         </button>
                     </div>
@@ -400,6 +401,7 @@ $(document).ready(function () {
     let map, markers = {};
 
     // ─── Select2 ──────────────────────────────────────────────────────────────
+    $('#institution-select').select2({ minimumResultsForSearch: Infinity, width: '100%' });
     $('#location-select').select2({ placeholder: '{{ _("-- Будь ласка, виберіть --") }}', allowClear: false, width: '100%' });
 
     // ─── Іконки ───────────────────────────────────────────────────────────────
