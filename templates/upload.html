@@ -175,6 +175,12 @@
     #upload-btn:not(:disabled) { opacity: 1; cursor: pointer; }
     #upload-btn:disabled { cursor: not-allowed; }
 
+    /* legend */
+    .info.legend { background: #fff; padding: 6px 10px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 0.76rem; }
+    .info.legend h4 { margin: 0 0 4px; font-size: 0.8rem; }
+    .legend-item { display: flex; align-items: center; gap: 5px; margin: 2px 0; }
+    .legend-item i { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; opacity: .7; }
+
     .select2-container { width: 100% !important; }
 
     @media (max-width: 992px) {
@@ -412,28 +418,59 @@ $(document).ready(function () {
 
     // ─── Карта ────────────────────────────────────────────────────────────────
     function initMap() {
-        const geocache       = GEOSERVER_BASE_URL + '/gwc/service/wms';
-        const kvartals_rsnr  = L.tileLayer.wms(geocache, { layers: 'roztochya:kvartals_rsnr', format: 'image/png', transparent: true, pane: 'kvartalsPane' });
-        const vydils_rsnr    = L.tileLayer.wms(geocache, { layers: 'roztochya:vydils_rsnr',   format: 'image/png', transparent: true, pane: 'vydilsPane'   });
-
         map = L.map('map').setView([49.8, 23.6], 9);
-        map.createPane('vydilsPane').style.zIndex  = 450;
-        map.createPane('kvartalsPane').style.zIndex = 460;
 
         const osmLayer    = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
         const hybridLayer = L.layerGroup([
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        osmLayer.addTo(map);
+        hybridLayer.addTo(map);
 
-        L.control.layers(
-            { "OSM": osmLayer, "Hybrid": hybridLayer },
-            {
-                "{{ _('Квартальна сітка ПЗ Розточчя') }}": kvartals_rsnr,
-                "{{ _('Видільна сітка ПЗ Розточчя') }}":   vydils_rsnr
-            }
-        ).addTo(map);
+        const overlayMaps = {};
+        if (GEOSERVER_BASE_URL) {
+            const wmsUrl  = GEOSERVER_BASE_URL + '/wms';
+            const wmsBase = { layers: 'baselayers:wdpa_ua', format: 'image/png', transparent: true,
+                              attribution: 'WDPA Ukraine', pane: 'wdpaPane', opacity: 0.7 };
+            map.createPane('wdpaPane').style.zIndex = 400;
+
+            const wdpaLayers = [
+                { name: "{{ _('Національні природні парки') }}",    cql: "desig_eng='National nature park'",    color: '#4daf4a' },
+                { name: "{{ _('Біосферні заповідники') }}",         cql: "desig_eng='Biosphere reserve'",       color: '#ff7f00' },
+                { name: "{{ _('Регіональні ландшафтні парки') }}", cql: "desig_eng='Regional landscape park'", color: '#984ea3' },
+                { name: "{{ _('Заказники') }}",                     cql: "desig_eng='Zakaznik'",                color: '#377eb8' },
+                { name: "{{ _('Природні заповідники') }}",          cql: "desig_eng='Nature reserve'",          color: '#e41a1c' },
+                { name: "{{ _("Пам'ятки природи") }}",              cql: "desig_eng='Natural monument'",        color: '#ffff33' },
+                { name: "{{ _('Заповідні урочища') }}",             cql: "desig_eng='Zapovidne Urochyshche'",   color: '#a65628' }
+            ];
+
+            const WdpaLegend = L.Control.extend({
+                onAdd() {
+                    this._div = L.DomUtil.create('div', 'info legend');
+                    this._div.style.display = 'none';
+                    return this._div;
+                },
+                update(active) {
+                    if (!this._div) return;
+                    const names = Object.keys(active);
+                    if (!names.length) { this._div.style.display = 'none'; return; }
+                    this._div.style.display = 'block';
+                    this._div.innerHTML = '<h4>{{ _("Території ПЗФ") }}</h4>' +
+                        names.map(n => `<div class="legend-item"><i style="background:${active[n]}"></i>${n}</div>`).join('');
+                }
+            });
+            const legend = new WdpaLegend({ position: 'bottomright' }).addTo(map);
+            const activeWdpa = {};
+
+            wdpaLayers.forEach(item => {
+                const layer = L.tileLayer.wms(wmsUrl, { ...wmsBase, cql_filter: item.cql });
+                overlayMaps[item.name] = layer;
+                map.on('overlayadd',    e => { if (e.name===item.name) { activeWdpa[item.name]=item.color; legend.update(activeWdpa); } });
+                map.on('overlayremove', e => { if (e.name===item.name) { delete activeWdpa[item.name];     legend.update(activeWdpa); } });
+            });
+        }
+
+        L.control.layers({ "Hybrid": hybridLayer, "OSM": osmLayer }, overlayMaps).addTo(map);
 
         const markersGroup = L.featureGroup();
         locationsData.forEach(loc => {
