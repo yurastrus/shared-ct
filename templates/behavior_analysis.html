@@ -1,0 +1,527 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Аналіз поведінки тварин') }}{% endblock %}
+
+{% block head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .behavior-page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    .page-header h1 {
+        font-size: 1.75rem;
+        font-weight: 600;
+        color: #1a202c;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Filters */
+    .filters-container {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .filters-row {
+        display: grid;
+        gap: 1rem;
+        align-items: end;
+    }
+    .filters-row-1 { grid-template-columns: 2fr 1fr 1fr; }   /* 50 / 25 / 25 */
+    .filters-row-2 { grid-template-columns: 2fr 2fr 1fr; margin-top: .75rem; }  /* 40 / 40 / 20 */
+    .filter-item { display: flex; flex-direction: column; }
+    .filter-item label {
+        font-weight: 500;
+        color: #4a5568;
+        margin-bottom: .5rem;
+        font-size: .875rem;
+    }
+    .filter-item select,
+    .filter-item input[type=date] {
+        height: 38px;
+        border: 1px solid #cbd5e0;
+        border-radius: 6px;
+        padding: .4rem .75rem;
+        font-size: .875rem;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .filter-item select:focus,
+    .filter-item input[type=date]:focus {
+        border-color: #4299e1;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(66,153,225,.15);
+    }
+    .filter-actions { display: flex; gap: .75rem; align-items: flex-end; }
+
+    /* Buttons */
+    .btn {
+        padding: .5rem 1.25rem;
+        border-radius: 6px;
+        font-size: .875rem;
+        font-weight: 500;
+        border: none;
+        cursor: pointer;
+        transition: all .2s;
+        white-space: nowrap;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+    }
+    .btn-primary { background: #0d6efd; color: #fff; }
+    .btn-primary:hover { background: #0b5ed7; }
+    .btn-secondary { background: #6c757d; color: #fff; }
+    .btn-secondary:hover { background: #5a6268; color: #fff; }
+
+    /* Hint */
+    .hint-container {
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        color: #004085;
+        max-width: 768px;
+        margin: 0 auto;
+    }
+
+    /* Charts layout */
+    .charts-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .chart-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .chart-card.full-width { margin-bottom: 1.5rem; }
+    .chart-card h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin: 0 0 .25rem;
+    }
+    .chart-subtitle {
+        font-size: .8rem;
+        color: #718096;
+        margin: 0 0 1rem;
+    }
+    .chart-wrap { position: relative; height: 320px; }
+    .chart-wrap-tall { position: relative; height: 360px; }
+
+    /* Legend */
+    #behavior-legend {
+        margin-top: .75rem;
+        font-size: .82rem;
+        line-height: 1.8;
+        color: #2d3748;
+    }
+    #group-size-stats {
+        margin-top: .5rem;
+        font-size: .82rem;
+        color: #4a5568;
+    }
+    #data-note {
+        text-align: right;
+        font-size: .8rem;
+        color: #718096;
+        margin-top: .5rem;
+    }
+
+    /* Spinner */
+    .spinner-wrap { text-align: center; padding: 2rem; }
+    .spinner {
+        display: inline-block;
+        width: 2rem; height: 2rem;
+        border: .25rem solid #c3dafe;
+        border-top-color: #3182ce;
+        border-radius: 50%;
+        animation: spin .75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 992px) {
+        .filters-row-1 { grid-template-columns: 1fr 1fr; }
+        .filters-row-2 { grid-template-columns: 1fr 1fr; }
+        .charts-row    { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+        .filters-row-1,
+        .filters-row-2 { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="behavior-page">
+
+    <div class="page-header">
+        <h1>{{ _('Аналіз поведінки тварин') }}</h1>
+    </div>
+
+    <!-- Фільтри -->
+    <div class="filters-container">
+
+        <!-- Рядок 1: Вид (50%) + Від (25%) + До (25%) -->
+        <div class="filters-row filters-row-1">
+
+            <div class="filter-item">
+                <label for="species-select">{{ _('Вид') }} *</label>
+                <select id="species-select">
+                    <option></option>
+                    {% for s in species_list %}
+                        <option value="{{ s.id }}">{{ s.text }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="start-date">{{ _('Від') }}</label>
+                <input type="date" id="start-date" value="{{ start_date }}">
+            </div>
+
+            <div class="filter-item">
+                <label for="end-date">{{ _('До') }}</label>
+                <input type="date" id="end-date" value="{{ end_date }}">
+            </div>
+
+        </div>
+
+        <!-- Рядок 2: Установа/Екорегіон (40%) + Біотопи (40%) + Кнопки (20%) -->
+        <div class="filters-row filters-row-2">
+
+            <div class="filter-item">
+                <label for="scope-select">{{ _('Установа / Екорегіон') }}</label>
+                <select id="scope-select">
+                    <option value="">{{ _('Всі доступні дані') }}</option>
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}">
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label for="biotope-select">{{ _('Біотоп') }}</label>
+                <select id="biotope-select">
+                    <option value="">{{ _('Будь-який біотоп') }}</option>
+                    {% for b in biotopes %}
+                    <option value="{{ b.id }}">
+                        {{ b.name_ua if g.lang_code != 'en' else (b.name_en or b.name_ua) }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-actions">
+                <button id="apply-btn" class="btn btn-primary" disabled>
+                    {{ _('Побудувати') }}
+                </button>
+                <a href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}"
+                   class="btn btn-secondary">{{ _('До загального аналізу') }}</a>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Підказка до вибору виду -->
+    <div id="hint-block">
+        <div class="hint-container">
+            <p>{{ _('Оберіть вид та натисніть «Побудувати» для відображення аналізу поведінки.') }}</p>
+        </div>
+    </div>
+
+    <!-- Спіннер -->
+    <div id="spinner-block" style="display:none;" class="spinner-wrap">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Графіки -->
+    <div id="charts-block" style="display:none;">
+
+        <div class="charts-row">
+            <!-- Donut: розподіл поведінок -->
+            <div class="chart-card">
+                <h3>{{ _('Розподіл поведінкових тегів') }}</h3>
+                <p class="chart-subtitle">{{ _('% спостережень з кожним типом поведінки') }}</p>
+                <div class="chart-wrap">
+                    <canvas id="donut-chart"></canvas>
+                </div>
+                <div id="behavior-legend"></div>
+            </div>
+
+            <!-- Bar: розмір групи -->
+            <div class="chart-card">
+                <h3>{{ _('Розмір групи') }}</h3>
+                <p class="chart-subtitle">{{ _('Розподіл кількості особин в одному спостереженні') }}</p>
+                <div class="chart-wrap">
+                    <canvas id="group-chart"></canvas>
+                </div>
+                <div id="group-size-stats"></div>
+            </div>
+        </div>
+
+        <!-- Stacked bar: сезонна структура -->
+        <div class="chart-card full-width">
+            <h3>{{ _('Сезонна структура поведінки') }}</h3>
+            <p class="chart-subtitle">{{ _('Кількість спостережень з кожним типом поведінки по місяцях') }}</p>
+            <div class="chart-wrap-tall">
+                <canvas id="seasonal-chart"></canvas>
+            </div>
+        </div>
+
+        <p id="data-note"></p>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(function () {
+
+    // ─── Select2 ──────────────────────────────────────────────────────────────
+    $('#species-select').select2({
+        placeholder: '{{ _("Оберіть вид…") }}',
+        allowClear: true,
+        width: '100%',
+    });
+    $('#scope-select').select2({ width: '100%', minimumResultsForSearch: Infinity });
+    $('#biotope-select').select2({ width: '100%', minimumResultsForSearch: Infinity });
+
+    // Кнопка «Побудувати» активна тільки коли вид вибраний
+    $('#species-select').on('change', function () {
+        $('#apply-btn').prop('disabled', !$(this).val());
+    });
+
+    $('#apply-btn').on('click', function () {
+        if (!$('#species-select').val()) return;
+        loadData();
+    });
+
+    // ─── Кольорова палітра ────────────────────────────────────────────────────
+    const COLORS = [
+        '#3182ce','#48bb78','#ed8936','#e53e3e','#805ad5',
+        '#38b2ac','#d69e2e','#fc8181','#68d391','#76e4f7',
+        '#f687b3','#b794f4',
+    ];
+
+    // ─── Екземпляри графіків ──────────────────────────────────────────────────
+    let donutChart    = null;
+    let seasonalChart = null;
+    let groupChart    = null;
+
+    // ─── Назви місяців ────────────────────────────────────────────────────────
+    const MONTH_NAMES = ('{{ g.lang_code }}' === 'en')
+        ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+        : ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
+
+    // ─── Завантаження даних ───────────────────────────────────────────────────
+    function loadData() {
+        $('#hint-block').hide();
+        $('#charts-block').hide();
+        $('#spinner-block').show();
+
+        const scopeVal = $('#scope-select').val() || '';
+        let instId = '', ecoregion = '';
+        if (scopeVal.startsWith('institution:')) instId    = scopeVal.split(':')[1];
+        if (scopeVal.startsWith('ecoregion:'))   ecoregion = scopeVal.slice('ecoregion:'.length);
+
+        const url = new URL(
+            '{{ url_for("camera_traps.api_behavior_data", lang_code=g.lang_code) }}',
+            window.location.origin
+        );
+        url.searchParams.set('species_id',    $('#species-select').val());
+        url.searchParams.set('start_date',    $('#start-date').val());
+        url.searchParams.set('end_date',      $('#end-date').val());
+        url.searchParams.set('institution_id', instId);
+        url.searchParams.set('ecoregion',     ecoregion);
+        url.searchParams.set('biotope_id', $('#biotope-select').val() || '');
+
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                $('#spinner-block').hide();
+                if (data.error) { alert(data.error); return; }
+
+                renderDonut(data.behavior_distribution);
+                renderSeasonal(data.seasonal_behaviors);
+                renderGroup(data.group_size_histogram);
+
+                let note = data.total_identifications === 0
+                    ? '{{ _("Даних за вибраними фільтрами не знайдено.") }}'
+                    : '{{ _("Всього ідентифікацій у вибірці:") }} ' + data.total_identifications;
+                if (data.untagged_count > 0) {
+                    note += ' · {{ _("без поведінкових тегів:") }} ' + data.untagged_count;
+                }
+                $('#data-note').text(note);
+                $('#charts-block').show();
+            })
+            .catch(() => {
+                $('#spinner-block').hide();
+                alert('{{ _("Помилка завантаження даних.") }}');
+            });
+    }
+
+    // ─── Графік 1: Donut ─────────────────────────────────────────────────────
+    function renderDonut(data) {
+        if (donutChart) { donutChart.destroy(); donutChart = null; }
+        $('#behavior-legend').empty();
+
+        if (!data.length) {
+            $('#behavior-legend').html('<em>{{ _("Дані відсутні") }}</em>');
+            return;
+        }
+
+        const ctx = document.getElementById('donut-chart').getContext('2d');
+        const total = data.reduce((s, d) => s + d.count, 0);
+        const colors = COLORS.slice(0, data.length);
+
+        donutChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: data.map(d => d.label),
+                datasets: [{
+                    data: data.map(d => d.count),
+                    backgroundColor: colors,
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const pct = ((ctx.raw / total) * 100).toFixed(1);
+                                return `${ctx.label}: ${ctx.raw} (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Кастомна легенда з відсотками
+        const html = data.map((d, i) => {
+            const pct = ((d.count / total) * 100).toFixed(1);
+            return `<span style="color:${colors[i]};font-size:1.1em;">■</span>&nbsp;${d.label}: <strong>${pct}%</strong> (${d.count})`;
+        }).join('<br>');
+        $('#behavior-legend').html(html);
+    }
+
+    // ─── Графік 2: Stacked bar по місяцях ────────────────────────────────────
+    function renderSeasonal(data) {
+        if (seasonalChart) { seasonalChart.destroy(); seasonalChart = null; }
+        if (!data.length) return;
+
+        const behaviors = [...new Set(data.map(d => d.label))];
+        const datasets  = behaviors.map((beh, i) => ({
+            label: beh,
+            data: Array.from({ length: 12 }, (_, m) => {
+                const row = data.find(d => d.label === beh && d.month === m + 1);
+                return row ? row.count : 0;
+            }),
+            backgroundColor: COLORS[i % COLORS.length],
+            stack: 'behaviors',
+        }));
+
+        const ctx = document.getElementById('seasonal-chart').getContext('2d');
+        seasonalChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: MONTH_NAMES, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: '{{ _("Кількість спостережень") }}',
+                        },
+                    },
+                },
+                plugins: { legend: { position: 'bottom' } },
+            },
+        });
+    }
+
+    // ─── Графік 3: Гістограма кількості особин ───────────────────────────────
+    function renderGroup(data) {
+        if (groupChart) { groupChart.destroy(); groupChart = null; }
+        $('#group-size-stats').empty();
+        if (!data.length) return;
+
+        const ctx = document.getElementById('group-chart').getContext('2d');
+        groupChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => d.quantity),
+                datasets: [{
+                    label: '{{ _("Спостережень") }}',
+                    data: data.map(d => d.frequency),
+                    backgroundColor: '#3182ce',
+                    borderRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: '{{ _("Особин у кадрі") }}' } },
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: '{{ _("Спостережень") }}' },
+                    },
+                },
+                plugins: { legend: { display: false } },
+            },
+        });
+
+        // Медіана і мода
+        const vals   = data.flatMap(d => Array(d.frequency).fill(d.quantity));
+        const sorted = [...vals].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        const mode   = data.reduce((a, b) => a.frequency >= b.frequency ? a : b).quantity;
+        $('#group-size-stats').text(
+            '{{ _("Медіана") }}: ' + median + ' · {{ _("Мода") }}: ' + mode
+        );
+    }
+
+});
+</script>
+{% endblock %}

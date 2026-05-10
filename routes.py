@@ -18,7 +18,7 @@ from .analytics_calculator import update_analytics_tables
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
-from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions
+from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
 from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
@@ -322,6 +322,281 @@ def comparison_dashboard(lang_code):
         current_app.logger.error("Error loading comparison dashboard", exc_info=True)
         flash(_("Помилка завантаження сторінки порівняння."), 'danger')
         return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+    finally:
+        close_ct_session()
+
+#
+# --- СТОРІНКА АНАЛІЗУ ПОВЕДІНКИ ---
+#
+@camera_traps_bp.route('/analysis/behavior')
+def behavior_analysis(lang_code):
+    """Сторінка аналізу поведінкових тегів. Доступна всім."""
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+        else:
+            institutions = []
+
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
+
+        biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
+
+        # Менеджер = автентифікований користувач з хоча б однією установою
+        is_manager = current_user.is_authenticated and bool(current_user.institutions)
+
+        # Лише види з хоча б одним behavior-тегом
+        species_q = (
+            ct_session.query(Species)
+            .join(Identification, Identification.species_id == Species.id)
+            .join(identification_behaviors,
+                  identification_behaviors.c.identification_id == Identification.id)
+            .filter(Species.is_active == True)
+        )
+        # Для звичайних користувачів (не адмін, не менеджер) ховаємо
+        # "технічні" види (мотоцикл, авто, людина тощо) — їх id < 0
+        if not (is_admin or is_manager):
+            species_q = species_q.filter(Species.id > 0)
+
+        species_with_behaviors = (
+            species_q.distinct().order_by(Species.common_name_ua).all()
+        )
+        species_list = []
+        for s in species_with_behaviors:
+            display = s.common_name_ua if lang != 'en' else (s.common_name_en or s.common_name_ua)
+            if s.scientific_name:
+                display = f"{display} ({s.scientific_name})"
+            species_list.append({'id': s.id, 'text': display})
+
+        return render_template(
+            'behavior_analysis.html',
+            species_list=species_list,
+            biotopes=biotopes_list,
+            institutions=institutions,
+            ecoregions=ecoregions,
+            is_admin=is_admin,
+            start_date='2020-08-01',
+            end_date=date.today().strftime('%Y-%m-%d'),
+        )
+    except Exception:
+        current_app.logger.error("Error loading behavior analysis", exc_info=True)
+        flash(_("Помилка завантаження сторінки аналізу поведінки."), 'danger')
+        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/behavior/data')
+def api_behavior_data(lang_code):
+    """API: усі дані для трьох графіків поведінки одним запитом."""
+    ct_session = get_ct_session()
+    try:
+        species_id = request.args.get('species_id', type=int)
+        if not species_id:
+            return jsonify({'error': 'species_id required'}), 400
+
+        start_date_str = request.args.get('start_date', '2020-08-01')
+        end_date_str   = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+        try:
+            start_dt = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_dt   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_dt = date(2020, 8, 1)
+            end_dt   = date.today()
+
+        # Фільтр установ
+        raw_inst = request.args.get('institution_id', '').split(',')
+        selected_inst_ids = [int(i) for i in raw_inst if i.strip().isdigit()]
+
+        ecoregion = request.args.get('ecoregion', '').strip()
+        if ecoregion and not selected_inst_ids:
+            eco_insts = Institution.query.filter_by(ecoregion_uk=ecoregion).all()
+            selected_inst_ids = [i.id for i in eco_insts]
+
+        is_admin    = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin,
+            selected_inst_id=selected_inst_ids,
+            table_alias='locations'
+        )
+
+        raw_biotope = request.args.get('biotope_id', '')
+        biotope_ids = [int(raw_biotope)] if raw_biotope.isdigit() else []
+
+        # Базова вибірка ідентифікацій
+        base_q = (
+            ct_session.query(Identification)
+            .join(Photo, Photo.id == Identification.photo_id)
+            .join(Observation, Observation.id == Photo.observation_id)
+            .join(Location, Location.id == Observation.location_id)
+            .filter(
+                Identification.species_id == species_id,
+                Observation.status.in_(['completed', 'archived']),
+                Photo.captured_at.between(start_dt, end_dt),
+                text(inst_condition),
+            )
+            .params(**inst_params)
+        )
+        if biotope_ids:
+            base_q = base_q.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+
+        identification_ids = [row.id for row in base_q.all()]
+
+        if not identification_ids:
+            return jsonify({
+                'behavior_distribution': [],
+                'seasonal_behaviors': [],
+                'group_size_histogram': [],
+                'total_identifications': 0,
+            })
+
+        lang = g.lang_code
+
+        # Графік 1: розподіл поведінок
+        behavior_counts = (
+            ct_session.query(
+                BehaviorType.id,
+                BehaviorType.name_ua,
+                BehaviorType.name_en,
+                func.count(func.distinct(Photo.observation_id)).label('obs_count')
+            )
+            .join(identification_behaviors,
+                  identification_behaviors.c.behavior_type_id == BehaviorType.id)
+            .join(Identification,
+                  Identification.id == identification_behaviors.c.identification_id)
+            .join(Photo, Photo.id == Identification.photo_id)
+            .filter(Identification.id.in_(identification_ids))
+            .group_by(BehaviorType.id, BehaviorType.name_ua, BehaviorType.name_en)
+            .order_by(func.count(func.distinct(Photo.observation_id)).desc())
+            .all()
+        )
+        behavior_distribution = [
+            {
+                'behavior_id': row.id,
+                'label': row.name_ua if lang != 'en' else (row.name_en or row.name_ua),
+                'count': row.obs_count,
+            }
+            for row in behavior_counts
+        ]
+
+        # Графік 2: сезонна структура (по місяцях)
+        seasonal_rows = (
+            ct_session.query(
+                extract('month', Photo.captured_at).label('month'),
+                BehaviorType.id.label('behavior_id'),
+                BehaviorType.name_ua,
+                BehaviorType.name_en,
+                func.count(func.distinct(Photo.observation_id)).label('obs_count')
+            )
+            .join(identification_behaviors,
+                  identification_behaviors.c.behavior_type_id == BehaviorType.id)
+            .join(Identification,
+                  Identification.id == identification_behaviors.c.identification_id)
+            .join(Photo, Photo.id == Identification.photo_id)
+            .filter(Identification.id.in_(identification_ids))
+            .group_by(
+                extract('month', Photo.captured_at),
+                BehaviorType.id, BehaviorType.name_ua, BehaviorType.name_en,
+            )
+            .order_by('month', BehaviorType.id)
+            .all()
+        )
+        seasonal_behaviors = [
+            {
+                'month': int(row.month),
+                'behavior_id': row.behavior_id,
+                'label': row.name_ua if lang != 'en' else (row.name_en or row.name_ua),
+                'count': row.obs_count,
+            }
+            for row in seasonal_rows
+        ]
+
+        # Графік 3: гістограма кількості особин
+        from collections import Counter
+        qty_rows = (
+            ct_session.query(
+                func.max(Identification.quantity).label('qty'),
+                Photo.observation_id
+            )
+            .join(Photo, Photo.id == Identification.photo_id)
+            .filter(
+                Identification.id.in_(identification_ids),
+                Identification.quantity.isnot(None),
+                Identification.quantity > 0,
+            )
+            .group_by(Photo.observation_id)
+            .all()
+        )
+        qty_counter = Counter()
+        for row in qty_rows:
+            qty_counter[int(row.qty)] += 1
+        group_size_histogram = [
+            {'quantity': qty, 'frequency': freq}
+            for qty, freq in sorted(qty_counter.items())
+        ]
+
+        # Кількість ідентифікацій без жодного поведінкового тегу
+        tagged_count = (
+            ct_session.query(
+                func.count(func.distinct(identification_behaviors.c.identification_id))
+            )
+            .filter(identification_behaviors.c.identification_id.in_(identification_ids))
+            .scalar()
+        ) or 0
+        untagged_count = len(identification_ids) - tagged_count
+
+        return jsonify({
+            'behavior_distribution': behavior_distribution,
+            'seasonal_behaviors': seasonal_behaviors,
+            'group_size_histogram': group_size_histogram,
+            'total_identifications': len(identification_ids),
+            'untagged_count': untagged_count,
+        })
+    except Exception:
+        current_app.logger.error("Error in api_behavior_data", exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/behavior/species-with-behaviors')
+def api_behavior_species(lang_code):
+    """API: список видів з хоча б одним behavior-тегом."""
+    ct_session = get_ct_session()
+    try:
+        lang = g.lang_code
+        rows = (
+            ct_session.query(
+                Species.id,
+                Species.common_name_ua,
+                Species.common_name_en,
+                Species.scientific_name,
+            )
+            .join(Identification, Identification.species_id == Species.id)
+            .join(identification_behaviors,
+                  identification_behaviors.c.identification_id == Identification.id)
+            .filter(Species.is_active == True)
+            .distinct()
+            .order_by(Species.common_name_ua)
+            .all()
+        )
+        result = []
+        for s in rows:
+            display = s.common_name_ua if lang != 'en' else (s.common_name_en or s.common_name_ua)
+            if s.scientific_name:
+                display = f"{display} ({s.scientific_name})"
+            result.append({'id': s.id, 'text': display})
+        return jsonify(result)
     finally:
         close_ct_session()
 

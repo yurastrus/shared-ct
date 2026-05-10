@@ -229,6 +229,7 @@
                 <a href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Мапа') }}</a>
                 <a href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Галерея') }}</a>
                 {% if current_user.is_authenticated %}<a href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Порівняння') }}</a>{% endif %}
+                <a href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Поведінка') }}</a>
             </div>
         </form>
         
