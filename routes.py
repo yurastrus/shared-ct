@@ -665,6 +665,19 @@ def identify(lang_code):
     try:
         form = IdentificationForm()
         can_review = current_user.has_role('manager')
+        is_admin = current_user.has_role('admin')
+
+        # Установи та екорегіони для фільтру scope
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        else:
+            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
         
         # --- ПОЧАТОК НОВОЇ, ДИНАМІЧНОЇ ЛОГІКИ ---
 
@@ -724,12 +737,14 @@ def identify(lang_code):
         form.behaviors.choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
 
         # Передаємо в шаблон вже заповнені динамічно списки
-        return render_template('identification.html', 
-                             form=form, 
-                             grouped_species=grouped_species, 
+        return render_template('identification.html',
+                             form=form,
+                             grouped_species=grouped_species,
                              empty_choices=empty_choices,
                              other_special_choices=other_special_choices,
-                             can_review=can_review)
+                             can_review=can_review,
+                             institutions=institutions,
+                             ecoregions=ecoregions)
     finally:
         close_ct_session()
 
@@ -1606,11 +1621,13 @@ def next_observation_for_identification(lang_code):
         review_user_id = request.args.get('review_user_id', type=int)
         review_species_id = request.args.get('review_species_id', type=int)
         sort_by = request.args.get('sort_by', 'random') # За замовчуванням 'random'
-        
+        scope_institution_id = request.args.get('scope_institution_id', type=int)
+        scope_ecoregion = request.args.get('scope_ecoregion', '')
+
         # Перевіряємо права доступу для review режиму
         if review_mode and not current_user.has_role('manager'):
             return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
-        
+
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
 
         user_inst_ids = [inst.id for inst in current_user.institutions]
@@ -1628,6 +1645,22 @@ def next_observation_for_identification(lang_code):
             else:
                 location_filter = (Location.visibility_level == 0)
 
+        # Додатковий фільтр scope (вибрана установа або екорегіон)
+        scope_location_subq = None
+        if scope_institution_id:
+            if is_admin or scope_institution_id in user_inst_ids:
+                scope_location_subq = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id == scope_institution_id
+                )
+        elif scope_ecoregion:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_ecoregion).all()]
+            if not is_admin:
+                eco_inst_ids = [i for i in eco_inst_ids if i in user_inst_ids]
+            if eco_inst_ids:
+                scope_location_subq = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(eco_inst_ids)
+                )
+
         if review_mode:
             # В review режимі показуємо як pending так і completed з ідентифікаціями
             query = ct_session.query(Observation).filter(
@@ -1639,7 +1672,10 @@ def next_observation_for_identification(lang_code):
             if not is_admin:
                 query = query.join(Location, Observation.location_id == Location.id)\
                     .filter(location_filter)
-            
+
+            if scope_location_subq is not None:
+                query = query.filter(Observation.location_id.in_(scope_location_subq))
+
             # Додаємо фільтр по користувачу
             if review_user_id:
                 query = query.filter(
@@ -1647,7 +1683,7 @@ def next_observation_for_identification(lang_code):
                         Photo.identifications.any(Identification.user_id == review_user_id)
                     )
                 )
-            
+
             # Додаємо фільтр по виду
             if review_species_id:
                 query = query.filter(
@@ -1664,7 +1700,7 @@ def next_observation_for_identification(lang_code):
                 query = query.order_by(Observation.photo_count.desc())
             else: # 'random' or any other value
                 query = query.order_by(func.random())
-            
+
             observation = query.first()
 
         else:
@@ -1677,6 +1713,9 @@ def next_observation_for_identification(lang_code):
             if not is_admin:
                 query = query.join(Location, Observation.location_id == Location.id)\
                     .filter(location_filter)
+
+            if scope_location_subq is not None:
+                query = query.filter(Observation.location_id.in_(scope_location_subq))
 
             observation = query.order_by(func.random()).first()
         
