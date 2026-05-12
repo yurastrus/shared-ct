@@ -34,10 +34,46 @@ def serve_ct_static(lang_code, filename):
 
 
 #
-# --- ГОЛОВНИЙ АНАЛІТИЧНИЙ ДАШБОРД ---
+# --- СТАРТОВА СТОРІНКА МОДУЛЯ (картковий хаб) ---
+#
+@camera_traps_bp.route('/')
+def overview(lang_code):
+    """Стартова сторінка модуля з картками-входами до всіх розділів."""
+    # Картки рендеряться залежно від ролі користувача
+    if current_user.is_authenticated:
+        can_identify = current_user.has_role('ct_verifier')
+        can_upload   = current_user.has_role('manager')
+        can_manage   = current_user.has_role('manager') or current_user.has_role('admin')
+        can_export   = current_user.has_role('analyst')
+        is_admin     = current_user.has_role('admin')
+    else:
+        can_identify = can_upload = can_manage = can_export = is_admin = False
+
+    return render_template(
+        'overview.html',
+        can_identify=can_identify,
+        can_upload=can_upload,
+        can_manage=can_manage,
+        can_export=can_export,
+        is_admin=is_admin,
+    )
+
+
+#
+# --- АДМІН-ПАНЕЛЬ (технічні дії) ---
+#
+@camera_traps_bp.route('/admin')
+@login_required
+@role_required('admin')
+def admin_panel(lang_code):
+    """Сторінка з адмін-діями: перерахунок аналітики, очищення фото тощо."""
+    return render_template('admin.html')
+
+
+#
+# --- АНАЛІТИЧНИЙ ДАШБОРД ---
 #
 @camera_traps_bp.route('/dashboard')
-@camera_traps_bp.route('/')
 def dashboard(lang_code):
     """Відображає дашборд з основною статистикою, ФІЛЬТРОВАНОЮ ЗА ДАТОЮ, ЛОКАЦІЯМИ ТА БІОТОПАМИ."""
     ct_session = get_ct_session()
@@ -1902,8 +1938,8 @@ def manual_cleanup(lang_code):
     except Exception as e:
         current_app.logger.error(f"Manual cleanup task failed. Error: {e}")
         flash(_('Під час процесу очищення сталася несподівана помилка. Перевірте логи.'), 'danger')
-    
-    return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 @camera_traps_bp.route('/thumbnails/<path:filename>')
 def serve_thumbnail(lang_code, filename):
@@ -1930,35 +1966,37 @@ def serve_raw_photo(lang_code, filename):
         # якщо і мініатюри з таким іменем не існує.
         return send_from_directory(thumb_dir, filename)
 
-@camera_traps_bp.route('/admin/batch-stats')
-@login_required
-@role_required('admin')
-def batch_statistics(lang_code):
-    """Сторінка статистики батчів для адмінів."""
-    try:
-        from .background_tasks import get_batch_statistics
-        stats = get_batch_statistics()
-        return render_template('admin/batch_stats.html', stats=stats)
-    except Exception as e:
-        current_app.logger.error(f"Error loading batch statistics: {e}")
-        flash(_("Помилка завантаження статистики батчів."), 'danger')
-        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
-
 @camera_traps_bp.route('/admin/cleanup-batches', methods=['POST'])
 @login_required
 @role_required('admin')
 def manual_batch_cleanup(lang_code):
-    """Ручний запуск очищення застрялих батчів."""
+    """Ручний запуск очищення застрялих батчів. Після виконання показує
+    поточну статистику батчів у flash-повідомленні."""
     try:
-        from .background_tasks import cleanup_stale_batches
+        from .background_tasks import cleanup_stale_batches, get_batch_statistics
         current_app.logger.info(f"Manual batch cleanup triggered by admin: {current_user.username}")
         cleanup_stale_batches()
         flash(_('Процес очищення батчів успішно запущено та завершено.'), 'success')
+
+        # Збираємо коротку статистику після очищення
+        stats = get_batch_statistics() or {}
+        by_status = stats.get('batches_by_status', {}) or {}
+        orphaned = stats.get('orphaned_photos', 0) or 0
+
+        if by_status or orphaned:
+            parts = [f"{status}: {count}" for status, count in sorted(by_status.items())]
+            summary = _('Статистика батчів') + ' — ' + (', '.join(parts) if parts else _('немає батчів'))
+            summary += '. ' + _('Сирітських фото:') + f' {orphaned}.'
+            oldest = stats.get('oldest_pending_batch')
+            if oldest:
+                hours = round(oldest.get('age_hours') or 0, 1)
+                summary += ' ' + _('Найстаріший незавершений батч:') + f' #{oldest["id"]} ({hours} {_("год")}).'
+            flash(summary, 'info')
     except Exception as e:
         current_app.logger.error(f"Manual batch cleanup failed. Error: {e}")
         flash(_('Під час очищення батчів сталася помилка. Перевірте логи.'), 'danger')
-    
-    return redirect(url_for('camera_traps.batch_statistics', lang_code=g.lang_code))
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 @camera_traps_bp.route('/admin/recalculate-consensus', methods=['POST'])
 @login_required
@@ -1973,8 +2011,8 @@ def recalculate_consensus(lang_code):
     except Exception as e:
         current_app.logger.error(f"Consensus recalculation failed: {e}")
         flash(_('Помилка перерахунку консенсусу. Перевірте логи.'), 'danger')
-    
-    return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 @camera_traps_bp.route('/api/review-filters')
 @login_required
@@ -2463,8 +2501,8 @@ def manual_delete_originals(lang_code):
     except Exception as e:
         current_app.logger.error(f"Manual deletion task failed. Error: {e}")
         flash(_('Під час процесу видалення файлів сталася несподівана помилка. Перевірте логи.'), 'danger')
-    
-    return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 @camera_traps_bp.route('/admin/run-analytics', methods=['POST'])
 @login_required
@@ -2482,8 +2520,8 @@ def manual_run_analytics(lang_code):
     except Exception as e:
         current_app.logger.error(f"Manual analytics recalculation failed: {e}", exc_info=True)
         flash(_('Під час перерахунку аналітики сталася помилка. Перевірте логи.'), 'danger')
-    
-    return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 # --- СЕКЦІЯ ЕКСПОРТУ ДАНИХ (додати в кінець файлу routes.py) ---
 

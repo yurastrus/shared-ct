@@ -1,0 +1,124 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Фотопастки') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>{{ _('Фотопастки') }}</h1>
+        <p>{{ _('Моніторинг диких тварин — серії фото з камер-пасток, ідентифікація та аналітика. Виберіть розділ для роботи.') }}</p>
+    </div>
+
+    {# ── РОБОТА (тільки для авторизованих з відповідними ролями) ── #}
+    {% if can_identify or can_upload or can_manage or can_export %}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Робота') }}</h2>
+        <div class="hub-grid">
+
+            {% if can_identify %}
+            <a class="hub-card" href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🔍</span>
+                <span class="hub-card__title">{{ _('Ідентифікація') }}</span>
+                <span class="hub-card__desc">{{ _('Визначення видів на нових серіях фото.') }}</span>
+            </a>
+            {% endif %}
+
+            {% if can_upload %}
+            <a class="hub-card" href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📤</span>
+                <span class="hub-card__title">{{ _('Завантаження') }}</span>
+                <span class="hub-card__desc">{{ _('Додати фото з пасток до бази даних.') }}</span>
+            </a>
+            {% endif %}
+
+            {% if can_manage %}
+            <a class="hub-card" href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📍</span>
+                <span class="hub-card__title">{{ _('Локації') }}</span>
+                <span class="hub-card__desc">{{ _('Керування точками встановлення пасток.') }}</span>
+            </a>
+            {% endif %}
+
+            {% if can_export %}
+            <a class="hub-card" href="{{ url_for('camera_traps.ct_data_export', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📥</span>
+                <span class="hub-card__title">{{ _('Експорт даних') }}</span>
+                <span class="hub-card__desc">{{ _('Завантажити відфільтровані дані у форматах CSV / Darwin Core.') }}</span>
+            </a>
+            {% endif %}
+
+        </div>
+    </section>
+    {% endif %}
+
+    {# ── АНАЛІТИКА (доступна всім, частина — лише авторизованим) ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Аналітика') }}</h2>
+        <div class="hub-grid">
+
+            <a class="hub-card" href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📊</span>
+                <span class="hub-card__title">{{ _('Дашборд') }}</span>
+                <span class="hub-card__desc">{{ _('Загальна статистика, мапа локацій і топ-види.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📈</span>
+                <span class="hub-card__title">{{ _('Тренди') }}</span>
+                <span class="hub-card__desc">{{ _('Динаміка чисельності видів за роками.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🌙</span>
+                <span class="hub-card__title">{{ _('Добова активність') }}</span>
+                <span class="hub-card__desc">{{ _('Хронограма активності видів протягом доби.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🗺️</span>
+                <span class="hub-card__title">{{ _('Мапа') }}</span>
+                <span class="hub-card__desc">{{ _('Поширення видів на мапі локацій.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🖼️</span>
+                <span class="hub-card__title">{{ _('Галерея') }}</span>
+                <span class="hub-card__desc">{{ _('Перегляд відібраних фото з пасток.') }}</span>
+            </a>
+
+            {% if current_user.is_authenticated %}
+            <a class="hub-card" href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">⚖️</span>
+                <span class="hub-card__title">{{ _('Порівняння') }}</span>
+                <span class="hub-card__desc">{{ _('Порівняння двох регіонів або установ за показниками.') }}</span>
+            </a>
+            {% endif %}
+
+            <a class="hub-card" href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🐾</span>
+                <span class="hub-card__title">{{ _('Поведінка') }}</span>
+                <span class="hub-card__desc">{{ _('Аналіз поведінкових тегів окремого виду.') }}</span>
+            </a>
+
+        </div>
+    </section>
+
+    {# ── АДМІНІСТРУВАННЯ (тільки для admin) ── #}
+    {% if is_admin %}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Адміністрування') }}</h2>
+        <div class="hub-grid">
+            <a class="hub-card hub-card--danger" href="{{ url_for('camera_traps.admin_panel', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">⚙️</span>
+                <span class="hub-card__title">{{ _('Адмін-панель') }}</span>
+                <span class="hub-card__desc">{{ _('Перерахунок аналітики, очищення фото та інші технічні дії.') }}</span>
+            </a>
+        </div>
+    </section>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}

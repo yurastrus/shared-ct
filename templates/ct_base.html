@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/camera_traps.css', lang_code=g.lang_code) }}?v=14">
+<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/camera_traps.css', lang_code=g.lang_code) }}?v=17">
 {% block ct_head_extra %}{% endblock %}
+{% endblock %}
+
+{# Загальний layout для всіх CT-сторінок: кнопка повернення до хабу + контент. #}
+{# Дочірні шаблони використовують {% block ct_content %} замість {% block content %}. #}
+{% block content %}
+    {% if request.endpoint != 'camera_traps.overview' %}
+    <a href="{{ url_for('camera_traps.overview', lang_code=g.lang_code) }}" class="ct-back-link">
+        ← {{ _('До розділів') }}
+    </a>
+    {% endif %}
+    {% block ct_content %}{% endblock %}
 {% endblock %}

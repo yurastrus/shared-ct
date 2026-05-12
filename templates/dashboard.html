@@ -7,81 +7,14 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 {% endblock %}
 
-{% block content %}
+{% block ct_content %}
 <div class="container">
     <div class="dashboard-wrapper">
         
         <div class="page-header">
             <h1>{{ _('Аналітичний дашборд фотопасток') }}</h1>
-            <h4>{{ _('Загальний огляд результатів і доступ до основних функцій. Якщо у вас є доступ, увійдіть і зможете перейти до перегляду фото та ідентифікації.') }}</h4>
+            <h4>{{ _('Загальна статистика, мапа локацій та топ-види за вибраний період.') }}</h4>
         </div>
-        
-        <!-- Розділ швидких дій -->
-        <!-- Розділ швидких дій -->
-    {% if current_user.is_authenticated %}
-
-    {# --- Права доступу (нова система ролей) --- #}
-    {% set is_identifier = current_user.has_role('ct_verifier') %}
-    {% set is_data_user = current_user.has_role('analyst') %}
-    {% set is_moderator = current_user.has_role('manager') %}
-    {% set is_admin = current_user.has_role('admin') %}
-
-    {% if is_identifier %} {# Показуємо блок, тільки якщо є хоч якісь права #}
-        <div class="dashboard-section">
-            <h2 class="section-title">{{ _('Швидкі дії') }}</h2>
-            <div class="quick-actions">
-                {% if is_identifier %}
-                    <a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Ідентифікувати') }}</a>
-                {% endif %}
-
-                {% if is_moderator %}
-                    <a href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Завантажити фото') }}</a>
-                {% endif %}
-
-                {% if is_moderator or is_admin %}
-                    <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}" class="btn btn-info">{{ _('Управління локаціями') }}</a>
-                {% endif %}
-
-                {% if is_data_user %}
-                    <a href="{{ url_for('camera_traps.ct_data_export', lang_code=g.lang_code) }}" class="btn btn-primary">{{ _('Експорт даних') }}</a>
-                {% endif %}
-
-                {% if is_admin %}
-                    <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
-                            <i class="fas fa-calculator"></i> {{ _('Перерахувати аналітику') }}
-                        </button>
-                    </form>
-                    <form action="{{ url_for('camera_traps.recalculate_consensus', lang_code=g.lang_code) }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('Перерахувати консенсус для всіх спостережень?')">
-                            <i class="fas fa-sync"></i> {{ _('Перерахувати консенсус') }}
-                        </button>
-                    </form>
-                    <form action="{{ url_for('camera_traps.manual_cleanup', lang_code=g.lang_code) }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Ви впевнені, що хочете видалити файли старих фотографій?') }}')">
-                            <i class="fas fa-trash"></i> {{ _('Видалити визначені фото') }}
-                        </button>
-                    </form>
-                    <form action="{{ url_for('camera_traps.manual_delete_originals', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('УВАГА! Будуть видалені ВСІ оригінали фото, крім тих, що позначені як \'вибране\'. Мініатюри залишаться. Ця дія НЕЗВОРОТНЯ. Продовжити?') }}')">
-                            <i class="fas fa-trash-alt"></i> {{ _('Видалити оригінали') }}
-                        </button>
-                    </form>
-                    <form action="{{ url_for('camera_traps.manual_batch_cleanup', lang_code=g.lang_code) }}" method="post" style="margin: 0;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Це видалить файли та дані від незавершених завантажень, які старші 24 годин. Ця дія незворотня. Продовжити?') }}')">
-                            <i class="fas fa-broom"></i> {{ _('Очистити невдалі завантаження') }}
-                        </button>
-                    </form>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-    {% endif %}
 
         <!-- Панель фільтрів -->
         <form id="filters-form" method="GET" class="filters-panel">
@@ -116,12 +49,6 @@
             <!-- Приховане поле для ID локацій буде додано сюди за допомогою JS -->
             <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
-                <a href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Тренди') }}</a>
-                <a href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Добова активність') }}</a>
-                <a href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Мапа') }}</a>
-                <a href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Галерея') }}</a>
-                {% if current_user.is_authenticated %}<a href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Порівняння') }}</a>{% endif %}
-                <a href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Поведінка') }}</a>
             </div>
         </form>
         

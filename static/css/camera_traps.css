@@ -545,6 +545,155 @@ main .identification-container {
     border-color: var(--color-danger-hover) !important;
 }
 
+/* ──────────────────────────────────────────────────────────
+   7A. Back-to-hub link (rendered by ct_base.html on every
+   CT page except the overview/hub itself).
+   Absolutely positioned in the top-left of <main> so it
+   takes ZERO layout space — content starts at the top as
+   if the link weren't there.
+   ────────────────────────────────────────────────────────── */
+main { position: relative; }   /* anchor for absolute children */
+.ct-back-link {
+    position: absolute;
+    top: 0.5rem;
+    left: 1rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;        /* pill */
+    text-decoration: none;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.ct-back-link:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: var(--card-bg);
+    text-decoration: none;
+}
+
+/* ──────────────────────────────────────────────────────────
+   7B. Module Hub (overview landing page)
+   Generic, module-agnostic pattern — designed to be reused
+   for the PAM module's overview/landing later.
+       .module-hub          page wrapper
+       .hub-header          big centered title + subtitle
+       .hub-section         one group of cards with a heading
+       .hub-section-title   group heading (uppercase, divider)
+       .hub-grid            auto-fit grid of cards
+       .hub-card            icon + title + description, full-card link
+   ────────────────────────────────────────────────────────── */
+.module-hub {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+.hub-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+.hub-header h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.5rem;
+}
+.hub-header p {
+    color: var(--text-secondary);
+    max-width: 640px;
+    margin: 0 auto;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+.hub-section {
+    margin-bottom: 2rem;
+}
+.hub-section-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    margin: 0 0 1rem;
+}
+.hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+.hub-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    text-decoration: none;
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.hub-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--color-primary);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+.hub-card__icon {
+    font-size: 1.75rem;
+    line-height: 1;
+}
+.hub-card__title {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+.hub-card__desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.hub-card--danger:hover     { border-color: var(--color-danger); }
+
+/* ──────────────────────────────────────────────────────────
+   7C. Admin actions list (admin.html)
+   Row layout: textual description on the left, action button
+   on the right. Reuses --color-danger for destructive items.
+   ────────────────────────────────────────────────────────── */
+.admin-actions { margin-top: 1rem; }
+.admin-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.75rem;
+}
+.admin-action__info     { flex: 1; min-width: 0; }
+.admin-action__title    { font-weight: 600; color: var(--text-primary); margin: 0 0 0.25rem; font-size: 1rem; }
+.admin-action__desc     { font-size: 0.85rem; color: var(--text-secondary); margin: 0; line-height: 1.4; }
+.admin-action form      { margin: 0; }
+.admin-action .btn      { white-space: nowrap; }
+
+@media (max-width: 600px) {
+    .hub-grid     { grid-template-columns: 1fr; }
+    .admin-action { flex-direction: column; align-items: stretch; }
+    .admin-action .btn { width: 100%; }
+}
+
 /* Mode switch (daily_activity) */
 .mode-switch {
     background: var(--bg-light);

@@ -1,0 +1,97 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Адмін-панель — фотопастки') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>⚙️ {{ _('Адмін-панель') }}</h1>
+        <p>{{ _('Технічні дії над базою даних фотопасток. Доступно лише адміністраторам.') }}</p>
+    </div>
+
+    {# ── Аналітика ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Перерахунки') }}</h2>
+        <div class="admin-actions">
+
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Перерахувати аналітику') }}</p>
+                    <p class="admin-action__desc">{{ _('Перерахунок усіх агрегатних таблиць для графіків і мапи. Може зайняти кілька хвилин.') }}</p>
+                </div>
+                <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
+                        {{ _('Запустити') }}
+                    </button>
+                </form>
+            </div>
+
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Перерахувати консенсус') }}</p>
+                    <p class="admin-action__desc">{{ _('Перерахунок консенсусних видів для всіх спостережень за результатами ідентифікацій користувачів.') }}</p>
+                </div>
+                <form action="{{ url_for('camera_traps.recalculate_consensus', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Перерахувати консенсус для всіх спостережень?') }}')">
+                        {{ _('Запустити') }}
+                    </button>
+                </form>
+            </div>
+
+        </div>
+    </section>
+
+    {# ── Очищення ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Очищення даних') }}</h2>
+        <div class="admin-actions">
+
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Видалити визначені фото') }}</p>
+                    <p class="admin-action__desc">{{ _('Видаляє файли фото, для яких уже завершено ідентифікацію. Мініатюри залишаються.') }}</p>
+                </div>
+                <form action="{{ url_for('camera_traps.manual_cleanup', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Ви впевнені, що хочете видалити файли старих фотографій?') }}')">
+                        {{ _('Видалити') }}
+                    </button>
+                </form>
+            </div>
+
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Видалити оригінали') }}</p>
+                    <p class="admin-action__desc">{{ _('УВАГА: видаляє ВСІ оригінали фото окрім позначених як «вибране». Дія НЕЗВОРОТНЯ.') }}</p>
+                </div>
+                <form action="{{ url_for('camera_traps.manual_delete_originals', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('УВАГА! Будуть видалені ВСІ оригінали фото, крім тих, що позначені як \'вибране\'. Мініатюри залишаться. Ця дія НЕЗВОРОТНЯ. Продовжити?') }}')">
+                        {{ _('Видалити') }}
+                    </button>
+                </form>
+            </div>
+
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Очистити невдалі завантаження') }}</p>
+                    <p class="admin-action__desc">{{ _('Видаляє файли і дані від незавершених завантажень, які старші 24 годин.') }}</p>
+                </div>
+                <form action="{{ url_for('camera_traps.manual_batch_cleanup', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-danger" onclick="return confirm('{{ _('Це видалить файли та дані від незавершених завантажень, які старші 24 годин. Ця дія незворотня. Продовжити?') }}')">
+                        {{ _('Очистити') }}
+                    </button>
+                </form>
+            </div>
+
+        </div>
+    </section>
+
+</div>
+</div>
+{% endblock %}
