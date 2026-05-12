@@ -1,64 +1,14 @@
-{% extends "base.html" %}
+{% extends "ct_base.html" %}
 
 {% block title %}{{ _('Журнал обслуговування фотопасток') }}{% endblock %}
 
-{% block head_extra %}
+{% block ct_head_extra %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<style>
-    body { background-color: #f4f4f4; }
-    .page-layout {
-        display: grid;
-        grid-template-columns: 40% 60%;
-        gap: 20px;
-        height: calc(100vh - 150px);
-    }
-    .map-panel {
-        display: flex;
-        flex-direction: column;
-        background: #fff;
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    #map {
-        height: 100%;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-    }
-    .details-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        overflow-y: auto;
-    }
-    .form-container, .history-container {
-        background: #fff;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .select2-container { width: 100% !important; }
-    .history-item { border-bottom: 1px solid #eee; padding: 10px 0; }
-    .history-item:last-child { border-bottom: none; }
-    .history-meta { font-size: 0.9em; color: #666; }
-    
-    /* Mobile styles */
-    @media (max-width: 992px) {
-        .page-layout {
-            grid-template-columns: 1fr;
-            height: auto;
-        }
-        .map-panel { height: 50vh; }
-    }
-    .leaflet-marker-icon.marker-inactive {
-        opacity: 0.6 !important; /* Робить іконку на 40% прозорішою */
-    }
-</style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-3">
+<div class="container-fluid mt-3 ct-service-log">
     <div class="page-header d-flex justify-content-between align-items-center">
         <h1>{{ _('Журнал обслуговування') }}</h1>
         <div class="d-flex gap-2">

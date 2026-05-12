@@ -25,6 +25,15 @@ from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 
 #
+# --- СТАТИЧНІ ФАЙЛИ МОДУЛЯ ---
+#
+@camera_traps_bp.route('/ct-static/<path:filename>')
+def serve_ct_static(lang_code, filename):
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, filename)
+
+
+#
 # --- ГОЛОВНИЙ АНАЛІТИЧНИЙ ДАШБОРД ---
 #
 @camera_traps_bp.route('/dashboard')
@@ -3381,25 +3390,26 @@ def api_daily_activity(lang_code):
         
         results = {}
         species_info = {}
+        overlap_matrix = None
 
         for sp_id in species_ids:
             sp_raw_data = raw_data.get(sp_id, {})
             total_points = sum(len(v) for v in sp_raw_data.values())
-            
+
             # Дозволяємо будувати навіть по 2 точках, якщо без CI (просто покаже піки)
             min_points = 5 if compute_ci else 2
             if total_points < min_points: continue
 
             # Передаємо compute_ci та bw_adjust
             stats_rai = calculate_activity_curve(
-                sp_raw_data, total_effort, mode='rai', 
+                sp_raw_data, total_effort, mode='rai',
                 n_boot=1000 if compute_ci else 0,
                 compute_ci=compute_ci,
-                bw_adjust=bw_adjust 
+                bw_adjust=bw_adjust
             )
-            
+
             stats_pct = calculate_activity_curve(
-                sp_raw_data, total_effort, mode='percent', 
+                sp_raw_data, total_effort, mode='percent',
                 n_boot=1000 if compute_ci else 0,
                 compute_ci=compute_ci,
                 bw_adjust=bw_adjust
@@ -3407,7 +3417,7 @@ def api_daily_activity(lang_code):
 
             if stats_rai and stats_pct:
                 results[sp_id] = {'rai': stats_rai, 'percent': stats_pct}
-                
+
                 # Назва виду
                 species = ct_session.query(Species).get(sp_id)
                 name = species.scientific_name
@@ -3416,8 +3426,6 @@ def api_daily_activity(lang_code):
                 elif g.lang_code == 'en' and species.common_name_en:
                     name = species.common_name_en
                 species_info[sp_id] = name
-
-            overlap_matrix = None
         # Рахуємо матрицю тільки якщо є дані для 2 і більше видів
         if len(results) >= 2:
             from .daily_analytics import calculate_overlap_matrix # Можна і тут імпортнути

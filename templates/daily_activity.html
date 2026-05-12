@@ -1,173 +1,13 @@
-{% extends "base.html" %}
+{% extends "ct_base.html" %}
 
 {% block title %}{{ _('Добова активність видів') }}{% endblock %}
 
-{% block head_extra %}
+{% block ct_head_extra %}
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <style>
-        /* Основний контейнер */
-        .page-container { 
-            padding: 20px; 
-            max-width: 1400px; 
-            margin: 0 auto;    
-            width: 100%;
-            box-sizing: border-box;
-        }
-        
-        /* ГОЛОВНА ПАНЕЛЬ: Вертикальний стек рядків */
-        .filters-panel {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-            
-            /* Тут ми кажемо: Рядки йдуть зверху вниз */
-            display: flex;
-            flex-direction: column; 
-            gap: 20px; /* Відступ між рядками */
-            
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        /* ОКРЕМИЙ РЯДОК: Горизонтальне розташування елементів */
-        .filter-row {
-            display: flex;
-            flex-direction: row; /* Елементи зліва направо */
-            align-items: flex-end; /* Вирівнювання по низу */
-            gap: 25px; /* Відступ між групами в рядку */
-            width: 100%;
-            flex-wrap: wrap; /* Дозволяємо перенос, якщо екран дуже вузький */
-        }
-
-        /* ГРУПА ФІЛЬТРІВ (Лейбл + Інпут) */
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            flex: 0 0 auto !important; /* Не розтягуватись */
-            width: auto !important;
-            min-width: 0 !important;
-        }
-
-        .filter-group label {
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: #495057;
-            font-size: 0.9em;
-            white-space: nowrap;
-        }
-
-        /* СПЕЦІАЛЬНИЙ КЛАС для рядка видів (щоб розтягнути select на всю ширину) */
-        .filter-group.full-width {
-            width: 100% !important;
-            flex: 1 1 100% !important;
-        }
-
-        /* СПЕЦІАЛЬНИЙ КЛАС для кнопок (притискаємо вправо) */
-        .buttons-group {
-            margin-left: 0;
-        }
-
-        /* КОМПОНЕНТИ (перебиваємо глобальні стилі) */
-        .filters-panel .form-control, 
-        .filters-panel .form-select {
-            width: auto !important;
-            min-width: 140px !important;
-        }
-
-        /* Кнопки */
-        .filters-panel .btn {
-            min-width: auto !important;
-            width: auto !important;
-            padding: 8px 20px !important;
-            height: 38px;
-            white-space: nowrap;
-        }
-
-        /* Слайдер режимів */
-        .mode-switch {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            padding: 4px;
-            border-radius: 6px;
-            display: inline-flex;
-            gap: 4px;
-            height: 38px;
-            align-items: center;
-        }
-        .mode-btn {
-            padding: 0 12px;
-            height: 28px;
-            border: none;
-            background: transparent;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9em;
-            font-weight: 500;
-            color: #6c757d;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-        .mode-btn.active {
-            background: #0d6efd;
-            color: white;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        }
-
-        /* Select2 */
-        .select2-container {
-            min-width: 100px; 
-        }
-        .select2-container .select2-selection--multiple {
-            min-height: 38px;
-        }
-
-        /* Контейнер графіка */
-        .chart-container {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            position: relative;
-            height: 500px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .stats-info {
-            margin-top: 10px;
-            font-size: 0.9em;
-            color: #6c757d;
-            text-align: right;
-        }
-
-        .matrix-container {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1); /* Така ж тінь як у графіка */
-            margin-top: 20px;                      /* Відступ зверху */
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        #overlap-table th, 
-        #overlap-table td {
-            text-align: center !important;    /* Горизонтальне центрування */
-            vertical-align: middle !important; /* Вертикальне центрування */
-        }
-        
-        .form-check-label {
-             font-size: 0.9em;
-             color: #495057;
-             white-space: nowrap;
-        }
-    </style>
 {% endblock %}
 
 {% block content %}
-<div class="page-container">
+<div class="page-container daily-activity-page">
     <div class="page-header mb-4">
         <h1>{{ _('Добова активність видів') }}</h1>
     </div>
@@ -219,9 +59,9 @@
                 
                 <!-- 2. Повзунок та підписи під ним (окремий flex-контейнер) -->
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 0.8em; color: #6c757d; white-space: nowrap;">{{ _('Різко') }}</span>
+                    <span class="filter-hint">{{ _('Різко') }}</span>
                     <input type="range" class="form-range" id="bw-adjust" min="0" max="0.3" step="0.01" value="0.1" style="width: 120px;">
-                    <span style="font-size: 0.8em; color: #6c757d; white-space: nowrap;">{{ _('Гладко') }}</span>
+                    <span class="filter-hint">{{ _('Гладко') }}</span>
                 </div>
             </div>
         </div>

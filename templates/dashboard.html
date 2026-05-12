@@ -1,118 +1,10 @@
-{% extends "base.html" %}
+{% extends "ct_base.html" %}
 
 {% block title %}{{ _('Аналітичний дашборд') }}{% endblock %}
 
-{% block head_extra %}
+{% block ct_head_extra %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-<style>
-/* Загальні стилі */
-.quick-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.quick-actions .btn, .quick-actions form { display: inline-flex; align-items: center; }
-.quick-actions .btn { height: 38px; padding: 6px 12px; line-height: 1.42857143; box-sizing: border-box; border: none; }
-.quick-actions form { margin: 0 !important; }
-.quick-actions form .btn { height: 38px; padding: 6px 12px; line-height: 1.42857143; box-sizing: border-box; }
-.quick-actions form .btn-danger { background-color: #dc3545 !important; border-color: #dc3545 !important; color: white !important; }
-.quick-actions form .btn-danger:hover { background-color: #c82333 !important; border-color: #bd2130 !important; }
-.select2-container .select2-selection--multiple { min-height: 38px; border: 1px solid #ced4da; }
-
-.filters-panel {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    align-items: flex-end; /* Вирівнюємо поля по нижній лінії */
-}
-
-/* 2. Налаштування груп з датами (їх дві, тому кожній даємо по 12.5%, щоб разом було 25%) */
-.filter-group:has(input[type="date"]) {
-    flex: 0 0 12.5%; 
-    min-width: 130px; /* Мінімальна ширина, щоб дата не стискалася занадто сильно */
-}
-
-/* 3. Налаштування випадаючих списків (Установа та Біотоп) */
-.filter-group:has(select) {
-    flex: 1; /* Вони заберуть весь вільний простір, що залишився (75%) */
-    min-width: 200px;
-}
-
-.action-group {
-    flex-basis: 100%; /* Змушує групу зайняти весь рядок */
-    display: flex;
-    gap: 10px;
-    margin-top: 10px; /* Додає відступ між полями та кнопками */
-    justify-content: flex-start; /* Кнопки зліва. Змініть на flex-end, якщо хочете справа */
-}
-
-/* 1. Основний стиль тега (синій колір та хрестик справа) */
-.select2-container--default .select2-selection--multiple .select2-selection__choice {
-    background-color: #007bff !important; /* Наш синій */
-    border: 1px solid #0069d9 !important;
-    color: white !important;
-    display: inline-flex !important; /* Використовуємо inline-flex */
-    flex-direction: row-reverse !important; /* Текст зліва, хрестик справа */
-    align-items: center;
-    padding: 2px 8px !important;
-    margin-top: 4px !important;
-    border-radius: 4px;
-}
-
-/* 2. Стиль хрестика (видалення) */
-.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-    color: rgba(255, 255, 255, 0.8) !important;
-    border: none !important;
-    border-left: 1px solid rgba(255, 255, 255, 0.4) !important; /* Лінія розділювач */
-    margin-left: 8px !important;
-    margin-right: -4px !important;
-    padding: 0 6px !important;
-    position: relative !important;
-    float: none !important;
-    font-weight: bold;
-}
-
-/* 3. Колір хрестика при наведенні */
-.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-    color: white !important;
-    background-color: rgba(255, 255, 255, 0.2) !important;
-}
-
-/* 4. Забезпечуємо білий колір тексту самого біотопу/установи */
-.select2-container--default .select2-selection--multiple .select2-selection__choice__display {
-    color: white !important;
-    padding-left: 0 !important;
-}
-
-/* Стилі для кнопок керування картою */
-.leaflet-control.map-controls {
-    display: flex;
-    background-color: white;
-    border: 2px solid rgba(0,0,0,0.2);
-    border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.65);
-}
-.leaflet-control.map-controls a {
-    width: 30px;
-    height: 30px;
-    line-height: 30px;
-    text-align: center;
-    text-decoration: none;
-    color: #333;
-    font-size: 1.2em;
-    font-weight: bold;
-    border-right: 1px solid #ddd;
-}
-.leaflet-control.map-controls a:last-child {
-    border-right: none;
-}
-.leaflet-control.map-controls a:hover {
-    background-color: #f4f4f4;
-}
-
-/* Стиль для видимості карти */
-#map {
-    height: 450px;
-    width: 100%;
-}
-</style>
 {% endblock %}
 
 {% block content %}
@@ -201,7 +93,7 @@
                 <label for="end-date-input">{{ _('Кінцева дата:') }}</label>
                 <input type="date" id="end-date-input" name="end_date" class="form-control" value="{{ end_date }}">
             </div>
-            <div class="filter-group" style="flex-grow: 1;">
+            <div class="filter-group filter-group--grow">
                 <label for="institution-select">{{ _('Установа:') }}</label>
                 <select id="institution-select" name="institution_id" class="form-control" multiple>
                     {% for inst in institutions %}
@@ -211,7 +103,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="filter-group" style="flex-grow: 1;">
+            <div class="filter-group filter-group--grow">
                 <label for="biotope-select">{{ _('Біотоп:') }}</label>
                 <select id="biotope-select" name="biotopes" class="form-control" multiple>
                     {% for biotope in biotopes %}
@@ -222,14 +114,14 @@
                 </select>
             </div>
             <!-- Приховане поле для ID локацій буде додано сюди за допомогою JS -->
-            <div class="filter-group action-group">
-                <button type="submit" class="btn btn-primary" style="min-width: auto;">{{ _('Застосувати') }}</button>
-                <a href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Тренди') }}</a>
-                <a href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Добова активність') }}</a>
-                <a href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Мапа') }}</a>
-                <a href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Галерея') }}</a>
-                {% if current_user.is_authenticated %}<a href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Порівняння') }}</a>{% endif %}
-                <a href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}" class="btn btn-secondary" style="min-width: auto;">{{ _('Поведінка') }}</a>
+            <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
+                <a href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Тренди') }}</a>
+                <a href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Добова активність') }}</a>
+                <a href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Мапа') }}</a>
+                <a href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Галерея') }}</a>
+                {% if current_user.is_authenticated %}<a href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Порівняння') }}</a>{% endif %}
+                <a href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Поведінка') }}</a>
             </div>
         </form>
         
