@@ -854,13 +854,21 @@ def identify(lang_code):
         behavior_types = ct_session.query(BehaviorType).order_by(BehaviorType.name_ua).all()
         form.behaviors.choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
 
-        # AI-фільтр: список видів з AI-прогнозами (тільки якщо AI доступний)
+        # AI-фільтр: список видів з AI-прогнозами (тільки якщо AI доступний).
+        # Враховуємо доступ юзера до локацій і вже зроблені ним ідентифікації —
+        # лічильники в дужках («(42)») зменшуватимуться по мірі роботи.
         from .ai_runner import is_ai_available, get_species_with_ai_predictions
         ai_available = is_ai_available()
         ai_species_list = []
         if ai_available:
             try:
-                ai_species_list = get_species_with_ai_predictions(g.lang_code)
+                user_inst_ids_list = [inst.id for inst in current_user.institutions]
+                ai_species_list = get_species_with_ai_predictions(
+                    lang_code=g.lang_code,
+                    user_id=current_user.id,
+                    user_inst_ids=user_inst_ids_list,
+                    is_admin=is_admin,
+                )
             except Exception as e:
                 current_app.logger.warning(f"AI: cannot load species list: {e}")
 
