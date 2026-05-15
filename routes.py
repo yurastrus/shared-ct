@@ -67,7 +67,80 @@ def overview(lang_code):
 @role_required('admin')
 def admin_panel(lang_code):
     """Сторінка з адмін-діями: перерахунок аналітики, очищення фото тощо."""
-    return render_template('admin.html')
+    from .ai_runner import is_ai_available, get_recent_requests, get_active_model
+
+    ai_available   = is_ai_available()
+    ai_max_per_run = (
+        current_app.config.get('CAMERA_TRAP_CONFIG', {})
+        .get('AI_RUNNER', {})
+        .get('MAX_PER_RUN', 100)
+    )
+
+    ai_recent = []
+    ai_model  = None
+    if ai_available:
+        try:
+            ai_recent = get_recent_requests(limit=5)
+            ai_model  = get_active_model()
+        except Exception as e:
+            current_app.logger.warning(f"AI: cannot load admin status: {e}")
+        finally:
+            close_ct_session()
+
+    return render_template(
+        'admin.html',
+        ai_available=ai_available,
+        ai_max_per_run=ai_max_per_run,
+        ai_recent=ai_recent,
+        ai_model=ai_model,
+    )
+
+
+@camera_traps_bp.route('/admin/ai/run', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_ai_run(lang_code):
+    """Створює запит у ai_run_queue. Worker (cron) підхопить за 2-3 хв."""
+    from .ai_runner import is_ai_available, request_run
+
+    if not is_ai_available():
+        flash(_('AI-класифікатор не доступний.'), 'danger')
+        return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
+
+    # Валідація N
+    try:
+        n = int(request.form.get('n_observations', 100))
+    except (TypeError, ValueError):
+        flash(_('Некоректна кількість серій.'), 'danger')
+        return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
+
+    max_per_run = (
+        current_app.config.get('CAMERA_TRAP_CONFIG', {})
+        .get('AI_RUNNER', {})
+        .get('MAX_PER_RUN', 100)
+    )
+    upper_bound = max_per_run * 5   # одноразово до 5× нічного ліміту
+    if not (1 <= n <= upper_bound):
+        flash(
+            _('Кількість серій має бути від 1 до %(max)d.') % {'max': upper_bound},
+            'danger',
+        )
+        return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
+
+    try:
+        req = request_run(user_id=current_user.id, n_observations=n)
+        flash(
+            _('Запит №%(id)d додано в чергу. Worker оброблятиме до %(n)d серій. '
+              'Перевір статус нижче через 1-3 хвилини.') % {'id': req.id, 'n': n},
+            'success',
+        )
+    except Exception as e:
+        current_app.logger.error(f"AI: failed to create run request: {e}", exc_info=True)
+        flash(_('Помилка створення запиту. Перевір логи сервера.'), 'danger')
+    finally:
+        close_ct_session()
+
+    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
 
 #
@@ -781,6 +854,16 @@ def identify(lang_code):
         behavior_types = ct_session.query(BehaviorType).order_by(BehaviorType.name_ua).all()
         form.behaviors.choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
 
+        # AI-фільтр: список видів з AI-прогнозами (тільки якщо AI доступний)
+        from .ai_runner import is_ai_available, get_species_with_ai_predictions
+        ai_available = is_ai_available()
+        ai_species_list = []
+        if ai_available:
+            try:
+                ai_species_list = get_species_with_ai_predictions(g.lang_code)
+            except Exception as e:
+                current_app.logger.warning(f"AI: cannot load species list: {e}")
+
         # Передаємо в шаблон вже заповнені динамічно списки
         return render_template('identification.html',
                              form=form,
@@ -789,7 +872,9 @@ def identify(lang_code):
                              other_special_choices=other_special_choices,
                              can_review=can_review,
                              institutions=institutions,
-                             ecoregions=ecoregions)
+                             ecoregions=ecoregions,
+                             ai_available=ai_available,
+                             ai_species_list=ai_species_list)
     finally:
         close_ct_session()
 
@@ -1668,6 +1753,7 @@ def next_observation_for_identification(lang_code):
         sort_by = request.args.get('sort_by', 'random') # За замовчуванням 'random'
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
+        ai_species_id = request.args.get('ai_species_id', type=int)  # фільтр "AI: вид"
 
         # Перевіряємо права доступу для review режиму
         if review_mode and not current_user.has_role('manager'):
@@ -1706,6 +1792,25 @@ def next_observation_for_identification(lang_code):
                     location_institutions.c.institution_id.in_(eco_inst_ids)
                 )
 
+        # AI-фільтр: показуємо лише серії, де AI визначив вибраний вид
+        # (від активної моделі). Працює тихо: якщо AI ще не використовувався
+        # на цій інсталяції — параметр просто ігнорується.
+        ai_observation_subq = None
+        if ai_species_id is not None:
+            from .ai_runner import is_ai_available
+            from .models import AIModel, AIPrediction
+            if is_ai_available():
+                active_model = ct_session.query(AIModel).filter_by(is_active=True).first()
+                if active_model is not None:
+                    ai_observation_subq = (
+                        select(AIPrediction.observation_id)
+                        .where(
+                            AIPrediction.model_id == active_model.id,
+                            AIPrediction.prediction_species_id == ai_species_id,
+                        )
+                        .distinct()
+                    )
+
         if review_mode:
             # В review режимі показуємо як pending так і completed з ідентифікаціями
             query = ct_session.query(Observation).filter(
@@ -1720,6 +1825,9 @@ def next_observation_for_identification(lang_code):
 
             if scope_location_subq is not None:
                 query = query.filter(Observation.location_id.in_(scope_location_subq))
+
+            if ai_observation_subq is not None:
+                query = query.filter(Observation.id.in_(ai_observation_subq))
 
             # Додаємо фільтр по користувачу
             if review_user_id:
@@ -1761,6 +1869,9 @@ def next_observation_for_identification(lang_code):
 
             if scope_location_subq is not None:
                 query = query.filter(Observation.location_id.in_(scope_location_subq))
+
+            if ai_observation_subq is not None:
+                query = query.filter(Observation.id.in_(ai_observation_subq))
 
             observation = query.order_by(func.random()).first()
         
@@ -1832,15 +1943,26 @@ def next_observation_for_identification(lang_code):
             existing_identifications = list(user_identifications.values())
         
         response_data = {
-            'observation_id': observation.id, 
-            'location_name': observation.location.name, 
+            'observation_id': observation.id,
+            'location_name': observation.location.name,
             'photos': photos_data
         }
-        
+
+        # AI-прогноз для цієї observation (якщо є): передаємо в фронтенд,
+        # щоб JS міг pre-fill species + показати бейдж впевненості.
+        try:
+            from .ai_runner import is_ai_available, get_observation_ai_prediction
+            if is_ai_available():
+                ai_pred = get_observation_ai_prediction(observation.id)
+                if ai_pred is not None:
+                    response_data['ai_prediction'] = ai_pred
+        except Exception as e:
+            current_app.logger.warning(f"AI: cannot load prediction for obs {observation.id}: {e}")
+
         if review_mode:
             response_data['existing_identifications'] = existing_identifications
             response_data['review_mode'] = True
-            
+
         return jsonify(response_data)
     finally:
         close_ct_session()

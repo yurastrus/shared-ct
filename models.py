@@ -1,9 +1,9 @@
 # myproject/app/camera_traps/models.py
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, ForeignKey, Index, Table
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, Float, ForeignKey, Index, Table
 from sqlalchemy import CheckConstraint, UniqueConstraint, func
 from sqlalchemy.orm import relationship, backref
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from datetime import datetime
 
 from .database import CTBase
@@ -354,7 +354,7 @@ class LocationStats(CTBase):
     Оновлюється фоновим процесом для швидкого доступу.
     """
     __tablename__ = 'location_stats'
-    
+
     location_id = Column(Integer, ForeignKey('locations.id'), primary_key=True)
     total_photos = Column(Integer, nullable=False, default=0)
     avg_photos_per_day = Column(Numeric(10, 2), nullable=False, default=0.0)
@@ -369,3 +369,129 @@ class LocationStats(CTBase):
 
     def __repr__(self):
         return f'<LocationStats for LocID {self.location_id}>'
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# AI-РУНЕР: автоматична класифікація зображень нейромережею
+# ════════════════════════════════════════════════════════════════════════════
+# Окремий допоміжний підмодуль. Прогнози не йдуть у фінальні `identifications`,
+# а лише підказують верифікатору вид. Worker (`services/biomon_ai/`) живе в
+# окремому процесі з власним venv (torch + ultralytics), щоб не вантажити
+# веб-додаток. Якщо worker або модель не встановлені — Flask цього просто
+# не помічає (feature-flag перевіряє наявність таблиць + кофіг).
+# ════════════════════════════════════════════════════════════════════════════
+
+class AIModel(CTBase):
+    """Реєстр AI-моделей, що використовувалися для класифікації.
+
+    Один рядок на пару (name, version). is_active=True для тієї, яку
+    зараз використовує worker. Дозволяє трекати, яка модель видала
+    конкретний прогноз, і безболісно мігрувати на нову модель/класифікатор.
+    """
+    __tablename__ = 'ai_models'
+
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(64), nullable=False)   # 'DeepFaune'
+    version     = Column(String(32), nullable=False)   # '1.4.1'
+    config_json = Column(JSONB, nullable=True)         # {detector, threshold, ...}
+    is_active   = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime, default=func.now(), nullable=False)
+
+    predictions = relationship('AIPrediction', back_populates='model')
+
+    __table_args__ = (
+        UniqueConstraint('name', 'version', name='uq_ai_models_name_version'),
+    )
+
+    def __repr__(self):
+        return f'<AIModel {self.name} {self.version}>'
+
+
+class AIPrediction(CTBase):
+    """Прогноз AI по одному фото. Одна модель = один рядок на фото.
+
+    Зберігаємо одразу 3 варіанти прогнозу (sequence-aware, per-photo, top1)
+    щоб у майбутньому можна було перебудовувати фільтри (наприклад,
+    змінити поріг впевненості) без перепрогону моделі.
+
+    `photo_id` — без `ondelete=CASCADE` навмисно: cleanup-таски CT лише
+    архівують Photo (status='archived'), сам запис не видаляють — тож
+    FK залишається валідним. Якщо колись Photo все-таки буде видалятись —
+    схему доведеться денормалізувати (зберігати path/captured_at у самому
+    `ai_predictions`).
+    """
+    __tablename__ = 'ai_predictions'
+
+    id                    = Column(Integer, primary_key=True)
+    photo_id              = Column(Integer, ForeignKey('photos.id'), nullable=False)
+    observation_id        = Column(Integer, ForeignKey('observations.id'), nullable=False)  # денормалізовано для швидких фільтрів
+    model_id              = Column(Integer, ForeignKey('ai_models.id'), nullable=False)
+
+    # Sequence-aware прогноз (DeepFaune агрегує по серії)
+    prediction_label      = Column(String(64), nullable=True)   # сирий label від моделі, напр. 'roe deer'
+    prediction_species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # nullable: коли мапінга немає
+    prediction_score      = Column(Float, nullable=True)        # 0..1
+
+    # Per-photo (без агрегації по серії)
+    base_label            = Column(String(64), nullable=True)
+    base_score            = Column(Float, nullable=True)
+
+    # Топ-1 завжди, незалежно від threshold — для майбутніх метрик
+    top1_label            = Column(String(64), nullable=True)
+    top1_score            = Column(Float, nullable=True)
+
+    # Допоміжне
+    animal_count          = Column(Integer, nullable=True)
+    human_count           = Column(Integer, nullable=True)
+    bbox_json             = Column(JSONB, nullable=True)        # найкращий bbox від детектора
+
+    processed_at          = Column(DateTime, default=func.now(), nullable=False)
+    error_msg             = Column(Text, nullable=True)
+
+    # Зв'язки
+    photo            = relationship('Photo')
+    observation      = relationship('Observation')
+    model            = relationship('AIModel', back_populates='predictions')
+    species          = relationship('Species', foreign_keys=[prediction_species_id])
+
+    __table_args__ = (
+        UniqueConstraint('photo_id', 'model_id', name='uq_ai_predictions_photo_model'),
+        # Найважливіший індекс — фільтр на /identify: "знайти серії, де AI каже X"
+        Index('idx_ai_pred_filter',
+              'model_id', 'prediction_species_id', 'observation_id'),
+        Index('idx_ai_pred_observation', 'observation_id'),
+    )
+
+    def __repr__(self):
+        return f'<AIPrediction photo={self.photo_id} → {self.prediction_label} ({self.prediction_score})>'
+
+
+class AIRunQueue(CTBase):
+    """Черга ручних запусків AI-воркера (адмін-кнопка).
+
+    Worker (cron або systemd-timer) періодично сканує цю таблицю — якщо
+    є pending записи, обробляє вказану кількість observation і записує
+    результат. Для нічного автоматичного batch worker не використовує
+    чергу — просто бере N=AI_MAX_PER_RUN найстаріших pending observation.
+
+    `requested_by` — id користувача з ОСНОВНОЇ БД (users), а не з ct_db.
+    FK не ставимо, бо це cross-DB; зберігаємо як простий INTEGER.
+    """
+    __tablename__ = 'ai_run_queue'
+
+    id              = Column(Integer, primary_key=True)
+    requested_by    = Column(Integer, nullable=False)            # users.id з основної БД
+    requested_at    = Column(DateTime, default=func.now(), nullable=False)
+    n_observations  = Column(Integer, nullable=False)            # скільки серій оброблятиме worker
+    status          = Column(String(16), default='pending', nullable=False)  # pending|running|done|failed
+    started_at      = Column(DateTime, nullable=True)
+    finished_at     = Column(DateTime, nullable=True)
+    processed_count = Column(Integer, nullable=True)             # фактично оброблено
+    error_msg       = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index('idx_ai_queue_status', 'status', 'requested_at'),
+    )
+
+    def __repr__(self):
+        return f'<AIRunQueue {self.id} {self.status} n={self.n_observations}>'

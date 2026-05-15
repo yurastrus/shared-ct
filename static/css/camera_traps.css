@@ -688,10 +688,102 @@ main { position: relative; }   /* anchor for absolute children */
 .admin-action form      { margin: 0; }
 .admin-action .btn      { white-space: nowrap; }
 
+/* ──────────────────────────────────────────────────────────
+   7D. AI-runner (admin section)
+   ────────────────────────────────────────────────────────── */
+.ai-meta {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    margin: 0 0 1rem;
+}
+.ai-meta .text-muted    { color: var(--text-secondary); font-size: 0.85rem; }
+.hub-subsection-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 1.5rem 0 0.5rem;
+}
+.ai-run-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.ai-run-n {
+    width: 90px;
+    height: 38px;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    text-align: center;
+}
+.ai-queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+.ai-queue-table th,
+.ai-queue-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+.ai-queue-table th {
+    background: var(--bg-light);
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+}
+.ai-queue-table tr:last-child td  { border-bottom: none; }
+.ai-status {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.ai-status--pending  { background: #fef3c7; color: #92400e; }
+.ai-status--running  { background: #dbeafe; color: #1e40af; }
+.ai-status--done     { background: #d1fae5; color: #065f46; }
+.ai-status--failed   { background: #fee2e2; color: #991b1b; }
+
+/* AI-прогноз бейдж на сторінці ідентифікації (над списком видів) */
+.ai-pred-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(135deg, #dbeafe 0%, #ede9fe 100%);
+    border: 1px solid #93c5fd;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    color: #1e40af;
+}
+.ai-pred-icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
+.ai-pred-text  { line-height: 1.3; }
+body.dark-theme .ai-pred-badge {
+    background: linear-gradient(135deg, #1e3a5f 0%, #3b2e5f 100%);
+    border-color: #5fa3ff;
+    color: #c3dafe;
+}
+
 @media (max-width: 600px) {
     .hub-grid     { grid-template-columns: 1fr; }
     .admin-action { flex-direction: column; align-items: stretch; }
     .admin-action .btn { width: 100%; }
+    .ai-run-form  { flex-direction: column; align-items: stretch; }
+    .ai-run-n     { width: 100%; }
 }
 
 /* Mode switch (daily_activity) */

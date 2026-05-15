@@ -10,8 +10,10 @@
         <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 1rem; vertical-align: middle; margin-left: 10px;"></span>
     </div>
 
-    {% if institutions or ecoregions %}
+    {% if institutions or ecoregions or ai_available %}
     <div class="scope-filter-bar">
+
+        {% if institutions or ecoregions %}
         <label for="scope-select" class="scope-filter-label">{{ _('Регіон / Установа:') }}</label>
         <select id="scope-select" class="scope-filter-select form-control form-control-sm">
             <option value="">{{ _('Всі доступні') }}</option>
@@ -32,6 +34,20 @@
             </optgroup>
             {% endif %}
         </select>
+        {% endif %}
+
+        {# ── AI-фільтр ── #}
+        {% if ai_available %}
+        <label for="ai-species-select" class="scope-filter-label">🤖 {{ _('AI вид:') }}</label>
+        <select id="ai-species-select" class="scope-filter-select form-control form-control-sm"
+                {% if not ai_species_list %}disabled title="{{ _('AI ще не виконував класифікацію — список порожній.') }}"{% endif %}>
+            <option value="">{{ _('Будь-який') }}</option>
+            {% for s in ai_species_list %}
+            <option value="{{ s.id }}">{{ s.text }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
     </div>
     {% endif %}
 
@@ -150,6 +166,13 @@
                     
                     <!-- Окремий контейнер для списку видів -->
                     <div class="species-selection-panel">
+
+                        <!-- AI-прогноз для цієї серії (заповнюється JS) -->
+                        <div id="ai-prediction-badge" class="ai-pred-badge" style="display: none;">
+                            <span class="ai-pred-icon">🤖</span>
+                            <span class="ai-pred-text"></span>
+                        </div>
+
                         <!-- Перша категорія: Пусто -->
                         <h3 class="species-group-title">{{ _('Загальні опції') }}</h3>
                         {% for value, label in empty_choices %}
@@ -391,6 +414,11 @@ $(document).ready(function() {
         loadNextObservation();
     });
 
+    // AI-фільтр і scope-фільтр: при зміні одразу завантажуємо нову серію
+    $('#ai-species-select, #scope-select').on('change', function() {
+        loadNextObservation();
+    });
+
     function displayExistingIdentifications(identifications) {
         if (!identifications || identifications.length === 0) {
             existingIdentificationsBlock.hide();
@@ -412,6 +440,43 @@ $(document).ready(function() {
         
         existingIdentificationsList.html(html);
         existingIdentificationsBlock.show();
+    }
+
+    // ── AI-прогноз: оновлює бейдж і pre-fill species radio ──────────────
+    function applyAIPrediction(aiPred) {
+        const $badge = $('#ai-prediction-badge');
+        const $text  = $badge.find('.ai-pred-text');
+
+        if (!aiPred) {
+            $badge.hide();
+            return;
+        }
+
+        // Текст бейджа: вид + впевненість %
+        const label = aiPred.species_label || '—';
+        const score = aiPred.score != null
+            ? `${Math.round(aiPred.score * 100)}%`
+            : '?';
+        const animals = aiPred.animal_count != null ? aiPred.animal_count : '?';
+
+        const tplBadge = '{{ _("AI пропонує") }}';
+        const tplConf  = '{{ _("впевненість") }}';
+        const tplAn    = '{{ _("особин") }}';
+        $text.text(`${tplBadge}: ${label} · ${tplConf}: ${score} · ${tplAn}: ${animals}`);
+        $badge.show();
+
+        // Pre-select species (radio button з value=species_id)
+        if (aiPred.species_id != null) {
+            const $radio = $(`input[name="{{ form.species.name }}"][value="${aiPred.species_id}"]`);
+            if ($radio.length) {
+                $radio.prop('checked', true);
+            }
+        }
+
+        // animal_count → попередньо заповнюємо quantity (якщо є реальне число)
+        if (aiPred.animal_count != null && aiPred.animal_count > 0) {
+            $('#{{ form.quantity.id }}').val(aiPred.animal_count);
+        }
     }
 
     function displayCurrentPhoto() {
@@ -445,6 +510,12 @@ $(document).ready(function() {
             params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
         }
 
+        // AI-фільтр: показуємо лише серії, де AI визначив цей вид
+        const aiSpeciesId = $('#ai-species-select').val();
+        if (aiSpeciesId) {
+            params.set('ai_species_id', aiSpeciesId);
+        }
+
         if (reviewMode) {
             params.set('review', 'true');
             params.set('sort_by', reviewFiltersData.sortBy);
@@ -474,6 +545,9 @@ $(document).ready(function() {
                 wrapper.show();
                 noPhotosMessage.hide();
                 form[0].reset();
+
+                // AI-прогноз: pre-fill species + показуємо бейдж
+                applyAIPrediction(data.ai_prediction);
 
                 // 2. ГОЛОВНЕ ВИПРАВЛЕННЯ: Відновлюємо стан чекбоксу після скидання форми
                 updateReviewModeUI();

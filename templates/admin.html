@@ -11,6 +11,70 @@
         <p>{{ _('Технічні дії над базою даних фотопасток. Доступно лише адміністраторам.') }}</p>
     </div>
 
+    {# ── AI-класифікатор (показуємо тільки якщо worker встановлений) ── #}
+    {% if ai_available %}
+    <section class="hub-section">
+        <h2 class="hub-section-title">🤖 {{ _('AI-класифікатор') }}</h2>
+
+        {% if ai_model %}
+        <p class="ai-meta">
+            {{ _('Активна модель:') }}
+            <strong>{{ ai_model.name }} {{ ai_model.version }}</strong>
+            <span class="text-muted">· {{ _('зареєстрована') }} {{ ai_model.created_at.strftime('%Y-%m-%d') }}</span>
+        </p>
+        {% else %}
+        <p class="ai-meta text-muted">
+            {{ _('Жодна модель ще не запускалася. Перший прогін зареєструє її автоматично.') }}
+        </p>
+        {% endif %}
+
+        <div class="admin-actions">
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Запустити AI на N серій') }}</p>
+                    <p class="admin-action__desc">
+                        {{ _('Додає запит у чергу. Worker (cron) підхопить його за 1-3 хв і обробить вказану кількість найстаріших pending серій. Прогнози зберігаються в окремій таблиці і не йдуть у фінальні ідентифікації.') }}
+                    </p>
+                </div>
+                <form action="{{ url_for('camera_traps.admin_ai_run', lang_code=g.lang_code) }}" method="post" class="ai-run-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="number" name="n_observations"
+                           min="1" max="{{ ai_max_per_run * 5 }}"
+                           value="{{ ai_max_per_run }}"
+                           class="ai-run-n" />
+                    <button type="submit" class="btn btn-info">{{ _('Запустити') }}</button>
+                </form>
+            </div>
+        </div>
+
+        {% if ai_recent %}
+        <h3 class="hub-subsection-title">{{ _('Останні запити') }}</h3>
+        <table class="ai-queue-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>{{ _('Час') }}</th>
+                    <th>{{ _('Серій') }}</th>
+                    <th>{{ _('Статус') }}</th>
+                    <th>{{ _('Оброблено') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in ai_recent %}
+                <tr>
+                    <td>{{ r.id }}</td>
+                    <td>{{ r.requested_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ r.n_observations }}</td>
+                    <td><span class="ai-status ai-status--{{ r.status }}">{{ r.status }}</span></td>
+                    <td>{{ r.processed_count if r.processed_count is not none else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </section>
+    {% endif %}
+
     {# ── Аналітика ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Перерахунки') }}</h2>
