@@ -107,36 +107,88 @@ def get_active_model() -> Optional[AIModel]:
     return sess.query(AIModel).filter_by(is_active=True).first()
 
 
-def get_species_with_ai_predictions(lang_code: str = 'uk') -> list:
-    """Повертає [(species_id, display_name)] видів, які мають хоча б один
-    AI-прогноз від активної моделі. Призначення — наповнити dropdown
-    «AI: вид» на сторінці ідентифікації.
+def get_species_with_ai_predictions(
+    lang_code: str = 'uk',
+    user_id: Optional[int] = None,
+    user_inst_ids: Optional[list] = None,
+    is_admin: bool = False,
+) -> list:
+    """Повертає [(species_id, display_name)] видів які мають **pending для
+    цього юзера** AI-прогнози від активної моделі. Тобто:
+      - observation.status='pending'
+      - користувач ще не визначав жодного фото цієї серії
+      - локація доступна юзеру (admin — всі; інакше visibility_level=0
+        АБО локація належить інституціям юзера)
 
-    Порожній список означає одне з:
-      - активної моделі ще нема
-      - модель є, але прогнозів з мапнутим species_id ще нема
-      - в усіх прогнозах prediction_species_id IS NULL (рідкісні види,
-        яких немає в нашій Species — тільки сирий label у БД)
+    display_name містить кількість таких серій у дужках, наприклад
+    "Козуля (Capreolus capreolus) (42)".
 
-    Сортується за українською назвою.
+    Якщо user_id=None — повертаємо всі види без фільтра по юзеру
+    (для тестів / debug).
     """
-    from .models import AIPrediction
-    from .models import Species  # уникаємо циклічного імпорту
-
+    from sqlalchemy import bindparam, text as sql_text
     sess = get_ct_session()
     active = sess.query(AIModel).filter_by(is_active=True).first()
     if active is None:
         return []
 
-    rows = (
-        sess.query(Species.id, Species.common_name_ua, Species.common_name_en,
-                   Species.scientific_name)
-        .join(AIPrediction, AIPrediction.prediction_species_id == Species.id)
-        .filter(AIPrediction.model_id == active.id)
-        .distinct()
-        .order_by(Species.common_name_ua)
-        .all()
-    )
+    # Будуємо access-clause (та сама логіка що в next_observation_for_identification)
+    if is_admin:
+        access_clause = ""
+        access_params = {}
+    elif user_inst_ids:
+        access_clause = """
+            AND (l.visibility_level = 0 OR EXISTS (
+                SELECT 1 FROM location_institutions li
+                WHERE li.location_id = l.id
+                  AND li.institution_id IN :inst_ids
+            ))
+        """
+        access_params = {'inst_ids': tuple(user_inst_ids)}
+    else:
+        access_clause = "AND l.visibility_level = 0"
+        access_params = {}
+
+    user_clause = ""
+    user_params = {}
+    if user_id is not None:
+        user_clause = """
+            AND NOT EXISTS (
+                SELECT 1 FROM photos pu
+                JOIN identifications i ON i.photo_id = pu.id
+                WHERE pu.observation_id = o.id AND i.user_id = :uid
+            )
+        """
+        user_params = {'uid': user_id}
+
+    sql = sql_text(f"""
+        SELECT s.id,
+               s.common_name_ua,
+               s.common_name_en,
+               s.scientific_name,
+               COUNT(DISTINCT ap.observation_id) AS pending_count
+        FROM species s
+        JOIN ai_predictions ap ON ap.prediction_species_id = s.id
+        JOIN observations o ON o.id = ap.observation_id
+        JOIN locations l ON l.id = o.location_id
+        WHERE ap.model_id = :model_id
+          AND o.status = 'pending'
+          {user_clause}
+          {access_clause}
+        GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name
+        HAVING COUNT(DISTINCT ap.observation_id) > 0
+        ORDER BY s.common_name_ua
+    """)
+
+    # IN-clause з тимчасовим списком потребує expanding-bindparam.
+    if 'inst_ids' in access_params:
+        sql = sql.bindparams(bindparam('inst_ids', expanding=True))
+
+    rows = sess.execute(sql, {
+        'model_id': active.id,
+        **user_params,
+        **access_params,
+    }).fetchall()
 
     result = []
     for s in rows:
@@ -144,10 +196,10 @@ def get_species_with_ai_predictions(lang_code: str = 'uk') -> list:
             name = s.common_name_en or s.common_name_ua or s.scientific_name
         else:
             name = s.common_name_ua or s.common_name_en or s.scientific_name
-        # для від'ємних спецкласів (empty/human/vehicle) — не показуємо
-        # наукову назву в дужках (там стоїть техн. ідентифікатор)
         if s.id > 0 and s.scientific_name:
             name = f"{name} ({s.scientific_name})"
+        # Лічильник у дужках в кінці
+        name = f"{name} ({s.pending_count})"
         result.append({'id': s.id, 'text': name})
     return result
 
