@@ -552,11 +552,16 @@ def migrate_pending_observations_to_single_identification():
     finally:
         close_ct_session()
 
-def calculate_total_effort(session, start_date, end_date):
+def calculate_total_effort(session, start_date, end_date, location_ids=None):
     """
     Розраховує загальну кількість трап-днів (сума активних днів по всіх локаціях)
     за вказаний період.
-    
+
+    Args:
+        location_ids: опційний список Location.id для обмеження ефорту
+                      конкретними локаціями (для фільтрації по установі/екорегіону).
+                      None означає "всі локації" (старе дефолтне поведінка).
+
     Логіка базується на наявності фотографій. Якщо розрив між фото менше MAX_GAP_DAYS,
     період вважається активним.
     """
@@ -568,7 +573,12 @@ def calculate_total_effort(session, start_date, end_date):
      .join(Photo, Observation.id == Photo.observation_id)\
      .filter(
          Photo.captured_at.between(start_date, end_date)
-     ).distinct().order_by(Location.id, 'cap_date').all()
+     )
+
+    if location_ids is not None:
+        dates_query = dates_query.filter(Location.id.in_(location_ids))
+
+    dates_query = dates_query.distinct().order_by(Location.id, 'cap_date').all()
 
     loc_dates = {}
     for row in dates_query:

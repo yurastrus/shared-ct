@@ -6,14 +6,21 @@ from sqlalchemy import text
 import io
 import csv
 
-def fetch_raw_daily_data(session, start_date, end_date, species_ids):
+def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_ids=None):
     """
     Отримує точний час спостережень (у десяткових годинах) для кожної локації.
     Повертає словник: { species_id: { location_id: [12.5, 14.2, ...], ... } }
+
+    Args:
+        location_ids: опційний список Location.id для обмеження результату
+                      конкретними локаціями (для фільтру по установі/екорегіону).
+                      None означає "всі локації".
     """
     # SQL запит для отримання десяткових годин (напр. 13:30 -> 13.5)
     # Використовуємо Consensus CTE
-    query_sql = """
+    location_clause = "AND o.location_id IN :location_ids" if location_ids else ""
+
+    query_sql = f"""
         WITH ObservationConsensus AS (
             SELECT
                 p.observation_id, i.species_id,
@@ -28,24 +35,27 @@ def fetch_raw_daily_data(session, start_date, end_date, species_ids):
                 ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC, max_quantity DESC) as rn
             FROM ObservationConsensus
         )
-        SELECT 
+        SELECT
             rc.species_id,
             o.location_id,
             EXTRACT(EPOCH FROM o.series_start_time::time)/3600.0 as decimal_hour
         FROM observations o
         JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
-        WHERE 
+        WHERE
             rc.species_id IN :species_ids
             AND o.status IN ('completed', 'archived')
             AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+            {location_clause}
     """
-    
+
     params = {
         'species_ids': tuple(species_ids),
         'start_date': start_date,
         'end_date': end_date
     }
-    
+    if location_ids:
+        params['location_ids'] = tuple(location_ids)
+
     # Виконуємо запит
     rows = session.execute(text(query_sql), params).fetchall()
     
