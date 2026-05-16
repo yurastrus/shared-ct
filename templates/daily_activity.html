@@ -27,7 +27,7 @@
             {% if institutions or ecoregions %}
             <div class="filter-group">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
-                <select id="scope-select" class="form-control" style="min-width: 200px; max-width: 280px;">
+                <select id="scope-select" class="form-control" style="width: 220px; max-width: 100%;">
                     {% if is_admin %}
                     <option value="global:">{{ _('Всі дані') }}</option>
                     {% else %}
