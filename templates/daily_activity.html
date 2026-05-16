@@ -80,6 +80,38 @@
             </div>
         </div>
 
+        <!-- РЯДОК 2.5: Установа / Екорегіон (scope) -->
+        {% if institutions or ecoregions %}
+        <div class="filter-row">
+            <div class="filter-group full-width">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" class="form-control">
+                    {% if is_admin %}
+                    <option value="global:">{{ _('Всі дані') }}</option>
+                    {% else %}
+                    <option value="global:">{{ _('Всі доступні мені') }}</option>
+                    {% endif %}
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}">
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- РЯДОК 3: Кнопки -->
         <div class="filter-row">
             <div class="filter-group buttons-group">
@@ -190,8 +222,12 @@ $(document).ready(function() {
         // Блокуємо кнопку завантаження на час запиту
         $('#download-btn').prop('disabled', true);
 
+        // Scope (установа / екорегіон); default 'global:' (всі дані)
+        const scopeVal = $('#scope-select').val() || 'global:';
+        const [scopeType, scopeId] = scopeVal.split(':');
+
         // Формуємо URL
-        const apiUrl = `{{ url_for('camera_traps.api_daily_activity', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&compute_ci=${computeCi}&bw_adjust=${bwAdjust}`;
+        const apiUrl = `{{ url_for('camera_traps.api_daily_activity', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&compute_ci=${computeCi}&bw_adjust=${bwAdjust}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
 
         $.getJSON(apiUrl)
             .done(function(data) {
@@ -240,7 +276,11 @@ $(document).ready(function() {
         if (!speciesIds || speciesIds.length === 0) return;
 
         // Формуємо URL з усіма параметрами
-        const downloadUrl = `{{ url_for('camera_traps.api_daily_activity_download', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&bw_adjust=${bwAdjust}&compute_ci=${computeCi}`;
+        // Той самий scope що для apply (download має дати identичну вибірку)
+        const scopeVal = $('#scope-select').val() || 'global:';
+        const [scopeType, scopeId] = scopeVal.split(':');
+
+        const downloadUrl = `{{ url_for('camera_traps.api_daily_activity_download', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&bw_adjust=${bwAdjust}&compute_ci=${computeCi}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
         
         window.location.href = downloadUrl;
     });

@@ -3530,13 +3530,15 @@ def api_daily_activity(lang_code):
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
         species_ids_str = request.args.get('species_ids', '')
-        
+        scope_type = request.args.get('scope_type', 'global')
+        scope_id = request.args.get('scope_id', '')
+
         # Читаємо прапорець CI
         compute_ci_param = request.args.get('compute_ci', 'false').lower() == 'true'
-        
+
         # Перевірка прав: CI тільки для авторизованих
         compute_ci = compute_ci_param and current_user.is_authenticated
-        
+
         try:
             bw_adjust = float(request.args.get('bw_adjust', 0.25))
             if bw_adjust < 0: bw_adjust = 0 # Мінімум 0
@@ -3546,15 +3548,60 @@ def api_daily_activity(lang_code):
 
         if not all([start_date_str, end_date_str, species_ids_str]):
             return jsonify({'error': 'Missing parameters'}), 400
-            
+
         species_ids = [int(x) for x in species_ids_str.split(',') if x.isdigit()]
         if not species_ids: return jsonify({'error': 'No valid species'}), 400
 
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        
-        total_effort = calculate_total_effort(ct_session, start_date, end_date)
-        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids)
+
+        # ── Scope-фільтр (установа / екорегіон) ──
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+
+        # Access control: non-admin може запитувати лише в межах своїх установ
+        if not is_admin:
+            if scope_type == 'institution':
+                if not scope_id or int(scope_id) not in user_inst_ids:
+                    return jsonify({'error': 'Access denied'}), 403
+            elif scope_type == 'ecoregion':
+                user_ecoregions = {
+                    inst.ecoregion_uk for inst in current_user.institutions
+                    if inst.ecoregion_uk
+                } if current_user.is_authenticated else set()
+                if scope_id not in user_ecoregions:
+                    return jsonify({'error': 'Access denied'}), 403
+
+        # Обчислюємо list location_ids; None означає "усі локації"
+        location_ids = None
+        if scope_type == 'institution' and scope_id:
+            loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id == int(scope_id)
+            ).distinct().all()
+            location_ids = [row[0] for row in loc_subq]
+        elif scope_type == 'ecoregion' and scope_id:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_id).all()]
+            if eco_inst_ids:
+                loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                    location_institutions.c.institution_id.in_(eco_inst_ids)
+                ).distinct().all()
+                location_ids = [row[0] for row in loc_subq]
+        elif scope_type == 'global' and not is_admin and user_inst_ids:
+            # Не-адмін у "global" режимі — обмежимось доступними йому локаціями
+            loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id.in_(user_inst_ids)
+            ).distinct().all()
+            location_ids = [row[0] for row in loc_subq]
+
+        # Якщо scope обраний, але жодної локації не знайшлося — повертаємо порожньо
+        if location_ids is not None and not location_ids:
+            return jsonify({
+                'total_effort': 0, 'species_data': {}, 'species_names': {},
+                'ci_computed': compute_ci, 'overlap_matrix': None
+            })
+
+        total_effort = calculate_total_effort(ct_session, start_date, end_date, location_ids=location_ids)
+        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids, location_ids=location_ids)
         
         results = {}
         species_info = {}
@@ -3630,7 +3677,9 @@ def api_daily_activity_download(lang_code):
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
         species_ids_str = request.args.get('species_ids', '')
-        
+        scope_type = request.args.get('scope_type', 'global')
+        scope_id = request.args.get('scope_id', '')
+
         # 1. Зчитуємо параметри згладжування
         try:
             bw_adjust = float(request.args.get('bw_adjust', 0.25))
@@ -3650,10 +3699,45 @@ def api_daily_activity_download(lang_code):
         species_ids = [int(x) for x in species_ids_str.split(',') if x.isdigit()]
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        
+
+        # ── Scope-фільтр (та сама логіка що в api_daily_activity) ──
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        if not is_admin:
+            if scope_type == 'institution':
+                if not scope_id or int(scope_id) not in user_inst_ids:
+                    return "Access denied", 403
+            elif scope_type == 'ecoregion':
+                user_ecoregions = {
+                    inst.ecoregion_uk for inst in current_user.institutions
+                    if inst.ecoregion_uk
+                }
+                if scope_id not in user_ecoregions:
+                    return "Access denied", 403
+
+        location_ids = None
+        if scope_type == 'institution' and scope_id:
+            location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id == int(scope_id)
+            ).distinct().all()]
+        elif scope_type == 'ecoregion' and scope_id:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_id).all()]
+            if eco_inst_ids:
+                location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
+                    location_institutions.c.institution_id.in_(eco_inst_ids)
+                ).distinct().all()]
+        elif scope_type == 'global' and not is_admin and user_inst_ids:
+            location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id.in_(user_inst_ids)
+            ).distinct().all()]
+
+        if location_ids is not None and not location_ids:
+            # Скоуп є, але порожній — повертаємо порожній CSV з заголовком
+            return Response("", mimetype="text/csv")
+
         # Отримуємо дані
-        total_effort = calculate_total_effort(ct_session, start_date, end_date)
-        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids)
+        total_effort = calculate_total_effort(ct_session, start_date, end_date, location_ids=location_ids)
+        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids, location_ids=location_ids)
         
         results = {}
         species_info = {}
@@ -3712,15 +3796,35 @@ def daily_activity_page(lang_code):
         today = date.today()
         default_start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
         default_end = today.strftime('%Y-%m-%d')
-        
+
         # Отримуємо список видів (використовуємо існуючу функцію кешування)
         species_list = get_cached_species_for_filter()
-        
+
+        # Установи та екорегіони для scope-фільтру (та сама логіка що в species_dashboard)
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions = sorted(current_user.institutions,
+                                  key=lambda i: i.name_uk or '')
+        else:
+            institutions = []
+
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
+
         return render_template(
             'daily_activity.html',
             species_list=species_list,
             default_start=default_start,
-            default_end=default_end
+            default_end=default_end,
+            institutions=institutions,
+            ecoregions=ecoregions,
+            is_admin=is_admin,
         )
     except Exception as e:
         current_app.logger.error(f"Error loading daily activity page: {e}", exc_info=True)
