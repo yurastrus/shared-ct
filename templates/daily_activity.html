@@ -24,6 +24,34 @@
                 <label>{{ _('до:') }}</label>
                 <input type="date" id="end-date" class="form-control" value="{{ default_end }}">
             </div>
+            {% if institutions or ecoregions %}
+            <div class="filter-group">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" class="form-control" style="min-width: 200px; max-width: 280px;">
+                    {% if is_admin %}
+                    <option value="global:">{{ _('Всі дані') }}</option>
+                    {% else %}
+                    <option value="global:">{{ _('Всі доступні мені') }}</option>
+                    {% endif %}
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}">
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+            {% endif %}
             <div class="filter-group">
                 <label>{{ _('Тип даних:') }}</label>
                 <div class="mode-switch">
@@ -80,37 +108,6 @@
             </div>
         </div>
 
-        <!-- РЯДОК 2.5: Установа / Екорегіон (scope) -->
-        {% if institutions or ecoregions %}
-        <div class="filter-row">
-            <div class="filter-group full-width">
-                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
-                <select id="scope-select" class="form-control">
-                    {% if is_admin %}
-                    <option value="global:">{{ _('Всі дані') }}</option>
-                    {% else %}
-                    <option value="global:">{{ _('Всі доступні мені') }}</option>
-                    {% endif %}
-                    {% if institutions %}
-                    <optgroup label="{{ _('Установи') }}">
-                        {% for inst in institutions %}
-                        <option value="institution:{{ inst.id }}">
-                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
-                        </option>
-                        {% endfor %}
-                    </optgroup>
-                    {% endif %}
-                    {% if ecoregions %}
-                    <optgroup label="{{ _('Екорегіони') }}">
-                        {% for eco_key, eco_name in ecoregions.items() %}
-                        <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
-                        {% endfor %}
-                    </optgroup>
-                    {% endif %}
-                </select>
-            </div>
-        </div>
-        {% endif %}
 
         <!-- РЯДОК 3: Кнопки -->
         <div class="filter-row">
