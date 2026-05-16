@@ -54,9 +54,11 @@
                 <tr>
                     <th>#</th>
                     <th>{{ _('Час') }}</th>
+                    <th>{{ _('Джерело') }}</th>
                     <th>{{ _('Серій') }}</th>
                     <th>{{ _('Статус') }}</th>
                     <th>{{ _('Оброблено') }}</th>
+                    <th>{{ _('Тривалість') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -64,9 +66,26 @@
                 <tr>
                     <td>{{ r.id }}</td>
                     <td>{{ r.requested_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if r.requested_by == 0 %}
+                            <span class="ai-status ai-status--cron">cron</span>
+                        {% else %}
+                            <span class="ai-status ai-status--manual">manual</span>
+                        {% endif %}
+                    </td>
                     <td>{{ r.n_observations }}</td>
                     <td><span class="ai-status ai-status--{{ r.status }}">{{ r.status }}</span></td>
                     <td>{{ r.processed_count if r.processed_count is not none else '—' }}</td>
+                    <td>
+                        {% if r.duration %}
+                            {%- set sec = r.duration.total_seconds()|int -%}
+                            {%- if sec >= 3600 -%}
+                                {{ '%d:%02d:%02d'|format(sec // 3600, (sec % 3600) // 60, sec % 60) }}
+                            {%- else -%}
+                                {{ '%d:%02d'|format(sec // 60, sec % 60) }}
+                            {%- endif -%}
+                        {% else %}—{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

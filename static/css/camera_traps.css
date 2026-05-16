@@ -756,6 +756,8 @@ main { position: relative; }   /* anchor for absolute children */
 .ai-status--running  { background: #dbeafe; color: #1e40af; }
 .ai-status--done     { background: #d1fae5; color: #065f46; }
 .ai-status--failed   { background: #fee2e2; color: #991b1b; }
+.ai-status--cron     { background: #e0e7ff; color: #3730a3; }
+.ai-status--manual   { background: #fce7f3; color: #9f1239; }
 
 /* AI-прогноз бейдж на сторінці ідентифікації (над списком видів) */
 .ai-pred-badge {

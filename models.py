@@ -1,7 +1,7 @@
 # myproject/app/camera_traps/models.py
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, Float, ForeignKey, Index, Table
-from sqlalchemy import CheckConstraint, UniqueConstraint, func
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, Float, ForeignKey, Index, Table, Interval
+from sqlalchemy import CheckConstraint, Computed, UniqueConstraint, func
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from datetime import datetime
@@ -488,6 +488,11 @@ class AIRunQueue(CTBase):
     finished_at     = Column(DateTime, nullable=True)
     processed_count = Column(Integer, nullable=True)             # фактично оброблено
     error_msg       = Column(Text, nullable=True)
+
+    # Згенерована STORED колонка в PostgreSQL: finished_at - started_at.
+    # БД заповнює сама при кожному UPDATE; Python НЕ пише сюди.
+    # Computed(..., persisted=True) → STORED (не VIRTUAL).
+    duration        = Column(Interval, Computed('finished_at - started_at', persisted=True), nullable=True)
 
     __table_args__ = (
         Index('idx_ai_queue_status', 'status', 'requested_at'),
