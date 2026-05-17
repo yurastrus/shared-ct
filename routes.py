@@ -67,7 +67,10 @@ def overview(lang_code):
 @role_required('admin')
 def admin_panel(lang_code):
     """Сторінка з адмін-діями: перерахунок аналітики, очищення фото тощо."""
-    from .ai_runner import is_ai_available, get_recent_requests, get_active_model
+    from .ai_runner import (
+        is_ai_available, get_recent_requests, get_active_model,
+        get_classification_stats,
+    )
 
     ai_available   = is_ai_available()
     ai_max_per_run = (
@@ -78,10 +81,12 @@ def admin_panel(lang_code):
 
     ai_recent = []
     ai_model  = None
+    ai_stats  = {'classified': 0, 'remaining': 0}
     if ai_available:
         try:
             ai_recent = get_recent_requests(limit=5)
             ai_model  = get_active_model()
+            ai_stats  = get_classification_stats()
         except Exception as e:
             current_app.logger.warning(f"AI: cannot load admin status: {e}")
         finally:
@@ -93,6 +98,7 @@ def admin_panel(lang_code):
         ai_max_per_run=ai_max_per_run,
         ai_recent=ai_recent,
         ai_model=ai_model,
+        ai_stats=ai_stats,
     )
 
 

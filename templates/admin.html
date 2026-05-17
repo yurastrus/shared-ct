@@ -28,6 +28,18 @@
         </p>
         {% endif %}
 
+        {# ── Загальний прогрес ── #}
+        <div class="ai-stats">
+            <div class="ai-stat ai-stat--done">
+                <div class="ai-stat__num">{{ '{:,}'.format(ai_stats.classified).replace(',', ' ') }}</div>
+                <div class="ai-stat__label">{{ _('Класифіковано ШІ') }}</div>
+            </div>
+            <div class="ai-stat ai-stat--pending">
+                <div class="ai-stat__num">{{ '{:,}'.format(ai_stats.remaining).replace(',', ' ') }}</div>
+                <div class="ai-stat__label">{{ _('Лишилось до класифікації') }}</div>
+            </div>
+        </div>
+
         <div class="admin-actions">
             <div class="admin-action">
                 <div class="admin-action__info">

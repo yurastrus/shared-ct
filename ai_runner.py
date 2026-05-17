@@ -107,6 +107,45 @@ def get_active_model() -> Optional[AIModel]:
     return sess.query(AIModel).filter_by(is_active=True).first()
 
 
+def get_classification_stats() -> dict:
+    """Загальна статистика прогресу класифікації для адмін-сторінки.
+
+    Returns:
+        {'classified': N, 'remaining': M}
+          classified — observation з прогнозами від активної моделі (будь-який статус)
+          remaining  — pending observation БЕЗ прогнозів, у яких є хоча б одне
+                       живе (не archived) фото — тобто реальні кандидати для AI.
+
+    Якщо активної моделі ще нема → обидві цифри 0.
+    """
+    from sqlalchemy import text
+    sess = get_ct_session()
+    active = sess.query(AIModel).filter_by(is_active=True).first()
+    if active is None:
+        return {'classified': 0, 'remaining': 0}
+
+    classified = sess.execute(text("""
+        SELECT COUNT(DISTINCT observation_id) FROM ai_predictions
+        WHERE model_id = :mid
+    """), {'mid': active.id}).scalar() or 0
+
+    remaining = sess.execute(text("""
+        SELECT COUNT(*) FROM observations o
+        WHERE o.status = 'pending'
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_predictions ap
+              WHERE ap.observation_id = o.id AND ap.model_id = :mid
+          )
+          AND EXISTS (
+              SELECT 1 FROM photos p
+              WHERE p.observation_id = o.id
+                AND p.status IN ('grouped', 'pending', 'completed')
+          )
+    """), {'mid': active.id}).scalar() or 0
+
+    return {'classified': int(classified), 'remaining': int(remaining)}
+
+
 def get_species_with_ai_predictions(
     lang_code: str = 'uk',
     user_id: Optional[int] = None,
