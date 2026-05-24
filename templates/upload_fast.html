@@ -456,21 +456,65 @@ $(document).ready(function () {
 
     // ─── Завантаження ────────────────────────────────────────────────────
     /**
-     * Промісовий пул паралельних завантажень.
+     * Шле один файл. На вхід — File-обʼєкт; повертає Promise від $.ajax.
+     * Викликається з worker-а і з retry-петлі.
+     */
+    async function uploadOne(file, locationId, batchId, saveOriginal) {
+        let toUpload = file;
+        if (!saveOriginal) {
+            try {
+                const compressed = await imageCompression(file, {
+                    maxSizeMB: 0.3, maxWidthOrHeight: 800,
+                    useWebWorker: true, preserveExif: true
+                });
+                toUpload = new File([compressed], file.name, {
+                    type: compressed.type, lastModified: file.lastModified
+                });
+            } catch (e) { /* fallback на оригінал */ }
+        }
+        const fd = new FormData();
+        fd.append('location_id', locationId);
+        fd.append('batch_id', batchId);
+        fd.append('file', toUpload);
+        fd.append('save_original', saveOriginal);
+        return $.ajax({
+            url: processSingleUrl, method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            data: fd, processData: false, contentType: false,
+            timeout: 60000
+        });
+    }
+
+    /**
+     * Класифікація помилки: реальний дублікат (не повторювати) чи
+     * транзієнтна (мережа / 5xx / race / таймаут — повторити).
+     */
+    function isRealDuplicateError(xhr) {
+        const err = (xhr && xhr.responseJSON && xhr.responseJSON.error) || '';
+        return /duplicate|дублікат/i.test(err);
+    }
+
+    /**
+     * Промісовий пул паралельних завантажень з вбудованим АВТО-RETRY.
      * Інваріант серіальності зберігається на стороні сервера: фінальне
-     * групування викликаємо ТІЛЬКИ після того, як ВСІ promises resolved.
+     * групування викликаємо ТІЛЬКИ після того, як ВСІ promises resolved
+     * (включно з retry-проходами).
      */
     async function uploadWithPool(files, locationId, batchId, alreadyUploadedSet) {
         const totalCount = files.length;
-        let processed = alreadyUploadedSet.size; // ті, що вже залиті
-        let successCount = 0, errorCount = 0, skippedCount = alreadyUploadedSet.size;
+        const skippedCount = alreadyUploadedSet.size;
+        let processed = skippedCount;
+        let successCount = 0, errorCount = 0;
         const concurrency = $('#parallel-checkbox').is(':checked') ? PARALLEL_DEFAULT : 1;
         const saveOriginal = $('#save-original-checkbox').is(':checked');
 
-        function updateProgress() {
+        // Черга транзієнтних помилок — для авто-повтору після першого проходу.
+        const retryQueue = [];
+
+        function updateProgress(phase) {
             const pct = totalCount === 0 ? 100 : Math.round(processed / totalCount * 80) + 5;
             $('#progress-bar').css('width', pct + '%');
-            $('#progress-text').text('{{ _("Завантаження файлів...") }}');
+            $('#progress-text').text(phase || '{{ _("Завантаження файлів...") }}');
             $('#progress-counts').text(
                 `${processed} / ${totalCount} ` +
                 `({{ _("успіх") }}: ${successCount + skippedCount}, ` +
@@ -479,7 +523,7 @@ $(document).ready(function () {
         }
         updateProgress();
 
-        // Worker — забирає файл з черги і шле його, поки черга не порожня.
+        // ─── Фаза 1: основний пул із N паралельних воркерів ─────────────
         let queueIdx = 0;
         async function worker() {
             while (true) {
@@ -487,41 +531,21 @@ $(document).ready(function () {
                 if (myIdx >= files.length) return;
                 const file = files[myIdx];
                 const key = (file.webkitRelativePath || file.name);
-                if (alreadyUploadedSet.has(key)) { continue; } // вже на сервері
-
-                let toUpload = file;
-                if (!saveOriginal) {
-                    try {
-                        const compressed = await imageCompression(file, {
-                            maxSizeMB: 0.3, maxWidthOrHeight: 800,
-                            useWebWorker: true, preserveExif: true
-                        });
-                        toUpload = new File([compressed], file.name, {
-                            type: compressed.type, lastModified: file.lastModified
-                        });
-                    } catch (e) { /* fallback на оригінал */ }
-                }
-
-                const fd = new FormData();
-                fd.append('location_id', locationId);
-                fd.append('batch_id', batchId);
-                fd.append('file', toUpload);
-                fd.append('save_original', saveOriginal);
+                if (alreadyUploadedSet.has(key)) continue; // вже на сервері
 
                 try {
-                    await $.ajax({
-                        url: processSingleUrl, method: 'POST',
-                        headers: { 'X-CSRFToken': csrfToken },
-                        data: fd, processData: false, contentType: false,
-                        timeout: 60000
-                    });
+                    await uploadOne(file, locationId, batchId, saveOriginal);
                     successCount++;
                 } catch (xhr) {
-                    errorCount++;
-                    // Логуємо лише перші 10 помилок у консоль, щоб не засмічувати
-                    if (errorCount <= 10) {
-                        console.warn(`[upload-fast] ${file.name}:`,
-                            xhr.responseJSON ? xhr.responseJSON.error : 'failed');
+                    if (isRealDuplicateError(xhr)) {
+                        // Реальний дублікат — точно є в БД, retry не допоможе.
+                        errorCount++;
+                        if (errorCount <= 10) {
+                            console.warn(`[upload-fast] duplicate ${file.name}`);
+                        }
+                    } else {
+                        // Транзієнтна помилка — додаємо в чергу retry.
+                        retryQueue.push(file);
                     }
                 }
                 processed++;
@@ -532,7 +556,41 @@ $(document).ready(function () {
         const workers = [];
         for (let i = 0; i < concurrency; i++) workers.push(worker());
         await Promise.all(workers);
-        updateProgress();
+
+        // ─── Фаза 1.5: АВТО-ПОВТОР з backoff ─────────────────────────────
+        // До 2 проходів по черзі retry, послідовно (concurrency=1) щоб
+        // не реактивувати race; перед кожним проходом — невелика пауза.
+        // Здебільшого все добивається на першому ж проході.
+        const MAX_RETRY_PASSES = 2;
+        for (let pass = 1; pass <= MAX_RETRY_PASSES && retryQueue.length > 0; pass++) {
+            const thisPass = retryQueue.splice(0, retryQueue.length);
+            updateProgress(
+                `{{ _("Повторне завантаження") }} ${thisPass.length} ` +
+                `{{ _("файлів") }} ({{ _("спроба") }} ${pass + 1}/${MAX_RETRY_PASSES + 1})...`
+            );
+            // Пауза перед retry — даємо мережі/серверу видихнути
+            await new Promise(r => setTimeout(r, 800 * pass));
+
+            for (const file of thisPass) {
+                try {
+                    await uploadOne(file, locationId, batchId, saveOriginal);
+                    successCount++;
+                } catch (xhr) {
+                    if (isRealDuplicateError(xhr)) {
+                        errorCount++;
+                    } else if (pass < MAX_RETRY_PASSES) {
+                        retryQueue.push(file); // ще один шанс
+                    } else {
+                        errorCount++;
+                        console.warn(`[upload-fast] gave up on ${file.name}:`,
+                            xhr.responseJSON ? xhr.responseJSON.error : 'failed');
+                    }
+                }
+                // processed уже інкрементовано у фазі 1 — не подвоюємо
+            }
+            updateProgress();
+        }
+
         return { successCount, errorCount, skippedCount };
     }
 
