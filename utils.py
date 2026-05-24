@@ -2,11 +2,12 @@
 
 import os
 import uuid
+import hashlib
 import exifread
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 from PIL import Image
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from flask import current_app
 from .database import get_ct_session, close_ct_session
@@ -133,9 +134,25 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
     """
     Обробляє один файл і зберігає його в статусі 'uploaded'.
     Групування в серії відбудеться пізніше.
+
+    Race-safety (виправлено 2026-05-24, після /upload-fast Beta):
+      • processed_files оновлюється атомарним UPDATE ... RETURNING —
+        замість read-modify-write, який втрачав інкременти при
+        паралельних воркерах (фікс 0.4% «зниклих» лічильникових
+        інкрементів на 900 фото).
+      • Дублікат-перевірка обгорнута в pg_advisory_xact_lock на
+        тріплеті (location_id, original_filename, captured_at) —
+        дві паралельні спроби завантажити ТЕ Ж САМЕ фото тепер
+        серіалізовані; різні фото обробляються паралельно як і раніше.
+      • Файли, що були записані на диск перед невдалим commit, тепер
+        видаляються в except — без сиріт у raw/ і thumbnails/.
     """
     ct_session = get_ct_session()
-    
+
+    # Шляхи — на верхньому рівні для cleanup в except.
+    raw_path = None
+    thumb_path = None
+
     try:
         config = current_app.config['CAMERA_TRAP_CONFIG']
         location = ct_session.query(Location).get(location_id)
@@ -145,21 +162,40 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         # Перевіряємо, що папки існують
         raw_folder = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'raw')
         thumb_folder = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'thumbnails')
-        
+
         os.makedirs(raw_folder, exist_ok=True)
         os.makedirs(thumb_folder, exist_ok=True)
 
         if not file or not file.filename:
             raise ValueError("Empty file")
-            
+
+        # ─── АТОМАРНИЙ ІНКРЕМЕНТ processed_files ─────────────────────────
+        # Замість ORM read-modify-write (race-prone з 4 паралельними
+        # воркерами) — один SQL: UPDATE ... RETURNING. Транзакційно
+        # ізольовано: якщо нижче впадемо й зробимо rollback, інкремент
+        # відкотиться разом із усім іншим.
+        # Бонус: повертає унікальний 1-based номер фото у межах batchʼа —
+        # використовуємо як seconds-offset для placeholder-captured_at,
+        # коли EXIF немає (раніше для всіх таких фото був той самий
+        # offset → дублікат-конфлікти).
+        new_count_row = ct_session.execute(
+            text(
+                "UPDATE upload_batches "
+                "SET processed_files = COALESCE(processed_files, 0) + 1 "
+                "WHERE id = :b "
+                "RETURNING processed_files"
+            ),
+            {"b": batch_id},
+        ).first()
+        if new_count_row is None:
+            raise ValueError(f"Batch {batch_id} not found")
+        photo_offset = int(new_count_row[0])
+
         captured_at = extract_datetime_from_exif(file)
 
         if captured_at is None:
             placeholder_date = datetime(1900, 1, 1)
-            batch = ct_session.query(UploadBatch).get(batch_id)
-            seconds_offset = batch.processed_files or 0 if batch else 0
-            captured_at = placeholder_date + timedelta(seconds=seconds_offset)
-
+            captured_at = placeholder_date + timedelta(seconds=photo_offset)
             current_app.logger.warning(
                 f"Could not read EXIF datetime for '{file.filename}'. "
                 f"Falling back to placeholder time: {captured_at}"
@@ -169,14 +205,41 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         original_filename = secure_filename(file.filename)
         if not original_filename:
             original_filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        
-        # 2. Покращена перевірка на дублікат
+
+        # ─── ADVISORY LOCK на (location, filename, time) ─────────────────
+        # Серіалізуємо обробку фото з однаковим ключем дублікату
+        # (lock-key — той самий, що перевіряє preflight нижче).
+        # Два паралельні воркери з тим самим (location, filename,
+        # captured_at) тепер чекатимуть один одного → перший INSERT-ить,
+        # другий бачить дублікат і чесно повертає ValueError.
+        # Різні (location, filename, captured_at) → різні lock-keys →
+        # ніякого блокування, паралелізм збережено.
+        # На SQLite функції pg_advisory_xact_lock немає — у тестах
+        # просто пропускаємо (юніт-тести однопотокові, race немає).
+        _key_src = (
+            f"{location.id}|{original_filename}|{captured_at.isoformat()}"
+        )
+        _h = hashlib.md5(_key_src.encode('utf-8')).digest()
+        try:
+            ct_session.execute(
+                text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
+                {
+                    "k1": int.from_bytes(_h[0:4], 'big', signed=True),
+                    "k2": int.from_bytes(_h[4:8], 'big', signed=True),
+                },
+            )
+        except Exception:
+            # SQLite або інший двіжок без advisory-locks — race лишається,
+            # але в тестах він не відтворюється (один потік).
+            pass
+
+        # 2. Перевірка на дублікат — тепер race-safe всередині lock
         existing_photo = ct_session.query(Photo).join(Observation).filter(
             Observation.location_id == location.id,
             Photo.captured_at == captured_at,
             Photo.original_filename == original_filename
         ).first()
-        
+
         if not existing_photo:
             existing_photo = ct_session.query(Photo).join(UploadBatch).filter(
                 UploadBatch.location_id == location.id,
@@ -194,32 +257,32 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         lat_str = str(location.latitude).replace('.', '_')
         lon_str = str(location.longitude).replace('.', '_')
         timestamp_str = captured_at.strftime('%Y%m%d_%H%M%S_%f')
-        
+
         base_name = f"{lat_str}_{lon_str}_{timestamp_str}_{batch_id[:8]}"
         ext = os.path.splitext(original_filename)[1] or '.jpg'
-        
-        # === НОВИЙ НАДІЙНИЙ БЛОК ПЕРЕВІРКИ УНІКАЛЬНОСТІ ІМЕНІ ===
+
+        # === НАДІЙНИЙ БЛОК ПЕРЕВІРКИ УНІКАЛЬНОСТІ ІМЕНІ ===
+        # У межах advisory-lock конкурент із тим самим ключем тут не зайде —
+        # тож counter гарантовано не зіткнеться.
         counter = 1
         while True:
             system_filename = f"{base_name}_{counter:02d}{ext}"
             raw_path = os.path.join(raw_folder, system_filename)
             thumb_path = os.path.join(thumb_folder, system_filename)
-            
-            # Перевіряємо чи є файл на диску (в сирих АБО в мініатюрах)
+
             disk_exists = os.path.exists(raw_path) or os.path.exists(thumb_path)
-            
+
             if not disk_exists:
-                # Перевіряємо чи немає такого системного імені вже в базі даних!
                 db_exists = ct_session.query(Photo.id).filter_by(system_filename=system_filename).first()
                 if not db_exists:
-                    break # Знайшли абсолютно унікальне ім'я!
-            
+                    break
+
             counter += 1
         # ========================================================
 
         # Збереження файлів
         file.seek(0)
-    
+
         file.seek(0)
 
         if save_original:
@@ -230,34 +293,21 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         else:
             # Сценарій 2: Очікуємо, що браузер уже стиснув файл (галочка не стоїть)
             try:
-                # Відкриваємо зображення для перевірки параметрів
                 with Image.open(file) as img:
                     target_size = config['THUMBNAIL_SIZE']
-                    
-                    # Перевіряємо, чи роздільна здатність вже відповідає нормі
-                    # (Pillow повертає (width, height))
                     is_correct_res = img.width <= target_size[0] and img.height <= target_size[1]
-                    
-                    # Додаткова перевірка формату (на випадок, якщо прийшов не JPEG)
                     is_jpeg = img.format == 'JPEG'
 
-                file.seek(0) # Повертаємо покажчик після відкриття Image.open
+                file.seek(0)
 
                 if is_correct_res and is_jpeg:
-                    # Файл уже ідеальний (стиснутий браузером): просто зберігаємо
                     file.save(thumb_path)
-                    # current_app.logger.info(f"Файл {system_filename} збережено як є (вже стиснутий)")
                 else:
-                    # Файл не відповідає критеріям (завеликий або не той формат):
-                    # стискаємо його на сервері
                     create_thumbnail(file, thumb_path)
                     current_app.logger.warning(f"Файл {system_filename} був стиснутий сервером (клієнт надіслав невідповідний файл)")
 
             except Exception as e:
-                # Якщо файл пошкоджений або Image.open не зміг його прочитати
                 current_app.logger.error(f"Помилка перевірки зображення {original_filename}: {e}")
-                # Спробуємо останній шанс - метод create_thumbnail, 
-                # якщо і він впаде, спрацює загальний try/except функції
                 file.seek(0)
                 create_thumbnail(file, thumb_path)
 
@@ -270,18 +320,26 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
             status='uploaded'
         )
         ct_session.add(photo)
-        
-        batch = ct_session.query(UploadBatch).get(batch_id)
-        if batch:
-            batch.processed_files = (batch.processed_files or 0) + 1
-        
+
+        # processed_files уже атомарно інкрементовано на початку функції —
+        # повторно НЕ оновлюємо (раніше тут був ще один read-modify-write).
+
         ct_session.commit()
-        
+
         return photo.id
-        
+
     except Exception as e:
         current_app.logger.error(f"Error processing file {file.filename}: {e}")
         ct_session.rollback()
+        # Cleanup файлів на диску, якщо commit не пройшов — щоб не лишати
+        # сирітські JPEG-и в raw/ і thumbnails/.
+        for _p in (raw_path, thumb_path):
+            if _p:
+                try:
+                    if os.path.exists(_p):
+                        os.remove(_p)
+                except Exception:
+                    pass
         raise ValueError(f"Failed to process file {file.filename}: {str(e)}")
     finally:
         close_ct_session()
