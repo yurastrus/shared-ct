@@ -273,6 +273,9 @@ def group_batch_into_series_sql(batch_id: str) -> int:
         grouped_photos = result.rowcount or 0
 
         # ─── 5. Перерахунок photo_count у локації одним short UPDATE ─────
+        # Набір статусів — біт-у-біт як у legacy group_batch_into_series
+        # (utils.py): 'pending', 'completed', 'needs_review'. Не додаємо
+        # 'grouped' — щоб результат у БД був ідентичний старому шляху.
         conn.execute(
             text("""
                 UPDATE locations
@@ -281,7 +284,7 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                          JOIN observations o ON o.id = p.observation_id
                         WHERE o.location_id = :loc
                           AND p.status IN ('pending', 'completed',
-                                           'needs_review', 'grouped')
+                                           'needs_review')
                    )
                  WHERE id = :loc
             """),
