@@ -1065,6 +1065,143 @@ def get_batch_status_api(lang_code, batch_id):
         current_app.logger.error(f"Error getting batch status: {e}")
         return jsonify({'error': _('Помилка отримання статусу batch')}), 500
 
+# ═════════════════════════════════════════════════════════════════════════════
+# /upload-fast — паралельний шлях для великих наборів фото (10k–100k+).
+# Існує разом зі старим /upload. Спільно використовує create-batch /
+# process-single / batch-status. Відрізняється:
+#   • окрема сторінка з паралельним JS-аплоадером і polling-фіналізацією
+#   • finalize-batch-async — повертає 202, групування у фоновому потоці
+#   • uploaded-files endpoint для resumable-відновлення
+# ═════════════════════════════════════════════════════════════════════════════
+
+@camera_traps_bp.route('/upload-fast', methods=['GET'])
+@login_required
+@role_required('manager')
+def upload_fast(lang_code):
+    """Нова сторінка завантаження (Beta). Логіка вибору локацій — та сама,
+    що в legacy `upload`, лише інший шаблон + інший фінал."""
+    ct_session = get_ct_session()
+    try:
+        form = UploadForm()
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+        is_admin = current_user.has_role('admin')
+
+        if is_admin:
+            locations = ct_session.query(Location).order_by(Location.name).all()
+        elif user_inst_ids:
+            locations = ct_session.query(Location)\
+                .join(location_institutions, Location.id == location_institutions.c.location_id)\
+                .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
+                .order_by(Location.name).distinct().all()
+        else:
+            locations = []
+
+        form.location.choices = (
+            [(-1, _('-- Будь ласка, виберіть --'))]
+            + [(loc.id, loc.name) for loc in locations]
+            + [(0, _('*** СТВОРИТИ НОВЕ МІСЦЕ ***'))]
+        )
+
+        if is_admin:
+            institutions_list = Institution.query.order_by(Institution.name_uk).all()
+        else:
+            institutions_list = current_user.institutions
+
+        all_loc_inst_records = ct_session.query(location_institutions).all()
+        loc_to_inst = {}
+        for record in all_loc_inst_records:
+            loc_to_inst.setdefault(record.location_id, []).append(record.institution_id)
+
+        locations_data = [{
+            'id': loc.id,
+            'name': loc.name,
+            'latitude': float(loc.latitude),
+            'longitude': float(loc.longitude),
+            'institution_ids': loc_to_inst.get(loc.id, [])
+        } for loc in locations]
+
+        return render_template(
+            'upload_fast.html',
+            form=form,
+            locations_json_string=json.dumps(locations_data),
+            geoserver_url=current_app.config['GEOSERVER_URL'],
+            institutions=institutions_list,
+        )
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/finalize-batch-async', methods=['POST'])
+@login_required
+@role_required('manager')
+def finalize_batch_async(lang_code):
+    """Переводить batch у 'ready_to_group' і стартує фонове групування.
+    Повертає 202 Accepted з batch_id; клієнт polling-ом тягне /api/batch-status."""
+    try:
+        data = request.json or {}
+        batch_id = data.get('batch_id')
+        if not batch_id:
+            return jsonify({'error': _('Необхідний ID для batch')}), 400
+
+        ct_session = get_ct_session()
+        try:
+            from .models import UploadBatch
+            batch = ct_session.query(UploadBatch).get(batch_id)
+            if not batch:
+                return jsonify({'error': _('Batch не знайдено')}), 404
+            if batch.status not in ('uploading', 'failed'):
+                # 'failed' дозволяємо як retry; 'completed' / 'grouping' / 'ready_to_group' — ні
+                return jsonify({
+                    'error': _("Batch у стані '%(s)s', фіналізація неможлива",
+                               s=batch.status)
+                }), 409
+            batch.status = 'ready_to_group'
+            batch.error_message = None
+            ct_session.commit()
+        finally:
+            close_ct_session()
+
+        from .fast_upload import start_async_grouping
+        start_async_grouping(batch_id)
+
+        return jsonify({
+            'success': True,
+            'batch_id': batch_id,
+            'message': _('Групування запущено у фоні. Очікуйте...')
+        }), 202
+
+    except Exception as e:
+        current_app.logger.exception(f"Error in finalize_batch_async: {e}")
+        return jsonify({'error': _('Помилка фіналізації batch')}), 500
+
+
+@camera_traps_bp.route('/api/batch/<batch_id>/uploaded-files', methods=['GET'])
+@login_required
+@role_required('manager')
+def batch_uploaded_files(lang_code, batch_id):
+    """Список (original_filename, captured_at) уже залитих файлів цього batchʼа.
+    Використовується upload_fast.html для resumable: при відновленні сесії
+    JS пропускає файли, які вже на сервері."""
+    ct_session = get_ct_session()
+    try:
+        rows = ct_session.query(Photo.original_filename, Photo.captured_at)\
+            .filter(Photo.upload_batch_id == batch_id).all()
+        return jsonify({
+            'batch_id': batch_id,
+            'count': len(rows),
+            'files': [
+                {'original_filename': fn,
+                 'captured_at': ts.isoformat() if ts else None}
+                for fn, ts in rows
+            ]
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f"Error listing batch files: {e}")
+        return jsonify({'error': _('Помилка отримання списку файлів')}), 500
+    finally:
+        close_ct_session()
+
+
 @camera_traps_bp.route('/photo/<int:photo_id>')
 @camera_traps_bp.route('/observation/<int:observation_id>/photo/<int:photo_index>')
 @login_required

@@ -1,0 +1,668 @@
+{% extends "ct_base.html" %}
+
+{# ──────────────────────────────────────────────────────────────────────────
+   upload_fast.html — клон upload.html для масштабних завантажень.
+   Відмінності від legacy /upload:
+     • JS-аплоадер з пулом N=4 паралельних process-single
+     • Після останнього файла — асинхронний /api/finalize-batch-async (202)
+       + polling /api/batch-status (фаза 'grouping' → 'completed')
+     • Resumable: batch_id у localStorage, перевірка вже залитих через
+       /api/batch/<id>/uploaded-files і пропуск їх при повторному вході
+     • Старе legacy /upload жодним чином не зачіпається
+   Розмітка / стилі / Leaflet-карта — ідентичні до upload.html.
+   ────────────────────────────────────────────────────────────────────── #}
+
+{% block title %}{{ _('Швидке завантаження (Beta)') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+{% endblock %}
+
+{% block ct_content %}
+<input type="hidden" id="csrf-field" name="csrf_token" value="{{ csrf_token() }}"/>
+<input type="hidden" id="location-id" value="">
+
+<div class="container-fluid px-3 py-2">
+
+    <div class="d-flex align-items-center mb-2 gap-2">
+        <h4 class="mb-0" style="font-size:1.2rem;">{{ _('Завантаження фотографій з фотопасток') }}</h4>
+        <span class="badge bg-warning text-dark" style="font-size:0.7rem;">{{ _('Beta — швидкий режим') }}</span>
+    </div>
+
+    <div class="upload-layout">
+        <div class="left-panel">
+
+            <!-- STEP 1: Локація -->
+            <div class="step-card">
+                <div class="step-title"><span class="step-num">1</span>{{ _('Локація') }}</div>
+                <div class="mb-2 d-flex align-items-center gap-2">
+                    <label style="white-space:nowrap;color:#495057;margin:0;">{{ _('Установа:') }}</label>
+                    <select id="institution-select" class="form-select">
+                        <option value="">{{ _('-- Усі доступні установи --') }}</option>
+                        {% for inst in institutions %}
+                            <option value="{{ inst.id }}">
+                                {{ inst.name_uk if g.lang_code == 'uk' else (inst.name_en or inst.name_uk) }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <select id="location-select" class="form-select">
+                    {% for val, label in form.location.choices %}
+                        <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div id="location-coords-row" style="display:none; margin-top:4px;">
+                    <small style="color:#6c757d;" id="location-coords-text"></small>
+                </div>
+
+                <div id="new-location-fields" style="display:none;">
+                    <div class="panel-title">{{ _('Нове місце зйомки') }}</div>
+                    <div class="mb-2">
+                        <label class="form-label">{{ _('Назва') }} *</label>
+                        <input type="text" class="form-control" id="new-loc-name"
+                               placeholder="{{ _('напр. Яворівський НПП — точка 1') }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label text-muted">{{ _('Опис') }}</label>
+                        <input type="text" class="form-control" id="new-loc-description"
+                               placeholder="{{ _('Коротка характеристика') }}">
+                    </div>
+                    <div style="display:flex; gap:8px; margin-bottom:8px;">
+                        <div style="flex:1;">
+                            <label class="form-label text-muted">{{ _('Широта') }} *</label>
+                            <input type="number" step="0.00001" class="form-control" id="new-loc-lat" placeholder="49.85000">
+                        </div>
+                        <div style="flex:1;">
+                            <label class="form-label text-muted">{{ _('Довгота') }} *</label>
+                            <input type="number" step="0.00001" class="form-control" id="new-loc-lon" placeholder="23.65000">
+                        </div>
+                    </div>
+                    <div id="location-feedback" class="mb-2"></div>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" id="create-location-btn" class="btn btn-primary flex-fill">{{ _('Створити та вибрати місце') }}</button>
+                        <button type="button" id="cancel-create-loc" class="btn btn-outline-secondary">{{ _('Скасувати') }}</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Фотографії -->
+            <div class="step-card">
+                <div class="step-title"><span class="step-num">2</span>{{ _('Фотографії') }}</div>
+                <div class="file-btn-row">
+                    <label>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5z"/>
+                        </svg>
+                        {{ _('Файли') }}
+                        <input type="file" id="file-input" multiple accept="image/jpeg,image/jpg">
+                    </label>
+                    <label>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.54 3.087A2 2 0 0 1 2 2.5h3.54a2 2 0 0 1 1.26.447l1.4 1.106A2 2 0 0 0 9.46 4.5H14a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V5a2 2 0 0 1 .54-2.413z"/>
+                        </svg>
+                        {{ _('Папка') }}
+                        <input type="file" id="folder-input" webkitdirectory directory multiple>
+                    </label>
+                </div>
+                <small class="text-muted d-block mt-1">{{ _('Дозволені файли: .jpg, .jpeg') }}</small>
+
+                <div id="file-summary-row" class="file-summary-row" style="display:none;">
+                    <span class="file-badge file-badge-ok" id="badge-selected">0 {{ _('файлів') }}</span>
+                    <button class="clear-btn" id="clear-files-btn" type="button">✕ {{ _('Очистити') }}</button>
+                </div>
+
+                <div id="file-list" class="file-list-area" style="display:none;"></div>
+
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="save-original-checkbox">
+                    <label class="form-check-label small" for="save-original-checkbox">
+                        {{ _('Зберігати повнорозмірні (оригінальні) фотографії') }}
+                    </label>
+                </div>
+
+                <div class="form-check mt-1">
+                    <input class="form-check-input" type="checkbox" id="parallel-checkbox" checked>
+                    <label class="form-check-label small" for="parallel-checkbox">
+                        {{ _('Паралельні запити (4 одночасно)') }}
+                    </label>
+                </div>
+            </div>
+
+            <!-- STEP 3: Завантаження -->
+            <div class="step-card">
+                <div class="step-title"><span class="step-num">3</span>{{ _('Завантаження') }}</div>
+
+                <button id="upload-btn" type="button" disabled>▲ {{ _('Завантажити та обробити') }}</button>
+
+                <div id="resume-banner" style="display:none; margin-top:8px; padding:8px;
+                     background:#fff3cd; border:1px solid #ffeeba; border-radius:4px; font-size:0.83rem;">
+                    <strong>{{ _('Незавершене завантаження') }}</strong>
+                    <div id="resume-text"></div>
+                    <div style="display:flex; gap:6px; margin-top:6px;">
+                        <button id="resume-continue-btn" type="button"
+                                style="padding:4px 10px; background:#0d6efd; color:#fff; border:0; border-radius:3px;">
+                            {{ _('Продовжити') }}
+                        </button>
+                        <button id="resume-discard-btn" type="button"
+                                style="padding:4px 10px; background:none; border:1px solid #6c757d; color:#6c757d; border-radius:3px;">
+                            {{ _('Почати нове') }}
+                        </button>
+                    </div>
+                </div>
+
+                <div id="upload-progress" style="display:none; margin-top:12px;">
+                    <div class="upload-progress-header">
+                        <small class="text-muted" id="progress-text">{{ _('Завантаження...') }}</small>
+                    </div>
+                    <div class="upload-progress-track">
+                        <div id="progress-bar" class="upload-progress-bar"></div>
+                    </div>
+                    <small class="text-muted d-block mt-1" id="progress-counts"></small>
+                </div>
+
+                <div id="upload-success-message" style="display:none; margin-top:12px;">
+                    <hr style="margin:8px 0;">
+                    <div class="upload-success-heading">✓ {{ _('Файли успішно завантажені!') }}</div>
+                    <p class="upload-success-text">{{ _('Тепер ви можете перейти до їх розпізнавання.') }}</p>
+                    <a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code) }}"
+                       style="display:block; width:100%; text-align:center; padding:7px; font-size:0.85rem;
+                              background:#198754; color:#fff; border-radius:4px; text-decoration:none; margin-bottom:6px;">
+                        → {{ _('Перейти до ідентифікації') }}
+                    </a>
+                    <button id="upload-again-btn" type="button"
+                            style="width:100%; padding:6px; font-size:0.83rem; border:1px solid #0d6efd;
+                                   background:none; color:#0d6efd; border-radius:4px; cursor:pointer;">
+                        ↺ {{ _('Завантажити ще') }}
+                    </button>
+                </div>
+
+                <div id="error-alert"
+                     style="display:none; margin-top:10px; padding:8px 10px;
+                            background:#f8d7da; border:1px solid #f5c2c7; border-radius:4px;
+                            color:#842029; font-size:0.83rem;">
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div id="map"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<script>
+$(document).ready(function () {
+    // ─── Константи ───────────────────────────────────────────────────────
+    const LANG = '{{ g.lang_code }}';
+    const csrfToken          = $('#csrf-field').val();
+    const locationApiUrlBase = `/${LANG}/camera-traps/api/location/`;
+    const createLocationUrl  = `/${LANG}/camera-traps/api/create-location`;
+    const createBatchUrl     = `/${LANG}/camera-traps/api/create-batch`;
+    const processSingleUrl   = `/${LANG}/camera-traps/upload/process-single`;
+    const finalizeAsyncUrl   = `/${LANG}/camera-traps/api/finalize-batch-async`;
+    const batchStatusUrlBase = `/${LANG}/camera-traps/api/batch-status/`;
+    const uploadedFilesUrl   = (id) => `/${LANG}/camera-traps/api/batch/${id}/uploaded-files`;
+    const GEOSERVER_BASE_URL = '{{ geoserver_url }}';
+
+    const PARALLEL_DEFAULT = 4;
+    const POLL_INTERVAL_MS = 2000;
+    const RESUME_LS_KEY    = 'ct_fast_upload_batch_v1';
+
+    // ─── Стан ────────────────────────────────────────────────────────────
+    const locationsData = {{ locations_json_string|safe }};
+    let selectedFiles   = [];
+    let activeLocationId = null;
+    let map, markers = {};
+
+    // ─── Select2 / Map / Location-handlers — ідентично до legacy upload ──
+    $('#institution-select').select2({ minimumResultsForSearch: Infinity, width: '100%' });
+    $('#location-select').select2({ placeholder: '{{ _("-- Будь ласка, виберіть --") }}', allowClear: false, width: '100%' });
+
+    const CM     = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
+    const shadow = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
+    const defaultIcon = L.icon({
+        iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        shadowUrl: shadow, iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+    });
+    const selectedIcon = L.icon({
+        iconUrl:       CM + 'marker-icon-red.png',
+        iconRetinaUrl: CM + 'marker-icon-2x-red.png',
+        shadowUrl: shadow, iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+    });
+
+    function initMap() {
+        map = L.map('map').setView([49.8, 23.6], 9);
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            { attribution: '© OpenStreetMap', maxZoom: 19 });
+        const hybridLayer = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
+        ]);
+        hybridLayer.addTo(map);
+        L.control.layers({ "Hybrid": hybridLayer, "OSM": osmLayer }).addTo(map);
+
+        const markersGroup = L.featureGroup();
+        locationsData.forEach(loc => {
+            const marker = L.marker([loc.latitude, loc.longitude], { icon: defaultIcon });
+            marker.locationId = loc.id;
+            marker.bindTooltip(loc.name, { direction: 'top', offset: [0, -30] });
+            marker.on('click', () => selectLocation(loc.id));
+            markers[loc.id] = marker;
+            markersGroup.addLayer(marker);
+        });
+        markersGroup.addTo(map);
+        if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
+    }
+    initMap();
+
+    function selectLocation(locationId) { $('#location-select').val(locationId).trigger('change'); }
+    function updateMapMarker(locationId) {
+        if (activeLocationId && markers[activeLocationId]) markers[activeLocationId].setIcon(defaultIcon);
+        activeLocationId = locationId;
+        if (locationId && markers[locationId]) {
+            markers[locationId].setIcon(selectedIcon);
+            map.panTo(markers[locationId].getLatLng());
+        }
+    }
+
+    function checkReady() {
+        const locId = $('#location-id').val();
+        const hasLoc   = locId && locId !== '-1' && locId !== '0' && locId !== '';
+        const hasFiles = selectedFiles.length > 0;
+        $('#upload-btn').prop('disabled', !(hasLoc && hasFiles));
+    }
+
+    $('#institution-select').on('change', function () {
+        const instId = $(this).val();
+        const currentLocId = $('#location-select').val();
+        $('#location-select').empty().append(new Option('{{ _("-- Будь ласка, виберіть --") }}', '-1'));
+        const visibleMarkers = [];
+        locationsData.forEach(loc => {
+            const belongs = !instId || (loc.institution_ids && loc.institution_ids.includes(parseInt(instId)));
+            if (belongs) {
+                $('#location-select').append(new Option(loc.name, loc.id));
+                if (markers[loc.id]) {
+                    if (!map.hasLayer(markers[loc.id])) map.addLayer(markers[loc.id]);
+                    visibleMarkers.push(markers[loc.id]);
+                }
+            } else if (markers[loc.id] && map.hasLayer(markers[loc.id])) {
+                map.removeLayer(markers[loc.id]);
+            }
+        });
+        $('#location-select').append(new Option('{{ _("*** СТВОРИТИ НОВЕ МІСЦЕ ***") }}', '0'));
+        if (visibleMarkers.length > 0) {
+            map.fitBounds(L.featureGroup(visibleMarkers).getBounds().pad(0.1), { animate: false });
+        }
+        if ($('#location-select').find(`option[value="${currentLocId}"]`).length > 0) {
+            $('#location-select').val(currentLocId).trigger('change.select2');
+        } else {
+            $('#location-select').val('-1').trigger('change.select2');
+        }
+    });
+
+    $('#location-select').on('change', function () {
+        const val = $(this).val();
+        $('#new-location-fields,#location-coords-row').hide();
+        $('#location-id').val('');
+        $('#upload-success-message,#error-alert').hide();
+        if (val === '0') {
+            $('#new-location-fields').show();
+            $('#new-loc-name,#new-loc-description,#new-loc-lat,#new-loc-lon').val('');
+            $('#location-feedback').empty();
+            updateMapMarker(null); checkReady(); return;
+        }
+        if (!val || val === '-1') { updateMapMarker(null); checkReady(); return; }
+        const loc = locationsData.find(l => String(l.id) === String(val));
+        if (loc && loc.institution_ids && loc.institution_ids.length > 0) {
+            const currentInst = $('#institution-select').val();
+            if (!currentInst || !loc.institution_ids.includes(parseInt(currentInst))) {
+                $('#institution-select').val(loc.institution_ids[0]).trigger('change');
+            }
+        }
+        $('#location-id').val(val);
+        updateMapMarker(parseInt(val));
+        $.get(locationApiUrlBase + val)
+            .done(d => { $('#location-coords-text').text(`${Number(d.latitude).toFixed(5)}, ${Number(d.longitude).toFixed(5)}`); $('#location-coords-row').show(); })
+            .fail(() => $('#location-coords-row').hide());
+        checkReady();
+    });
+
+    $('#cancel-create-loc').on('click', () => $('#location-select').val('-1').trigger('change'));
+
+    $('#create-location-btn').on('click', function () {
+        const name = $('#new-loc-name').val().trim();
+        const latitude = $('#new-loc-lat').val();
+        const longitude = $('#new-loc-lon').val();
+        if (!name || !latitude || !longitude) {
+            return alert('{{ _("Назва та координати є обов\'язковими.") }}');
+        }
+        $.ajax({
+            url: createLocationUrl, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            data: JSON.stringify({
+                name, description: $('#new-loc-description').val().trim(),
+                latitude, longitude,
+                institution_id: $('#institution-select').val() || null
+            }),
+            success: function (data) {
+                $('#location-feedback').removeClass('alert-danger').addClass('alert alert-success').text(data.message);
+                if (data.location) {
+                    const newOpt = new Option(data.location.name, String(data.location.id), true, true);
+                    $('#location-select').append(newOpt).trigger('change');
+                }
+            },
+            error: function (xhr) {
+                const err = xhr.responseJSON ? xhr.responseJSON.message : '{{ _("Помилка") }}';
+                $('#location-feedback').removeClass('alert-success').addClass('alert alert-danger').text(err);
+            }
+        });
+    });
+
+    // ─── Файли ───────────────────────────────────────────────────────────
+    function displayFileList() {
+        if (!selectedFiles.length) {
+            $('#file-list,#file-summary-row').hide(); checkReady(); return;
+        }
+        // На 45к фото повний DOM-рендер списку — самогубство. Показуємо
+        // лише підсумок + перші 200 рядків як превʼю.
+        const PREVIEW = 200;
+        let html = '';
+        const preview = selectedFiles.slice(0, PREVIEW);
+        preview.forEach((file, index) => {
+            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+            const displayName = file.webkitRelativePath || file.name;
+            html += `<div class="file-item" data-index="${index}">
+                <span class="file-name" title="${displayName}">${displayName}</span>
+                <span class="file-size">${sizeMB} MB</span>
+                <span class="file-status" id="status-${index}"></span></div>`;
+        });
+        if (selectedFiles.length > PREVIEW) {
+            html += `<div class="file-item" style="opacity:0.6;">
+                ... {{ _('і ще') }} ${selectedFiles.length - PREVIEW} {{ _('файлів') }}</div>`;
+        }
+        $('#file-list').html(html).show();
+        $('#badge-selected').text(`${selectedFiles.length} {{ _('файлів') }}`);
+        $('#file-summary-row').show(); checkReady();
+    }
+
+    function setFiles(fileList) {
+        selectedFiles = Array.from(fileList).filter(f => /\.(jpe?g)$/i.test(f.name));
+        displayFileList();
+        $('#upload-success-message').hide();
+    }
+
+    $('#file-input').on('change',   e => setFiles(e.target.files));
+    $('#folder-input').on('change', e => setFiles(e.target.files));
+    $('#clear-files-btn').on('click', () => {
+        selectedFiles = [];
+        $('#file-input,#folder-input').val('');
+        $('#file-summary-row,#file-list').hide();
+        checkReady();
+    });
+
+    // ─── Resumable ───────────────────────────────────────────────────────
+    function loadResumeState() {
+        try { return JSON.parse(localStorage.getItem(RESUME_LS_KEY) || 'null'); }
+        catch (e) { return null; }
+    }
+    function saveResumeState(state) {
+        try { localStorage.setItem(RESUME_LS_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+    function clearResumeState() {
+        try { localStorage.removeItem(RESUME_LS_KEY); } catch (e) {}
+    }
+
+    function checkForResume() {
+        const st = loadResumeState();
+        if (!st || !st.batchId) return;
+        $.get(batchStatusUrlBase + st.batchId)
+            .done(data => {
+                if (!data || ['completed', 'failed'].includes(data.status)) {
+                    clearResumeState();
+                    return;
+                }
+                $('#resume-text').text(
+                    `{{ _('Batch') }} ${st.batchId.slice(0,8)}..., ` +
+                    `${data.processed_files || 0} / ${data.total_files || 0} ` +
+                    `{{ _('файлів. Натисніть «Продовжити», виберіть ту саму папку, файли вже залиті будуть пропущені.') }}`
+                );
+                $('#resume-banner').show();
+                $('#resume-continue-btn').data('batchId', st.batchId).data('locationId', st.locationId);
+            })
+            .fail(() => clearResumeState());
+    }
+    checkForResume();
+
+    $('#resume-discard-btn').on('click', () => { clearResumeState(); $('#resume-banner').hide(); });
+    $('#resume-continue-btn').on('click', function () {
+        const batchId = $(this).data('batchId');
+        const locId = $(this).data('locationId');
+        if (!selectedFiles.length) {
+            return alert('{{ _("Виберіть ту саму папку чи файли, що й попереднього разу.") }}');
+        }
+        $('#resume-banner').hide();
+        resumeUpload(selectedFiles, locId, batchId);
+    });
+
+    // ─── Завантаження ────────────────────────────────────────────────────
+    /**
+     * Промісовий пул паралельних завантажень.
+     * Інваріант серіальності зберігається на стороні сервера: фінальне
+     * групування викликаємо ТІЛЬКИ після того, як ВСІ promises resolved.
+     */
+    async function uploadWithPool(files, locationId, batchId, alreadyUploadedSet) {
+        const totalCount = files.length;
+        let processed = alreadyUploadedSet.size; // ті, що вже залиті
+        let successCount = 0, errorCount = 0, skippedCount = alreadyUploadedSet.size;
+        const concurrency = $('#parallel-checkbox').is(':checked') ? PARALLEL_DEFAULT : 1;
+        const saveOriginal = $('#save-original-checkbox').is(':checked');
+
+        function updateProgress() {
+            const pct = totalCount === 0 ? 100 : Math.round(processed / totalCount * 80) + 5;
+            $('#progress-bar').css('width', pct + '%');
+            $('#progress-text').text('{{ _("Завантаження файлів...") }}');
+            $('#progress-counts').text(
+                `${processed} / ${totalCount} ` +
+                `({{ _("успіх") }}: ${successCount + skippedCount}, ` +
+                `{{ _("помилки") }}: ${errorCount})`
+            );
+        }
+        updateProgress();
+
+        // Worker — забирає файл з черги і шле його, поки черга не порожня.
+        let queueIdx = 0;
+        async function worker() {
+            while (true) {
+                const myIdx = queueIdx++;
+                if (myIdx >= files.length) return;
+                const file = files[myIdx];
+                const key = (file.webkitRelativePath || file.name);
+                if (alreadyUploadedSet.has(key)) { continue; } // вже на сервері
+
+                let toUpload = file;
+                if (!saveOriginal) {
+                    try {
+                        const compressed = await imageCompression(file, {
+                            maxSizeMB: 0.3, maxWidthOrHeight: 800,
+                            useWebWorker: true, preserveExif: true
+                        });
+                        toUpload = new File([compressed], file.name, {
+                            type: compressed.type, lastModified: file.lastModified
+                        });
+                    } catch (e) { /* fallback на оригінал */ }
+                }
+
+                const fd = new FormData();
+                fd.append('location_id', locationId);
+                fd.append('batch_id', batchId);
+                fd.append('file', toUpload);
+                fd.append('save_original', saveOriginal);
+
+                try {
+                    await $.ajax({
+                        url: processSingleUrl, method: 'POST',
+                        headers: { 'X-CSRFToken': csrfToken },
+                        data: fd, processData: false, contentType: false,
+                        timeout: 60000
+                    });
+                    successCount++;
+                } catch (xhr) {
+                    errorCount++;
+                    // Логуємо лише перші 10 помилок у консоль, щоб не засмічувати
+                    if (errorCount <= 10) {
+                        console.warn(`[upload-fast] ${file.name}:`,
+                            xhr.responseJSON ? xhr.responseJSON.error : 'failed');
+                    }
+                }
+                processed++;
+                if (processed % 5 === 0 || processed === totalCount) updateProgress();
+            }
+        }
+
+        const workers = [];
+        for (let i = 0; i < concurrency; i++) workers.push(worker());
+        await Promise.all(workers);
+        updateProgress();
+        return { successCount, errorCount, skippedCount };
+    }
+
+    /** Polling /api/batch-status, доки status != completed/failed. */
+    function pollUntilDone(batchId) {
+        return new Promise((resolve, reject) => {
+            const tick = () => {
+                $.get(batchStatusUrlBase + batchId)
+                    .done(data => {
+                        if (data.status === 'completed') return resolve(data);
+                        if (data.status === 'failed') return reject(new Error(data.error_message || 'Grouping failed'));
+                        // ready_to_group / grouping — показуємо фазу 2
+                        $('#progress-text').text(
+                            data.status === 'grouping'
+                                ? '{{ _("Групування серій...") }}'
+                                : '{{ _("Очікування групування...") }}'
+                        );
+                        $('#progress-bar').css('width', '90%');
+                        setTimeout(tick, POLL_INTERVAL_MS);
+                    })
+                    .fail(() => setTimeout(tick, POLL_INTERVAL_MS));
+            };
+            tick();
+        });
+    }
+
+    function resetUploadUi() {
+        $('#upload-progress').hide();
+        $('#upload-btn').prop('disabled', selectedFiles.length === 0)
+            .text('{{ _("Завантажити та обробити") }}');
+    }
+
+    async function runFullUpload(files, locationId, existingBatchId) {
+        $('#upload-btn').prop('disabled', true).text('{{ _("Завантаження...") }}');
+        $('#upload-progress').show();
+        $('#error-alert,#upload-success-message').hide();
+        $('#progress-bar').css('width', '2%');
+        $('#progress-text').text('{{ _("Підготовка...") }}');
+        $('#progress-counts').text('');
+
+        let batchId = existingBatchId;
+        let alreadyUploaded = new Set();
+
+        try {
+            if (!batchId) {
+                const createResp = await $.ajax({
+                    url: createBatchUrl, method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    data: JSON.stringify({ location_id: parseInt(locationId), total_files: files.length })
+                });
+                batchId = createResp.batch_id;
+            } else {
+                // Resumable: запитуємо вже залиті файли
+                const list = await $.get(uploadedFilesUrl(batchId));
+                (list.files || []).forEach(f => alreadyUploaded.add(f.original_filename));
+                $('#progress-text').text(
+                    `{{ _("Знайдено") }} ${alreadyUploaded.size} {{ _("уже залитих файлів — пропускаю їх") }}`
+                );
+            }
+            saveResumeState({ batchId, locationId, total: files.length, ts: Date.now() });
+
+            // Фаза 1: паралельне завантаження файлів
+            const result = await uploadWithPool(files, locationId, batchId, alreadyUploaded);
+
+            if (result.successCount + result.skippedCount === 0) {
+                throw new Error('{{ _("Жоден файл не вдалося завантажити") }}');
+            }
+
+            // Фаза 2: finalize-async + polling
+            $('#progress-bar').css('width', '85%');
+            $('#progress-text').text('{{ _("Запуск групування серій...") }}');
+            await $.ajax({
+                url: finalizeAsyncUrl, method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                data: JSON.stringify({ batch_id: batchId })
+            });
+            await pollUntilDone(batchId);
+
+            $('#progress-bar').css('width', '100%');
+            $('#progress-text').text('{{ _("Готово!") }}');
+            clearResumeState();
+            setTimeout(() => {
+                resetUploadUi();
+                if (result.errorCount === 0) {
+                    $('#upload-success-message').show();
+                } else {
+                    $('#error-alert').show().text(
+                        `{{ _("Завантажено з помилками:") }} ` +
+                        `${result.successCount + result.skippedCount} {{ _("успішно,") }} ` +
+                        `${result.errorCount} {{ _("не вдалося") }}`
+                    );
+                }
+            }, 800);
+        } catch (e) {
+            console.error('[upload-fast]', e);
+            $('#error-alert').show().text(
+                `{{ _("Помилка:") }} ${e.message || e.statusText || 'unknown'}`
+            );
+            resetUploadUi();
+        }
+    }
+
+    function startUpload(files, locationId)               { runFullUpload(files, locationId, null); }
+    function resumeUpload(files, locationId, batchId)     { runFullUpload(files, locationId, batchId); }
+
+    $('#upload-btn').on('click', function () {
+        const locationId = $('#location-id').val();
+        if (!selectedFiles.length) return alert('{{ _("Виберіть файли для завантаження.") }}');
+        if (!locationId || locationId === '-1' || locationId === '0') {
+            return alert('{{ _("Виберіть дійсне місце перед завантаженням.") }}');
+        }
+        // Якщо є незавершений batch — продовжуємо його, а не створюємо новий
+        const st = loadResumeState();
+        if (st && st.batchId && String(st.locationId) === String(locationId)) {
+            resumeUpload(selectedFiles, locationId, st.batchId);
+        } else {
+            startUpload(selectedFiles, locationId);
+        }
+    });
+
+    $('#upload-again-btn').on('click', function () {
+        selectedFiles = [];
+        $('#file-input,#folder-input').val('');
+        $('#file-summary-row,#file-list,#upload-success-message').hide();
+        clearResumeState();
+        checkReady();
+    });
+
+    const initial = $('#location-select').val();
+    if (initial && initial !== '-1' && initial !== '0') $('#location-select').trigger('change');
+});
+</script>
+{% endblock %}

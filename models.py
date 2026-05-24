@@ -162,6 +162,13 @@ class Photo(CTBase):
     upload_batch = relationship('UploadBatch', back_populates='photos')
     identifications = relationship('Identification', back_populates='photo')
 
+    __table_args__ = (
+        # Індекс під CTE-групування у /upload-fast: LAG(captured_at)
+        # OVER (ORDER BY captured_at, id) для фотографій конкретного batchʼа.
+        # Покриває WHERE upload_batch_id=:b AND status='uploaded' + ORDER BY.
+        Index('idx_photos_batch_captured', 'upload_batch_id', 'captured_at', 'id'),
+    )
+
     def __repr__(self):
         return f'<Photo {self.system_filename}>'
 
