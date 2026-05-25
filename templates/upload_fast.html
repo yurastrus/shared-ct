@@ -72,11 +72,11 @@
                     <div style="display:flex; gap:8px; margin-bottom:8px;">
                         <div style="flex:1;">
                             <label class="form-label text-muted">{{ _('Широта') }} *</label>
-                            <input type="number" step="0.00001" class="form-control" id="new-loc-lat" placeholder="49.85000">
+                            <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?" class="form-control" id="new-loc-lat" placeholder="49.85000">
                         </div>
                         <div style="flex:1;">
                             <label class="form-label text-muted">{{ _('Довгота') }} *</label>
-                            <input type="number" step="0.00001" class="form-control" id="new-loc-lon" placeholder="23.65000">
+                            <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?" class="form-control" id="new-loc-lon" placeholder="23.65000">
                         </div>
                     </div>
                     <div id="location-feedback" class="mb-2"></div>
@@ -201,6 +201,17 @@
 
 <script>
 $(document).ready(function () {
+    // Coord inputs: дозволяємо як крапку, так і кому як десятковий
+    // розділювач (Ukrainian Excel використовує кому). На input — одразу
+    // нормалізуємо до крапки, щоб parseFloat коректно прочитав.
+    document.querySelectorAll('input[inputmode="decimal"]').forEach(el => {
+        el.addEventListener('input', e => {
+            if (e.target.value.includes(',')) {
+                e.target.value = e.target.value.replace(/,/g, '.');
+            }
+        });
+    });
+
     // ─── Константи ───────────────────────────────────────────────────────
     const LANG = '{{ g.lang_code }}';
     const csrfToken          = $('#csrf-field').val();
