@@ -2239,37 +2239,79 @@ def serve_raw_photo(lang_code, filename):
         # якщо і мініатюри з таким іменем не існує.
         return send_from_directory(thumb_dir, filename)
 
-@camera_traps_bp.route('/admin/cleanup-batches', methods=['POST'])
+# ═════════════════════════════════════════════════════════════════════════════
+# CLEANUP (новий, з 2026-05-25) — заміна старого manual_batch_cleanup.
+# Двофазний: POST /admin/cleanup/analyze → JS показує звіт → POST execute.
+# Polling /admin/cleanup/task/<id> для прогресу обох фаз.
+# ═════════════════════════════════════════════════════════════════════════════
+
+@camera_traps_bp.route('/admin/cleanup/analyze', methods=['POST'])
 @login_required
 @role_required('admin')
-def manual_batch_cleanup(lang_code):
-    """Ручний запуск очищення застрялих батчів. Після виконання показує
-    поточну статистику батчів у flash-повідомленні."""
+def cleanup_analyze(lang_code):
+    """Стартує асинхронний dry-run. Повертає report_id для polling."""
     try:
-        from .background_tasks import cleanup_stale_batches, get_batch_statistics
-        current_app.logger.info(f"Manual batch cleanup triggered by admin: {current_user.username}")
-        cleanup_stale_batches()
-        flash(_('Процес очищення батчів успішно запущено та завершено.'), 'success')
-
-        # Збираємо коротку статистику після очищення
-        stats = get_batch_statistics() or {}
-        by_status = stats.get('batches_by_status', {}) or {}
-        orphaned = stats.get('orphaned_photos', 0) or 0
-
-        if by_status or orphaned:
-            parts = [f"{status}: {count}" for status, count in sorted(by_status.items())]
-            summary = _('Статистика батчів') + ' — ' + (', '.join(parts) if parts else _('немає батчів'))
-            summary += '. ' + _('Сирітських фото:') + f' {orphaned}.'
-            oldest = stats.get('oldest_pending_batch')
-            if oldest:
-                hours = round(oldest.get('age_hours') or 0, 1)
-                summary += ' ' + _('Найстаріший незавершений батч:') + f' #{oldest["id"]} ({hours} {_("год")}).'
-            flash(summary, 'info')
+        config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
+        threshold_hours = int(config.get('STALE_BATCH_HOURS', 0))
+        probe_seconds = int(config.get('ACTIVE_PROBE_SECONDS', 10))
+        from .cleanup import analyze_cleanup
+        report_id = analyze_cleanup(
+            triggered_by=current_user.id,
+            threshold_hours=threshold_hours,
+            probe_seconds=probe_seconds,
+        )
+        return jsonify({
+            'success': True,
+            'report_id': report_id,
+            'message': _('Аналіз запущено. Очікуйте...'),
+        }), 202
     except Exception as e:
-        current_app.logger.error(f"Manual batch cleanup failed. Error: {e}")
-        flash(_('Під час очищення батчів сталася помилка. Перевірте логи.'), 'danger')
+        current_app.logger.exception(f"cleanup_analyze failed: {e}")
+        return jsonify({'error': _('Помилка запуску аналізу')}), 500
 
-    return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
+
+@camera_traps_bp.route('/admin/cleanup/execute/<report_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def cleanup_execute(lang_code, report_id):
+    """Виконує очищення на основі готового звіту. Повторно перевіряє active."""
+    try:
+        config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
+        probe_seconds = int(config.get('ACTIVE_PROBE_SECONDS', 10))
+        from .cleanup import start_execute
+        start_execute(report_id=report_id, probe_seconds=probe_seconds)
+        return jsonify({
+            'success': True,
+            'report_id': report_id,
+            'message': _('Виконання запущено у фоні.'),
+        }), 202
+    except ValueError as e:
+        # 'not found' / 'expired' / 'wrong status'
+        msg = str(e)
+        if 'not found' in msg:
+            return jsonify({'error': msg}), 404
+        if 'expired' in msg:
+            return jsonify({'error': msg}), 410
+        return jsonify({'error': msg}), 409
+    except Exception as e:
+        current_app.logger.exception(f"cleanup_execute failed: {e}")
+        return jsonify({'error': _('Помилка запуску виконання')}), 500
+
+
+@camera_traps_bp.route('/admin/cleanup/task/<report_id>', methods=['GET'])
+@login_required
+@role_required('admin')
+def cleanup_task_status(lang_code, report_id):
+    """Polling: повертає поточний стан analyze/execute."""
+    try:
+        from .cleanup import get_log
+        data = get_log(report_id)
+        if data is None:
+            return jsonify({'error': _('Запис не знайдено')}), 404
+        return jsonify(data), 200
+    except Exception as e:
+        current_app.logger.exception(f"cleanup_task_status failed: {e}")
+        return jsonify({'error': _('Помилка отримання статусу')}), 500
 
 @camera_traps_bp.route('/admin/recalculate-consensus', methods=['POST'])
 @login_required

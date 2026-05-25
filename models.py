@@ -507,3 +507,48 @@ class AIRunQueue(CTBase):
 
     def __repr__(self):
         return f'<AIRunQueue {self.id} {self.status} n={self.n_observations}>'
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CLEANUP-LOG: журнал dry-run/execute для очистки сиріт і невдалих batchʼів
+# ════════════════════════════════════════════════════════════════════════════
+# Cleanup складається з двох кроків (analyze → execute). Один рядок у цій
+# таблиці супроводжує обидва: спочатку зберігається повний звіт у
+# report_json, після execute наповнюються лічильники deleted_*.
+# Retention: рядки старші CLEANUP_LOG_RETENTION_DAYS видаляються при
+# наступному analyze (см. cleanup.purge_old_logs).
+# ════════════════════════════════════════════════════════════════════════════
+
+class CleanupLog(CTBase):
+    """Журнал операцій очистки."""
+    __tablename__ = 'cleanup_log'
+
+    id              = Column(String(36), primary_key=True)  # UUID
+    kind            = Column(String(20), nullable=False)    # 'analysis' | 'execution'
+    status          = Column(String(20), nullable=False)    # 'analyzing'|'analyzed'|'executing'|'completed'|'failed'
+    triggered_by    = Column(Integer, nullable=False)       # users.id з основної БД
+    started_at      = Column(DateTime, default=func.now(), nullable=False)
+    finished_at     = Column(DateTime, nullable=True)
+
+    # Параметри запуску
+    threshold_hours = Column(Integer, nullable=False, default=0)
+
+    # Звіт після analyze (списки + агрегати)
+    report_json     = Column(JSONB, nullable=True)
+
+    # Підсумки виконання
+    batches_examined = Column(Integer, nullable=True)
+    batches_marked_failed = Column(Integer, nullable=True)
+    photos_deleted  = Column(Integer, nullable=True)
+    files_deleted   = Column(Integer, nullable=True)
+    bytes_freed     = Column(Integer, nullable=True)
+
+    error_message   = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index('idx_cleanup_log_started', 'started_at'),
+        Index('idx_cleanup_log_status', 'status'),
+    )
+
+    def __repr__(self):
+        return f'<CleanupLog {self.id[:8]} {self.kind}/{self.status}>'
