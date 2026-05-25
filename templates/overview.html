@@ -26,17 +26,10 @@
             {% endif %}
 
             {% if can_upload %}
-            <a class="hub-card" href="{{ url_for('camera_traps.upload', lang_code=g.lang_code) }}">
+            <a class="hub-card" href="{{ url_for('camera_traps.upload_fast', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">📤</span>
                 <span class="hub-card__title">{{ _('Завантаження') }}</span>
                 <span class="hub-card__desc">{{ _('Додати фото з пасток до бази даних.') }}</span>
-            </a>
-            <a class="hub-card" href="{{ url_for('camera_traps.upload_fast', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">⚡</span>
-                <span class="hub-card__title">{{ _('Швидке завантаження') }}
-                    <span class="badge bg-warning text-dark" style="font-size:0.55rem; vertical-align:middle;">Beta</span>
-                </span>
-                <span class="hub-card__desc">{{ _('Для великих наборів (10 000+). Паралельне завантаження + фонове групування серій.') }}</span>
             </a>
             {% endif %}
 
