@@ -414,9 +414,65 @@ $(document).ready(function() {
         loadNextObservation();
     });
 
-    // AI-фільтр і scope-фільтр: при зміні одразу завантажуємо нову серію
-    $('#ai-species-select, #scope-select').on('change', function() {
+    // AI-фільтр: при зміні одразу завантажуємо нову серію.
+    $('#ai-species-select').on('change', function() {
         loadNextObservation();
+    });
+
+    // Scope-фільтр: каскадно оновлюємо AI-список (актуальні види + лічильники),
+    // потім завантажуємо нову серію. Один напрямок: scope → AI.
+    const aiSpeciesEndpoint =
+        "{{ url_for('camera_traps.identify_ai_species_list', lang_code=g.lang_code) }}";
+    const aiAnyLabel = "{{ _('Будь-який') }}";
+    const aiEmptyHint =
+        "{{ _('AI ще не виконував класифікацію — список порожній.') }}";
+
+    function refreshAiSpeciesList() {
+        const $sel = $('#ai-species-select');
+        if (!$sel.length) return Promise.resolve();
+
+        const scopeVal = $('#scope-select').val() || '';
+        const params = new URLSearchParams();
+        if (scopeVal.startsWith('institution:')) {
+            params.set('scope_institution_id', scopeVal.split(':')[1]);
+        } else if (scopeVal.startsWith('ecoregion:')) {
+            params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
+        }
+
+        const prevVal = $sel.val();
+        $sel.prop('disabled', true);
+
+        const url = aiSpeciesEndpoint +
+            (params.toString() ? '?' + params.toString() : '');
+
+        return fetch(url, {credentials: 'same-origin'})
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(data => {
+                const items = data && data.items || [];
+                // Перебудовуємо options
+                $sel.empty();
+                $sel.append($('<option>', {value: '', text: aiAnyLabel}));
+                items.forEach(s => {
+                    $sel.append($('<option>', {value: s.id, text: s.text}));
+                });
+                // Зберігаємо вибір, якщо species ще в списку
+                const stillPresent = items.some(s => String(s.id) === String(prevVal));
+                $sel.val(stillPresent ? prevVal : '');
+                // Стан disabled залежить від наповненості
+                if (items.length === 0) {
+                    $sel.prop('disabled', true).attr('title', aiEmptyHint);
+                } else {
+                    $sel.prop('disabled', false).removeAttr('title');
+                }
+            })
+            .catch(err => {
+                console.warn('Не вдалося оновити AI-список:', err);
+                $sel.prop('disabled', false);
+            });
+    }
+
+    $('#scope-select').on('change', function() {
+        refreshAiSpeciesList().then(loadNextObservation);
     });
 
     function displayExistingIdentifications(identifications) {

@@ -892,6 +892,60 @@ def identify(lang_code):
     finally:
         close_ct_session()
 
+@camera_traps_bp.route('/api/identify/ai-species', methods=['GET'])
+@login_required
+@role_required('ct_verifier')
+def identify_ai_species_list(lang_code):
+    """JSON-список AI-видів з лічильниками, опційно звужений до scope.
+
+    Викликається фронтом при зміні `#scope-select` на /identify, щоб
+    каскадно оновити `#ai-species-select` (відображає лише ті види, які
+    мають pending AI-прогноз у локаціях вибраної установи/екорегіону,
+    з актуальними числами).
+
+    Query params (взаємно виключні):
+      - scope_institution_id: int — підрізає до однієї установи
+      - scope_ecoregion: str — підрізає до екорегіону (uk-ключ)
+
+    Якщо жоден scope не передано — повертає повний список (з урахуванням
+    прав доступу юзера), еквівалентний тому, що рендериться на сторінці.
+    """
+    ct_session = get_ct_session()
+    try:
+        scope_institution_id = request.args.get('scope_institution_id', type=int)
+        scope_ecoregion = request.args.get('scope_ecoregion', '') or None
+
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+
+        # Захист: non-admin не має тягнути списки чужих установ.
+        if scope_institution_id is not None and not is_admin:
+            if scope_institution_id not in user_inst_ids:
+                return jsonify({'ai_available': True, 'items': []}), 200
+
+        from .ai_runner import is_ai_available, get_species_with_ai_predictions
+        ai_available = is_ai_available()
+        if not ai_available:
+            return jsonify({'ai_available': False, 'items': []}), 200
+
+        try:
+            items = get_species_with_ai_predictions(
+                lang_code=g.lang_code,
+                user_id=current_user.id,
+                user_inst_ids=user_inst_ids,
+                is_admin=is_admin,
+                scope_institution_id=scope_institution_id,
+                scope_ecoregion=scope_ecoregion,
+            )
+        except Exception as e:
+            current_app.logger.warning(f"AI: cannot load species list: {e}")
+            items = []
+
+        return jsonify({'ai_available': True, 'items': items}), 200
+    finally:
+        close_ct_session()
+
+
 @camera_traps_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
 @role_required('manager')

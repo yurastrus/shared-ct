@@ -151,6 +151,8 @@ def get_species_with_ai_predictions(
     user_id: Optional[int] = None,
     user_inst_ids: Optional[list] = None,
     is_admin: bool = False,
+    scope_institution_id: Optional[int] = None,
+    scope_ecoregion: Optional[str] = None,
 ) -> list:
     """Повертає [(species_id, display_name)] видів які мають **pending для
     цього юзера** AI-прогнози від активної моделі. Тобто:
@@ -164,6 +166,11 @@ def get_species_with_ai_predictions(
 
     Якщо user_id=None — повертаємо всі види без фільтра по юзеру
     (для тестів / debug).
+
+    Параметри `scope_institution_id` / `scope_ecoregion` додатково звужують
+    список лише до тих локацій, які належать вибраній установі або входять
+    у вибраний екорегіон (з-поміж установ юзера, якщо не admin). Параметри
+    взаємно виключні — якщо передано обидва, перевагу має institution.
     """
     from sqlalchemy import bindparam, text as sql_text
     sess = get_ct_session()
@@ -200,6 +207,45 @@ def get_species_with_ai_predictions(
         """
         user_params = {'uid': user_id}
 
+    # Scope-фільтр: підрізаємо до конкретної установи або екорегіону.
+    # Реалізуємо як підзапит на location_institutions/institutions —
+    # ті самі семантики, що в next_observation_for_identification.
+    scope_clause = ""
+    scope_params = {}
+    if scope_institution_id is not None:
+        if is_admin or (user_inst_ids and scope_institution_id in user_inst_ids):
+            scope_clause = """
+                AND EXISTS (
+                    SELECT 1 FROM location_institutions li_sc
+                    WHERE li_sc.location_id = l.id
+                      AND li_sc.institution_id = :scope_inst_id
+                )
+            """
+            scope_params = {'scope_inst_id': scope_institution_id}
+        else:
+            # Юзер не має доступу до цієї установи — повертаємо порожньо.
+            return []
+    elif scope_ecoregion:
+        # Інституції, які входять у вибраний екорегіон (за uk-ключем).
+        eco_q = sess.execute(sql_text("""
+            SELECT id FROM institutions WHERE ecoregion_uk = :eco
+        """), {'eco': scope_ecoregion}).fetchall()
+        eco_inst_ids = [r[0] for r in eco_q]
+        if not is_admin and user_inst_ids:
+            eco_inst_ids = [i for i in eco_inst_ids if i in user_inst_ids]
+        elif not is_admin:
+            eco_inst_ids = []
+        if not eco_inst_ids:
+            return []
+        scope_clause = """
+            AND EXISTS (
+                SELECT 1 FROM location_institutions li_sc
+                WHERE li_sc.location_id = l.id
+                  AND li_sc.institution_id IN :scope_inst_ids
+            )
+        """
+        scope_params = {'scope_inst_ids': tuple(eco_inst_ids)}
+
     sql = sql_text(f"""
         SELECT s.id,
                s.common_name_ua,
@@ -214,19 +260,26 @@ def get_species_with_ai_predictions(
           AND o.status = 'pending'
           {user_clause}
           {access_clause}
+          {scope_clause}
         GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name
         HAVING COUNT(DISTINCT ap.observation_id) > 0
         ORDER BY s.common_name_ua
     """)
 
     # IN-clause з тимчасовим списком потребує expanding-bindparam.
+    expanding = []
     if 'inst_ids' in access_params:
-        sql = sql.bindparams(bindparam('inst_ids', expanding=True))
+        expanding.append(bindparam('inst_ids', expanding=True))
+    if 'scope_inst_ids' in scope_params:
+        expanding.append(bindparam('scope_inst_ids', expanding=True))
+    if expanding:
+        sql = sql.bindparams(*expanding)
 
     rows = sess.execute(sql, {
         'model_id': active.id,
         **user_params,
         **access_params,
+        **scope_params,
     }).fetchall()
 
     result = []
