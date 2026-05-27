@@ -2756,6 +2756,39 @@ def _deployment_to_dict(dep):
     return d
 
 
+def _apply_deployment_fields(dep, data):
+    """Застосовує надіслані поля до деплойменту (спільне для create/update).
+    Кидає ValueError на невірний формат дати/числа."""
+    from datetime import datetime as _dt
+    for f in DEPLOYMENT_STR_FIELDS:
+        if f in data:
+            val = data.get(f)
+            val = val.strip() if isinstance(val, str) and val.strip() else None
+            if f == 'name' and not val:
+                continue
+            setattr(dep, f, val)
+    for f in DEPLOYMENT_INT_FIELDS:
+        if f in data:
+            v = data.get(f)
+            setattr(dep, f, int(v) if v not in (None, '', []) else None)
+    for f in DEPLOYMENT_TEXT_FIELDS:
+        if f in data:
+            v = data.get(f)
+            setattr(dep, f, v.strip() if isinstance(v, str) and v.strip() else None)
+    for f in DEPLOYMENT_BOOL_FIELDS:
+        if f in data:
+            v = data.get(f)
+            setattr(dep, f, None if v is None else bool(v))
+    for f in DEPLOYMENT_DATE_FIELDS:
+        if f in data:
+            v = data.get(f)
+            setattr(dep, f, _dt.strptime(v, '%Y-%m-%d').date() if v else None)
+    for f in DEPLOYMENT_TIME_FIELDS:
+        if f in data:
+            v = data.get(f)
+            setattr(dep, f, _dt.strptime(v, '%H:%M').time() if v else None)
+
+
 def _user_can_access_location(ct_session, location_id):
     """admin -> завжди; manager -> лише якщо локація належить його установі."""
     if current_user.has_role('admin'):
@@ -2853,12 +2886,15 @@ def manage_deployments(lang_code):
             'qc_data_not_usable': dep.qc_data_not_usable,
         } for dep in deps]
 
+        years = sorted({dep.study_year for dep in deps if dep.study_year}, reverse=True)
+
         return render_template('manage_deployments.html',
                                locations=locations_data,
                                locations_json_string=json.dumps(locations_data),
                                deployments_json_string=json.dumps(deployments_data),
                                geoserver_url=current_app.config['GEOSERVER_URL'],
                                filter_institutions=filter_institutions,
+                               years=years,
                                is_admin=is_admin,
                                bool_fields=DEPLOYMENT_BOOL_FIELDS)
     except Exception as e:
@@ -2890,7 +2926,6 @@ def api_get_deployment(lang_code, deployment_id):
 @role_required('manager')
 def update_deployment(lang_code, deployment_id):
     """Оновлення полів деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
-    from datetime import datetime as _dt
     ct_session = get_ct_session()
     try:
         dep = ct_session.query(Deployment).get(deployment_id)
@@ -2900,35 +2935,10 @@ def update_deployment(lang_code, deployment_id):
             return jsonify({'success': False, 'error': _('Немає доступу до цього деплойменту.')}), 403
 
         data = request.json or {}
-
         if 'name' in data and not (data.get('name') or '').strip():
             return jsonify({'success': False, 'error': _('Назва деплойменту обов\'язкова.')}), 400
 
-        for f in DEPLOYMENT_STR_FIELDS:
-            if f in data:
-                val = data.get(f)
-                setattr(dep, f, val.strip() if isinstance(val, str) and val.strip() else (None if f != 'name' else dep.name))
-        for f in DEPLOYMENT_INT_FIELDS:
-            if f in data:
-                v = data.get(f)
-                setattr(dep, f, int(v) if v not in (None, '', []) else None)
-        for f in DEPLOYMENT_TEXT_FIELDS:
-            if f in data:
-                v = data.get(f)
-                setattr(dep, f, v.strip() if isinstance(v, str) and v.strip() else None)
-        for f in DEPLOYMENT_BOOL_FIELDS:
-            if f in data:
-                v = data.get(f)
-                setattr(dep, f, None if v is None else bool(v))
-        for f in DEPLOYMENT_DATE_FIELDS:
-            if f in data:
-                v = data.get(f)
-                setattr(dep, f, _dt.strptime(v, '%Y-%m-%d').date() if v else None)
-        for f in DEPLOYMENT_TIME_FIELDS:
-            if f in data:
-                v = data.get(f)
-                setattr(dep, f, _dt.strptime(v, '%H:%M').time() if v else None)
-
+        _apply_deployment_fields(dep, data)
         ct_session.commit()
         return jsonify({'success': True, 'message': _('Деплоймент оновлено успішно!'),
                         'deployment': _deployment_to_dict(dep)})
@@ -2939,6 +2949,377 @@ def update_deployment(lang_code, deployment_id):
         ct_session.rollback()
         current_app.logger.error(f"Error updating deployment {deployment_id}: {e}", exc_info=True)
         return jsonify({'success': False, 'error': _('Помилка збереження даних.')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/deployment/create', methods=['POST'])
+@login_required
+@role_required('manager')
+def api_create_deployment(lang_code):
+    """Створення нового деплойменту на вибраній локації."""
+    ct_session = get_ct_session()
+    try:
+        data = request.json or {}
+        location_id = data.get('location_id')
+        if not location_id:
+            return jsonify({'success': False, 'error': _('Не вказано локацію.')}), 400
+        location_id = int(location_id)
+        if not _user_can_access_location(ct_session, location_id):
+            return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
+        if not ct_session.query(Location).get(location_id):
+            return jsonify({'success': False, 'error': _('Локацію не знайдено.')}), 404
+
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': _('Назва деплойменту обов\'язкова.')}), 400
+
+        dep = Deployment(location_id=location_id, name=name, created_by_id=current_user.id)
+        _apply_deployment_fields(dep, data)
+        ct_session.add(dep)
+        ct_session.commit()
+        return jsonify({'success': True, 'message': _('Деплоймент створено успішно!'),
+                        'deployment': _deployment_to_dict(dep)})
+    except ValueError:
+        ct_session.rollback()
+        return jsonify({'success': False, 'error': _('Невірний формат дати/числа.')}), 400
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error creating deployment: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка збереження даних.')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/deployment/<int:deployment_id>/delete', methods=['POST'])
+@login_required
+@role_required('manager')
+def delete_deployment(lang_code, deployment_id):
+    """Видалення деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
+    ct_session = get_ct_session()
+    try:
+        dep = ct_session.query(Deployment).get(deployment_id)
+        if not dep:
+            return jsonify({'success': False, 'error': _('Деплоймент не знайдено.')}), 404
+        if not _user_can_access_location(ct_session, dep.location_id):
+            return jsonify({'success': False, 'error': _('Немає доступу до цього деплойменту.')}), 403
+        location_id = dep.location_id
+        ct_session.delete(dep)
+        ct_session.commit()
+        return jsonify({'success': True, 'message': _('Деплоймент видалено.'),
+                        'location_id': location_id})
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error deleting deployment {deployment_id}: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка видалення.')}), 500
+    finally:
+        close_ct_session()
+
+
+# Експорт: (заголовок як у вихідному Екселі -> атрибут моделі Deployment)
+DEPLOYMENT_EXPORT_QC = [
+    ('qc_non_functional', 'qc_non_functional'),
+    ('qc_stolen', 'qc_stolen'),
+    ('qc_hardware_issue', 'qc_hardware_issue'),
+    ('qc_firmware_issue', 'qc_firmware_issue'),
+    ('qc_settings_issue', 'qc_settings_issue'),
+    ('qc_battery_issue', 'qc_battery_issue'),
+    ('qc_sd_issue', 'qc_sd_issue'),
+    ('qc_no_data_uploaded_by_PA', 'qc_no_data_uploaded_by_pa'),
+    ('qc_uploaded_data_is_not_raw', 'qc_uploaded_data_is_not_raw'),
+    ('qc_no_GPS_coordinates', 'qc_no_gps_coordinates'),
+    ('qc_no_species_captured', 'qc_no_species_captured'),
+    ('qc_placement_incorrect', 'qc_placement_incorrect'),
+    ('qc_poor_placement', 'qc_poor_placement'),
+    ('qc_feeding_location', 'qc_feeding_location'),
+    ('qc_installation_incorrect', 'qc_installation_incorrect'),
+    ('qc_lapse_photos_missed', 'qc_lapse_photos_missed'),
+    ('qc_installation_photos_missed', 'qc_installation_photos_missed'),
+    ('qc_deinstallation_photos_missed', 'qc_deinstallation_photos_missed'),
+    ('qc_distance_reference_photos_missed', 'qc_distance_reference_photos_missed'),
+    ('qc_datetime_photos_missed', 'qc_datetime_photos_missed'),
+    ('qc_local_datetime_not_set', 'qc_local_datetime_not_set'),
+    ('qc_local_datetime_issue', 'qc_local_datetime_issue'),
+    ('qc_data_not_usable', 'qc_data_not_usable'),
+    ('qc_used_brf', 'qc_used_brf'),
+    ('qc_comment', 'qc_comment'),
+]
+
+
+def _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institution_id):
+    """Множина location_id з урахуванням ролі та (опційного) фільтра установи."""
+    if institution_id:
+        if not is_admin and institution_id not in user_inst_ids:
+            return None  # немає доступу
+        target = [institution_id]
+    elif is_admin:
+        target = None  # усі
+    else:
+        target = user_inst_ids
+    if target is None:
+        return [lid for (lid,) in ct_session.query(Location.id).all()]
+    rows = ct_session.execute(
+        select(location_institutions.c.location_id)
+        .where(location_institutions.c.institution_id.in_(target)).distinct()
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+@camera_traps_bp.route('/export-deployments')
+@login_required
+@role_required('manager')
+def export_deployments(lang_code):
+    """Експорт деплойментів в Ексель з урахуванням фільтрів (установа, рік).
+    Структура файлу повторює вихідний ARD-Ексель + назва установи й природний регіон."""
+    import io
+    import pandas as pd
+
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+
+        institution_id = request.args.get('institution_id', type=int)
+        year = request.args.get('year', type=int)
+
+        loc_ids = _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institution_id)
+        if loc_ids is None:
+            flash(_('Немає доступу до цієї установи.'), 'danger')
+            return redirect(url_for('camera_traps.manage_deployments', lang_code=lang_code))
+
+        q = ct_session.query(Deployment).filter(Deployment.location_id.in_(loc_ids)) if loc_ids else None
+        deps = []
+        if loc_ids:
+            if year:
+                q = q.filter(Deployment.study_year == year)
+            deps = q.order_by(Deployment.study_year, Deployment.location_id, Deployment.name).all()
+
+        # Локації (координати) + мапа location -> institution
+        locs = {l.id: l for l in ct_session.query(Location).filter(Location.id.in_(loc_ids)).all()} if loc_ids else {}
+        loc_inst = {}
+        if loc_ids:
+            for row in ct_session.execute(
+                select(location_institutions.c.location_id, location_institutions.c.institution_id)
+                .where(location_institutions.c.location_id.in_(loc_ids))
+            ).fetchall():
+                loc_inst.setdefault(row.location_id, row.institution_id)  # перша установа
+
+        inst_ids = set(loc_inst.values())
+        inst_map = {i.id: i for i in Institution.query.filter(Institution.id.in_(inst_ids)).all()} if inst_ids else {}
+
+        uk = (lang_code == 'uk')
+
+        def inst_name(inst):
+            if not inst:
+                return None
+            return inst.name_uk if uk else (inst.name_en or inst.name_uk)
+
+        def region_name(inst):
+            if not inst:
+                return None
+            return inst.ecoregion_uk if uk else (inst.ecoregion_en or inst.ecoregion_uk)
+
+        rows = []
+        for dep in deps:
+            loc = locs.get(dep.location_id)
+            inst = inst_map.get(loc_inst.get(dep.location_id))
+            row = {
+                'study_area_id': inst.code if inst else None,
+                'study_area_name_EN': inst_name(inst),
+                'region_name_EN': region_name(inst),
+                'study_year': dep.study_year,
+                'study_season': dep.study_season,
+                'study_design': dep.study_design,
+                'camera_id': dep.camera_id,
+                'latitude': float(loc.latitude) if loc else None,
+                'longitude': float(loc.longitude) if loc else None,
+                'start_date': dep.start_date.isoformat() if dep.start_date else None,
+                'start_time': dep.start_time.strftime('%H:%M') if dep.start_time else None,
+                'end_date': dep.end_date.isoformat() if dep.end_date else None,
+                'end_time': dep.end_time.strftime('%H:%M') if dep.end_time else None,
+                'n_days_working': dep.n_days_working,
+                'n_photos': dep.n_photos,
+                'camera_model': dep.camera_model,
+                'serial_number': dep.serial_number,
+                'deployment_id': dep.name,
+            }
+            for header, attr in DEPLOYMENT_EXPORT_QC:
+                row[header] = getattr(dep, attr)
+            rows.append(row)
+
+        columns = ['study_area_id', 'study_area_name_EN', 'region_name_EN', 'study_year',
+                   'study_season', 'study_design', 'camera_id', 'latitude', 'longitude',
+                   'start_date', 'start_time', 'end_date', 'end_time', 'n_days_working',
+                   'n_photos', 'camera_model', 'serial_number', 'deployment_id'] + \
+                  [h for h, _a in DEPLOYMENT_EXPORT_QC]
+
+        df = pd.DataFrame(rows, columns=columns)
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='deployments', index=False)
+        buf.seek(0)
+
+        parts = ['deployments']
+        if institution_id and inst_map:
+            code = next(iter(inst_map.values())).code
+            if code:
+                parts.append(str(code))
+        if year:
+            parts.append(str(year))
+        filename = '_'.join(parts) + '.xlsx'
+
+        return Response(
+            buf.getvalue(),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment;filename={filename}'}
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error exporting deployments: {e}", exc_info=True)
+        flash(_('Помилка експорту.'), 'danger')
+        return redirect(url_for('camera_traps.manage_deployments', lang_code=lang_code))
+    finally:
+        close_ct_session()
+
+
+# Похідні QC-поля (обчислюються на льоту, як у R-скрипті аналізу локацій).
+# Критичні / некритичні — для впорядкування й кольору на графіках.
+QUALITY_FIELDS_CRITICAL = [
+    'qc_summary', 'qc_data_not_usable', 'qc_no_gps_coordinates', 'qc_feeding_location',
+    'qc_installation_incorrect', 'qc_placement_incorrect', 'qc_hardware_issue',
+    'qc_no_data_uploaded_by_pa', 'qc_uploaded_data_is_not_raw', 'qc_lapse_photos_missed',
+    'qc_local_datetime_not_set', 'qc_sd_issue', 'qc_battery_issue', 'qc_non_functional',
+]
+QUALITY_FIELDS_NONCRITICAL = [
+    'qc_poor_placement', 'qc_no_species_captured', 'qc_min_days_not_reached',
+    'qc_installation_photos_missed', 'qc_deinstallation_photos_missed',
+    'qc_distance_reference_photos_missed', 'qc_datetime_photos_missed',
+    'qc_settings_issue', 'qc_firmware_issue', 'qc_stolen',
+]
+
+# Порядок QC-фільтрів як у вихідному Екселі (+ похідні зведені — в кінці).
+QC_FILTER_ORDER = [
+    'qc_non_functional', 'qc_stolen', 'qc_hardware_issue', 'qc_firmware_issue',
+    'qc_settings_issue', 'qc_battery_issue', 'qc_sd_issue', 'qc_no_data_uploaded_by_pa',
+    'qc_uploaded_data_is_not_raw', 'qc_no_gps_coordinates', 'qc_no_species_captured',
+    'qc_placement_incorrect', 'qc_poor_placement', 'qc_feeding_location',
+    'qc_installation_incorrect', 'qc_lapse_photos_missed', 'qc_installation_photos_missed',
+    'qc_deinstallation_photos_missed', 'qc_distance_reference_photos_missed',
+    'qc_datetime_photos_missed', 'qc_local_datetime_not_set', 'qc_data_not_usable',
+    'qc_summary', 'qc_min_days_not_reached',
+]
+
+
+def _b(v):
+    """None трактуємо як False для логіки якості."""
+    return bool(v) if v is not None else False
+
+
+@camera_traps_bp.route('/data-quality')
+@login_required
+@role_required('manager')
+def data_quality(lang_code):
+    """Сторінка оцінки якості даних: карта + інтерактивні графіки QC.
+    Похідні поля рахуються як у R-скрипті 01_Camera_trap_location_analysis."""
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+        loc_ids = _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, None)
+        if not loc_ids:
+            loc_ids = []
+
+        deps = (ct_session.query(Deployment).filter(Deployment.location_id.in_(loc_ids)).all()
+                if loc_ids else [])
+        locs = {l.id: l for l in ct_session.query(Location).filter(Location.id.in_(loc_ids)).all()} \
+            if loc_ids else {}
+        loc_inst = {}
+        if loc_ids:
+            for row in ct_session.execute(
+                select(location_institutions.c.location_id, location_institutions.c.institution_id)
+                .where(location_institutions.c.location_id.in_(loc_ids))
+            ).fetchall():
+                loc_inst.setdefault(row.location_id, row.institution_id)
+        inst_map = {i.id: i for i in Institution.query.filter(
+            Institution.id.in_(set(loc_inst.values()))).all()} if loc_inst else {}
+        uk = (lang_code == 'uk')
+
+        records = []
+        for dep in deps:
+            loc = locs.get(dep.location_id)
+            inst = inst_map.get(loc_inst.get(dep.location_id))
+            lat = float(loc.latitude) if loc and loc.latitude is not None else None
+            lon = float(loc.longitude) if loc and loc.longitude is not None else None
+
+            n_days = dep.n_days_calc
+            if n_days is None and dep.start_date and dep.end_date:
+                n_days = (dep.end_date - dep.start_date).days
+
+            qc_no_gps = (lat is None or lon is None)
+            data_not_usable = (
+                _b(dep.qc_data_not_usable) or qc_no_gps or _b(dep.qc_feeding_location)
+                or _b(dep.qc_hardware_issue)
+                or (_b(dep.qc_installation_incorrect) and _b(dep.qc_no_species_captured))
+                or (_b(dep.qc_placement_incorrect) and _b(dep.qc_no_species_captured))
+                or (_b(dep.qc_poor_placement) and _b(dep.qc_no_species_captured))
+            )
+            qc_summary = (data_not_usable or _b(dep.qc_no_data_uploaded_by_pa)
+                          or _b(dep.qc_sd_issue) or _b(dep.qc_stolen) or _b(dep.qc_non_functional))
+            min_days_not_reached = None
+            if n_days is not None and dep.study_season:
+                if dep.study_season == 'Winter':
+                    min_days_not_reached = n_days < 100
+                elif dep.study_season == 'Summer':
+                    min_days_not_reached = n_days < 60
+
+            if qc_summary:
+                status = 'issue'
+            elif dep.study_season == 'Summer':
+                status = 'normal_summer'
+            else:
+                status = 'normal_winter'
+
+            rec = {
+                'id': dep.id, 'name': dep.name, 'location_id': dep.location_id,
+                'lat': lat, 'lon': lon, 'status': status,
+                'region': (inst.ecoregion_uk if uk else (inst.ecoregion_en or inst.ecoregion_uk)) if inst else None,
+                'study_area': (inst.name_uk if uk else (inst.name_en or inst.name_uk)) if inst else None,
+                'study_area_id': inst.code if inst else None,
+                'study_year': dep.study_year, 'study_season': dep.study_season,
+                'study_design': dep.study_design, 'camera_model': dep.camera_model,
+                'camera_id': dep.camera_id, 'n_days_working': n_days, 'n_photos': dep.n_photos,
+                # похідні QC
+                'qc_no_gps_coordinates': qc_no_gps,
+                'qc_data_not_usable': data_not_usable,
+                'qc_summary': qc_summary,
+                'qc_min_days_not_reached': min_days_not_reached,
+            }
+            for f in DEPLOYMENT_BOOL_FIELDS:
+                if f not in rec:  # не перетираємо похідні
+                    rec[f] = dep.__getattribute__(f)
+            records.append(rec)
+
+        # Опції категоріальних фільтрів
+        def distinct(key):
+            return sorted({r[key] for r in records if r[key] not in (None, '')},
+                          key=lambda x: str(x))
+        filter_options = {
+            'region': distinct('region'),
+            'study_area': distinct('study_area'),
+            'study_year': sorted({r['study_year'] for r in records if r['study_year']}, reverse=True),
+            'study_season': distinct('study_season'),
+            'study_design': distinct('study_design'),
+            'camera_model': distinct('camera_model'),
+        }
+
+        return render_template('data_quality.html',
+                               records_json=json.dumps(records),
+                               filter_options=filter_options,
+                               qc_fields=QC_FILTER_ORDER,
+                               geoserver_url=current_app.config['GEOSERVER_URL'])
+    except Exception as e:
+        current_app.logger.error(f"Error loading data quality page: {e}", exc_info=True)
+        flash(_("Помилка завантаження сторінки якості даних."), 'danger')
+        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
     finally:
         close_ct_session()
 

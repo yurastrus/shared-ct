@@ -16,6 +16,7 @@
     format_report(report) -> str
 """
 import os
+import math
 from collections import defaultdict
 
 import pandas as pd
@@ -215,7 +216,10 @@ def coerce_str(v, maxlen=None):
 
 
 def _round5(x):
-    return round(float(x), 5)
+    v = round(float(x), 5)
+    if not math.isfinite(v):  # NaN/inf (порожній GPS у Екселі) -> трактуємо як биті координати
+        raise ValueError('non-finite coordinate')
+    return v
 
 
 def build_location_index(session):
@@ -223,7 +227,10 @@ def build_location_index(session):
     index = {}
     ambiguous = set()
     for loc in session.query(Location.id, Location.latitude, Location.longitude).all():
-        key = (_round5(loc.latitude), _round5(loc.longitude))
+        try:
+            key = (_round5(loc.latitude), _round5(loc.longitude))
+        except (TypeError, ValueError):
+            continue  # пропускаємо локації з битими координатами (NaN тощо)
         if key in index:
             ambiguous.add(key)
         else:
@@ -231,11 +238,22 @@ def build_location_index(session):
     return index, ambiguous
 
 
-def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
-    """Імпорт/оновлення деплойментів з Екселю. Повертає звіт (dict)."""
+def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
+                       create_missing_locations=False, park_institution_map=None):
+    """Імпорт/оновлення деплойментів з Екселю. Повертає звіт (dict).
+
+    create_missing_locations: якщо True — для рядків без наявної локації
+        створюється нова локація (name=deployment_id, координати з рядка) і,
+        якщо park_institution_map дає установу за назвою парку, додається
+        зв'язок location_institutions.
+    park_institution_map: {normalize_header(study_area_name_EN): institution_id}.
+    """
+    from .models import Location, location_institutions
+
     if not os.path.exists(xlsx_path):
         raise FileNotFoundError(xlsx_path)
 
+    park_institution_map = park_institution_map or {}
     sheets = sheets or DATA_SHEETS
     xl = pd.ExcelFile(xlsx_path)
     loc_index, ambiguous = build_location_index(session)
@@ -245,6 +263,8 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
         'dry_run': dry_run,
         'inserted': 0,
         'updated': 0,
+        'locations_created': 0,
+        'locations_without_institution': 0,
         'skipped_no_location': 0,
         'skipped_bad_coords': 0,
         'skipped_no_name': 0,
@@ -252,6 +272,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
         'per_sheet': defaultdict(lambda: defaultdict(int)),
         'unmapped_columns': {},
         'coercion_warnings': [],   # (sheet, excel_row, field, raw_value)
+        'unmapped_parks': set(),
         'sheets_missing': [],
     }
 
@@ -280,6 +301,10 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
         if unmapped:
             report['unmapped_columns'][sheet] = unmapped
 
+        norm_cols = {normalize_header(c): c for c in df.columns}
+        name_col = next((c for c, (a, _i) in colmap.items() if a == 'name'), None)
+        park_col = norm_cols.get('study_area_name_en')
+
         for idx, row in df.iterrows():
             excel_row = idx + 2  # +1 заголовок, +1 1-індекс
             ps = report['per_sheet'][sheet]
@@ -300,9 +325,34 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
                 continue
             location_id = loc_index.get(key)
             if location_id is None:
-                report['skipped_no_location'] += 1
-                ps['skipped_no_location'] += 1
-                continue
+                if not create_missing_locations:
+                    report['skipped_no_location'] += 1
+                    ps['skipped_no_location'] += 1
+                    continue
+                # Створюємо нову локацію (name = deployment_id) + прив'язка установи
+                dep_name = coerce_str(row.get(name_col), 200) if name_col else None
+                if not dep_name:
+                    report['skipped_no_name'] += 1
+                    ps['skipped_no_name'] += 1
+                    continue
+                inst_id = None
+                if park_col is not None:
+                    park = normalize_header(row.get(park_col)) if not _is_na(row.get(park_col)) else None
+                    inst_id = park_institution_map.get(park) if park else None
+                    if park and inst_id is None:
+                        report['unmapped_parks'].add(str(row.get(park_col)).strip())
+                new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
+                session.add(new_loc)
+                session.flush()  # отримати id
+                location_id = new_loc.id
+                loc_index[key] = location_id
+                report['locations_created'] += 1
+                ps['locations_created'] += 1
+                if inst_id is not None:
+                    session.execute(location_institutions.insert().values(
+                        location_id=location_id, institution_id=inst_id))
+                else:
+                    report['locations_without_institution'] += 1
 
             # збір значень полів
             values = {'location_id': location_id}
@@ -375,6 +425,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False):
         session.commit()
 
     report['per_sheet'] = {k: dict(v) for k, v in report['per_sheet'].items()}
+    report['unmapped_parks'] = sorted(report['unmapped_parks'])
     return report
 
 
@@ -386,6 +437,8 @@ def format_report(report):
     lines.append('-' * 60)
     lines.append(f"  Вставлено:               {report['inserted']}")
     lines.append(f"  Оновлено:                {report['updated']}")
+    lines.append(f"  Створено локацій:        {report.get('locations_created', 0)}")
+    lines.append(f"  Локацій без установи:    {report.get('locations_without_institution', 0)}")
     lines.append(f"  Пропущено (нема локації):{report['skipped_no_location']}")
     lines.append(f"  Пропущено (биті коорд.): {report['skipped_bad_coords']}")
     lines.append(f"  Пропущено (нема назви):  {report['skipped_no_name']}")
@@ -402,6 +455,9 @@ def format_report(report):
         lines.append('Незмаплені (проігноровані) колонки:')
         for sheet, cols in report['unmapped_columns'].items():
             lines.append(f"  {sheet}: {', '.join(cols)}")
+    if report.get('unmapped_parks'):
+        lines.append('-' * 60)
+        lines.append('Парки без зіставленої установи: ' + ', '.join(report['unmapped_parks']))
     warns = report['coercion_warnings']
     lines.append('-' * 60)
     lines.append(f"Помилки приведення типів: {len(warns)}")
