@@ -51,8 +51,11 @@
                gap: 16px; align-items: stretch; }
   .dq-mapcell { display: flex; flex-direction: column; }
   #dq-map { flex: 1 1 auto; min-height: 400px; border-radius: 8px; border: 1px solid #d0d5dd; }
-  .dq-card { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 14px; }
+  .dq-card { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 14px;
+             display: flex; flex-direction: column; }
   .dq-card h6 { font-size: .9rem; font-weight: 600; margin-bottom: 8px; }
+  .dq-chart-wrap { position: relative; flex: 1 1 auto; min-height: 220px; }
+  .dq-chart-wrap.qc { min-height: 480px; }
   .dq-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .dq-row2 > .dq-card { min-width: 0; }
   @media (max-width: 560px){ .dq-row2 { grid-template-columns: 1fr; } }
@@ -125,7 +128,7 @@
         <!-- Ряд 1, праворуч: великий QC-графік -->
         <div class="dq-card">
             <h6>{{ _('Параметри якості (кількість деплойментів)') }}</h6>
-            <div style="height:520px;"><canvas id="chart-qc"></canvas></div>
+            <div class="dq-chart-wrap qc"><canvas id="chart-qc"></canvas></div>
         </div>
 
         <!-- Ряд 2, ліворуч: QC-чекбокси -->
@@ -148,11 +151,11 @@
         <div class="dq-row2">
             <div class="dq-card">
                 <h6>{{ _('Розподіл за статусом') }}</h6>
-                <div style="height:240px;"><canvas id="chart-status"></canvas></div>
+                <div class="dq-chart-wrap"><canvas id="chart-status"></canvas></div>
             </div>
             <div class="dq-card">
                 <h6>{{ _('Деплойменти за роками') }}</h6>
-                <div style="height:240px;"><canvas id="chart-year"></canvas></div>
+                <div class="dq-chart-wrap"><canvas id="chart-year"></canvas></div>
             </div>
         </div>
     </div>
