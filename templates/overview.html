@@ -39,6 +39,11 @@
                 <span class="hub-card__title">{{ _('Локації') }}</span>
                 <span class="hub-card__desc">{{ _('Керування точками встановлення пасток.') }}</span>
             </a>
+            <a class="hub-card" href="{{ url_for('camera_traps.manage_deployments', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🎥</span>
+                <span class="hub-card__title">{{ _('Деплойменти') }}</span>
+                <span class="hub-card__desc">{{ _('Редагування даних встановлень та контролю якості.') }}</span>
+            </a>
             {% endif %}
 
             {% if can_export %}

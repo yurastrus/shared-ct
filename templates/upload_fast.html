@@ -129,9 +129,71 @@
                 </div>
             </div>
 
-            <!-- STEP 3: Завантаження -->
+            <!-- STEP 3: Деплоймент / контроль якості (необов'язково, згорнуто) -->
             <div class="step-card">
-                <div class="step-title"><span class="step-num">3</span>{{ _('Завантаження') }}</div>
+                <details id="deployment-block">
+                    <summary class="step-title" style="cursor:pointer; list-style:none;">
+                        <span class="step-num">3</span>{{ _('Деплоймент і контроль якості') }}
+                        <span class="text-muted small" style="font-weight:normal;">({{ _('необов\'язково') }})</span>
+                    </summary>
+                    <div style="margin-top:10px;">
+                        <small class="text-muted d-block mb-2">
+                            {{ _('Дані встановлення для вибраної локації. Якщо дати не вказати — візьмуться з найранішого та найпізнішого фото набору.') }}
+                        </small>
+                        <div class="mb-2">
+                            <label class="form-label">{{ _('Назва деплойменту') }}</label>
+                            <input type="text" class="form-control" id="dep-name"
+                                   placeholder="{{ _('напр. 2025_Summer_Synevyr NNP_1903') }}">
+                        </div>
+                        <div style="display:flex; gap:8px; margin-bottom:8px;">
+                            <div style="flex:1;">
+                                <label class="form-label text-muted">{{ _('Початок') }}</label>
+                                <input type="date" class="form-control" id="dep-start-date">
+                            </div>
+                            <div style="flex:1;">
+                                <label class="form-label text-muted">{{ _('Кінець') }}</label>
+                                <input type="date" class="form-control" id="dep-end-date">
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; margin-bottom:8px;">
+                            <div style="flex:1;">
+                                <label class="form-label text-muted">{{ _('Час початку') }}</label>
+                                <input type="time" class="form-control" id="dep-start-time">
+                            </div>
+                            <div style="flex:1;">
+                                <label class="form-label text-muted">{{ _('Час кінця') }}</label>
+                                <input type="time" class="form-control" id="dep-end-time">
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="dep-not-usable">
+                            <label class="form-check-label small" for="dep-not-usable">
+                                {{ _('Дані непридатні для аналізу') }}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="dep-feeding-location">
+                            <label class="form-check-label small" for="dep-feeding-location">
+                                {{ _('Камера біля годівниці') }}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="dep-installation-incorrect">
+                            <label class="form-check-label small" for="dep-installation-incorrect">
+                                {{ _('Неправильна установка') }}
+                            </label>
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label text-muted">{{ _('Коментар') }}</label>
+                            <textarea class="form-control" id="dep-comment" rows="2"></textarea>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- STEP 4: Завантаження -->
+            <div class="step-card">
+                <div class="step-title"><span class="step-num">4</span>{{ _('Завантаження') }}</div>
 
                 <button id="upload-btn" type="button" disabled>▲ {{ _('Завантажити та обробити') }}</button>
 

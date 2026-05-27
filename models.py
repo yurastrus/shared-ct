@@ -1,6 +1,6 @@
 # myproject/app/camera_traps/models.py
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, Float, ForeignKey, Index, Table, Interval
+from sqlalchemy import Column, Integer, String, DateTime, Date, Time, Boolean, Text, Numeric, Float, ForeignKey, Index, Table, Interval
 from sqlalchemy import CheckConstraint, Computed, UniqueConstraint, func
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -72,6 +72,7 @@ class Location(CTBase):
     observations = relationship('Observation', back_populates='location')
     biotopes = relationship('Biotope', secondary=location_biotopes, backref='locations')
     service_visits = relationship('ServiceVisit', back_populates='location', order_by=lambda: ServiceVisit.visit_datetime.desc())
+    deployments = relationship('Deployment', back_populates='location', order_by=lambda: Deployment.start_date)
     
     # Індекс для швидкого пошуку за округленими координатами
     __table_args__ = (
@@ -93,6 +94,102 @@ class Biotope(CTBase):
 
     def __repr__(self):
         return f'<Biotope {self.name_en}>'
+
+class Deployment(CTBase):
+    """Встановлення фотопастки на локації за конкретний період (камеро-сезон).
+
+    Один фізичний `Location` має багато деплойментів у часі. Деплоймент несе
+    тимчасові поля та секцію контролю якості (qc_*) з ARD-таблиці деплойментів.
+    Прив'язка спостережень/фото до деплойменту НЕ через FK, а на льоту по
+    перекриттю дат: observation.captured_at ∈ [start_date, end_date] для тієї ж
+    location_id. Установу/регіон не дублюємо — вони доступні через location.
+    """
+    __tablename__ = 'deployments'
+
+    id = Column(Integer, primary_key=True)
+    location_id = Column(Integer, ForeignKey('locations.id'), nullable=False, index=True)
+    name = Column(String(200), nullable=False)  # deployment_id з Екселю
+
+    # Часовий інтервал деплойменту
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    start_time = Column(Time, nullable=True)  # зберігаємо заради відповідності Екселю
+    end_time = Column(Time, nullable=True)
+
+    # Описові поля деплойменту
+    study_year = Column(Integer, nullable=True)
+    study_season = Column(String(20), nullable=True)   # Summer / Winter
+    study_design = Column(String(100), nullable=True)
+    camera_id = Column(String(10), nullable=True)      # String: провідні нулі (напр. '0405'); буває 5 знаків — це валідно
+    n_days_working = Column(Integer, nullable=True)     # з Екселю як є, НЕ end-start
+    # Обчислюється БД як календарний інтервал (end-start); NULL якщо дат немає.
+    # Окремо від n_days_working, бо фактичні робочі дні можуть відрізнятись.
+    n_days_calc = Column(Integer, Computed('end_date - start_date'), nullable=True)
+    n_photos = Column(Integer, nullable=True)
+    camera_model = Column(String(100), nullable=True)
+    serial_number = Column(String(100), nullable=True)
+
+    # Контроль якості (NULL = невідомо → не виключає за правилом «сироти валідні»)
+    qc_non_functional = Column(Boolean, nullable=True)
+    qc_stolen = Column(Boolean, nullable=True)
+    qc_hardware_issue = Column(Boolean, nullable=True)
+    qc_firmware_issue = Column(Boolean, nullable=True)
+    qc_settings_issue = Column(Boolean, nullable=True)
+    qc_battery_issue = Column(Boolean, nullable=True)
+    qc_sd_issue = Column(Boolean, nullable=True)
+    qc_no_data_uploaded_by_pa = Column(Boolean, nullable=True)
+    qc_uploaded_data_is_not_raw = Column(Boolean, nullable=True)
+    qc_no_gps_coordinates = Column(Boolean, nullable=True)
+    qc_no_species_captured = Column(Boolean, nullable=True)
+    qc_placement_incorrect = Column(Boolean, nullable=True)
+    qc_poor_placement = Column(Boolean, nullable=True)
+    qc_feeding_location = Column(Boolean, nullable=True)
+    qc_installation_incorrect = Column(Boolean, nullable=True)
+    qc_lapse_photos_missed = Column(Boolean, nullable=True)
+    qc_installation_photos_missed = Column(Boolean, nullable=True)
+    qc_deinstallation_photos_missed = Column(Boolean, nullable=True)
+    qc_distance_reference_photos_missed = Column(Boolean, nullable=True)
+    qc_datetime_photos_missed = Column(Boolean, nullable=True)
+    qc_local_datetime_not_set = Column(Boolean, nullable=True)
+    qc_local_datetime_issue = Column(Text, nullable=True)
+    qc_data_not_usable = Column(Boolean, nullable=True)  # головний прапор фільтра
+    qc_used_brf = Column(Boolean, nullable=True)
+    qc_comment = Column(Text, nullable=True)
+
+    # Службові
+    history_unknown = Column(Boolean, default=False, nullable=False)  # синтетичний backfill
+    created_at = Column(DateTime, default=func.now())
+    created_by_id = Column(Integer, nullable=True)
+
+    location = relationship('Location', back_populates='deployments')
+
+    __table_args__ = (
+        # Інтервальний матчинг спостережень: WHERE location_id=:x AND captured_at BETWEEN start AND end
+        Index('idx_deployments_loc_dates', 'location_id', 'start_date', 'end_date'),
+    )
+
+    def is_usable(self):
+        """Чи придатний деплоймент для аналізу. NULL трактуємо як придатний."""
+        return not bool(self.qc_data_not_usable)
+
+    def count_photos(self, session):
+        """Кількість згрупованих фото в інтервалі деплойменту (на льоту).
+
+        Рахується по photos через observations тієї ж локації з captured_at у
+        [start_date, end_date]. Окремо від імпортованого n_photos (авторитет з
+        Екселю). Незгруповані фото (observation_id IS NULL) не враховуються.
+        """
+        q = (session.query(func.count(Photo.id))
+             .join(Observation, Photo.observation_id == Observation.id)
+             .filter(Observation.location_id == self.location_id))
+        if self.start_date is not None:
+            q = q.filter(func.date(Photo.captured_at) >= self.start_date)
+        if self.end_date is not None:
+            q = q.filter(func.date(Photo.captured_at) <= self.end_date)
+        return q.scalar() or 0
+
+    def __repr__(self):
+        return f'<Deployment {self.name} (loc {self.location_id})>'
 
 class Observation(CTBase):
     __tablename__ = 'observations'

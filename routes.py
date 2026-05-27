@@ -19,6 +19,7 @@ from .utils import process_photo_batch, check_consensus_for_observation, calcula
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
+from .models import Deployment
 from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
@@ -2715,6 +2716,232 @@ def manage_locations(lang_code):
         return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
     finally:
         close_ct_session()
+
+# ── Деплойменти ───────────────────────────────────────────────────────────────
+DEPLOYMENT_STR_FIELDS = ['name', 'study_season', 'study_design', 'camera_id',
+                         'camera_model', 'serial_number']
+DEPLOYMENT_INT_FIELDS = ['study_year', 'n_days_working', 'n_photos']
+DEPLOYMENT_DATE_FIELDS = ['start_date', 'end_date']
+DEPLOYMENT_TIME_FIELDS = ['start_time', 'end_time']
+DEPLOYMENT_TEXT_FIELDS = ['qc_local_datetime_issue', 'qc_comment']
+DEPLOYMENT_BOOL_FIELDS = [
+    'qc_non_functional', 'qc_stolen', 'qc_hardware_issue', 'qc_firmware_issue',
+    'qc_settings_issue', 'qc_battery_issue', 'qc_sd_issue', 'qc_no_data_uploaded_by_pa',
+    'qc_uploaded_data_is_not_raw', 'qc_no_gps_coordinates', 'qc_no_species_captured',
+    'qc_placement_incorrect', 'qc_poor_placement', 'qc_feeding_location',
+    'qc_installation_incorrect', 'qc_lapse_photos_missed', 'qc_installation_photos_missed',
+    'qc_deinstallation_photos_missed', 'qc_distance_reference_photos_missed',
+    'qc_datetime_photos_missed', 'qc_local_datetime_not_set', 'qc_data_not_usable',
+    'qc_used_brf',
+]
+
+
+def _deployment_to_dict(dep):
+    d = {
+        'id': dep.id,
+        'location_id': dep.location_id,
+        'n_days_calc': dep.n_days_calc,
+        'history_unknown': dep.history_unknown,
+    }
+    for f in DEPLOYMENT_STR_FIELDS + DEPLOYMENT_INT_FIELDS + DEPLOYMENT_TEXT_FIELDS:
+        d[f] = getattr(dep, f)
+    for f in DEPLOYMENT_BOOL_FIELDS:
+        d[f] = getattr(dep, f)
+    for f in DEPLOYMENT_DATE_FIELDS:
+        v = getattr(dep, f)
+        d[f] = v.isoformat() if v else None
+    for f in DEPLOYMENT_TIME_FIELDS:
+        v = getattr(dep, f)
+        d[f] = v.strftime('%H:%M') if v else None
+    return d
+
+
+def _user_can_access_location(ct_session, location_id):
+    """admin -> завжди; manager -> лише якщо локація належить його установі."""
+    if current_user.has_role('admin'):
+        return True
+    user_inst_ids = [inst.id for inst in current_user.institutions]
+    if not user_inst_ids:
+        return False
+    access = ct_session.execute(
+        select(location_institutions.c.location_id).where(
+            (location_institutions.c.location_id == location_id) &
+            (location_institutions.c.institution_id.in_(user_inst_ids))
+        ).limit(1)
+    ).fetchone()
+    return access is not None
+
+
+@camera_traps_bp.route('/manage-deployments')
+@login_required
+@role_required('manager')
+def manage_deployments(lang_code):
+    """Сторінка управління деплойментами: карта локацій + таблиця/форма деплойментів."""
+    ct_session = get_ct_session()
+    try:
+        is_admin = current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions]
+
+        if is_admin:
+            locations_objects = ct_session.query(Location).order_by(Location.name).all()
+        elif user_inst_ids:
+            locations_objects = (
+                ct_session.query(Location)
+                .join(location_institutions, Location.id == location_institutions.c.location_id)
+                .filter(location_institutions.c.institution_id.in_(user_inst_ids))
+                .order_by(Location.name).distinct().all()
+            )
+        else:
+            locations_objects = []
+
+        loc_ids = [loc.id for loc in locations_objects]
+
+        # Зв'язки локацій з установами (для фільтра)
+        if loc_ids:
+            inst_rows = ct_session.execute(
+                select(location_institutions.c.location_id, location_institutions.c.institution_id)
+                .where(location_institutions.c.location_id.in_(loc_ids))
+            ).fetchall()
+            loc_inst_map = {}
+            for row in inst_rows:
+                loc_inst_map.setdefault(row.location_id, []).append(row.institution_id)
+        else:
+            loc_inst_map = {}
+
+        used_inst_ids = set()
+        for ids in loc_inst_map.values():
+            used_inst_ids.update(ids)
+        if is_admin and used_inst_ids:
+            filter_institutions = Institution.query.filter(
+                Institution.id.in_(used_inst_ids)).order_by(Institution.name_uk).all()
+        elif used_inst_ids:
+            filter_institutions = [i for i in current_user.institutions if i.id in used_inst_ids]
+        else:
+            filter_institutions = []
+
+        # Деплойменти видимих локацій
+        if loc_ids:
+            deps = (ct_session.query(Deployment)
+                    .filter(Deployment.location_id.in_(loc_ids))
+                    .order_by(Deployment.location_id, Deployment.start_date).all())
+        else:
+            deps = []
+        dep_count_map = {}
+        for dep in deps:
+            dep_count_map[dep.location_id] = dep_count_map.get(dep.location_id, 0) + 1
+
+        locations_data = []
+        for loc in locations_objects:
+            locations_data.append({
+                'id': loc.id,
+                'name': loc.name,
+                'latitude': float(loc.latitude),
+                'longitude': float(loc.longitude),
+                'institution_ids': loc_inst_map.get(loc.id, []),
+                'deployment_count': dep_count_map.get(loc.id, 0),
+            })
+
+        deployments_data = [{
+            'id': dep.id,
+            'location_id': dep.location_id,
+            'name': dep.name,
+            'study_year': dep.study_year,
+            'study_season': dep.study_season,
+            'start_date': dep.start_date.isoformat() if dep.start_date else None,
+            'end_date': dep.end_date.isoformat() if dep.end_date else None,
+            'camera_id': dep.camera_id,
+            'qc_data_not_usable': dep.qc_data_not_usable,
+        } for dep in deps]
+
+        return render_template('manage_deployments.html',
+                               locations=locations_data,
+                               locations_json_string=json.dumps(locations_data),
+                               deployments_json_string=json.dumps(deployments_data),
+                               geoserver_url=current_app.config['GEOSERVER_URL'],
+                               filter_institutions=filter_institutions,
+                               is_admin=is_admin,
+                               bool_fields=DEPLOYMENT_BOOL_FIELDS)
+    except Exception as e:
+        current_app.logger.error(f"Error loading deployment management page: {e}", exc_info=True)
+        flash(_("Помилка завантаження сторінки управління деплойментами."), 'danger')
+        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/deployment/<int:deployment_id>')
+@login_required
+@role_required('manager')
+def api_get_deployment(lang_code, deployment_id):
+    ct_session = get_ct_session()
+    try:
+        dep = ct_session.query(Deployment).get(deployment_id)
+        if not dep:
+            return jsonify({'error': _('Деплоймент не знайдено.')}), 404
+        if not _user_can_access_location(ct_session, dep.location_id):
+            return jsonify({'error': _('Немає доступу.')}), 403
+        return jsonify(_deployment_to_dict(dep))
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/update-deployment/<int:deployment_id>', methods=['POST'])
+@login_required
+@role_required('manager')
+def update_deployment(lang_code, deployment_id):
+    """Оновлення полів деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
+    from datetime import datetime as _dt
+    ct_session = get_ct_session()
+    try:
+        dep = ct_session.query(Deployment).get(deployment_id)
+        if not dep:
+            return jsonify({'success': False, 'error': _('Деплоймент не знайдено.')}), 404
+        if not _user_can_access_location(ct_session, dep.location_id):
+            return jsonify({'success': False, 'error': _('Немає доступу до цього деплойменту.')}), 403
+
+        data = request.json or {}
+
+        if 'name' in data and not (data.get('name') or '').strip():
+            return jsonify({'success': False, 'error': _('Назва деплойменту обов\'язкова.')}), 400
+
+        for f in DEPLOYMENT_STR_FIELDS:
+            if f in data:
+                val = data.get(f)
+                setattr(dep, f, val.strip() if isinstance(val, str) and val.strip() else (None if f != 'name' else dep.name))
+        for f in DEPLOYMENT_INT_FIELDS:
+            if f in data:
+                v = data.get(f)
+                setattr(dep, f, int(v) if v not in (None, '', []) else None)
+        for f in DEPLOYMENT_TEXT_FIELDS:
+            if f in data:
+                v = data.get(f)
+                setattr(dep, f, v.strip() if isinstance(v, str) and v.strip() else None)
+        for f in DEPLOYMENT_BOOL_FIELDS:
+            if f in data:
+                v = data.get(f)
+                setattr(dep, f, None if v is None else bool(v))
+        for f in DEPLOYMENT_DATE_FIELDS:
+            if f in data:
+                v = data.get(f)
+                setattr(dep, f, _dt.strptime(v, '%Y-%m-%d').date() if v else None)
+        for f in DEPLOYMENT_TIME_FIELDS:
+            if f in data:
+                v = data.get(f)
+                setattr(dep, f, _dt.strptime(v, '%H:%M').time() if v else None)
+
+        ct_session.commit()
+        return jsonify({'success': True, 'message': _('Деплоймент оновлено успішно!'),
+                        'deployment': _deployment_to_dict(dep)})
+    except ValueError:
+        ct_session.rollback()
+        return jsonify({'success': False, 'error': _('Невірний формат дати/числа.')}), 400
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error updating deployment {deployment_id}: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка збереження даних.')}), 500
+    finally:
+        close_ct_session()
+
 
 @camera_traps_bp.route('/api/update-location/<int:location_id>', methods=['POST'])
 @login_required

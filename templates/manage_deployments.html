@@ -1,0 +1,403 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Управління деплойментами') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+  .dep-layout { display: grid; grid-template-columns: 360px 1fr; gap: 12px; }
+  #dep-map { height: 340px; border-radius: 6px; }
+  .dep-table-wrap { max-height: 340px; overflow-y: auto; }
+  .dep-table tbody tr { cursor: pointer; }
+  .dep-table tbody tr.active { background: #cfe2ff; }
+  .dep-row-bad td:first-child { border-left: 3px solid #cb2b3e; }
+  .qc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; }
+  .qc-grid .form-check { margin-bottom: 0; }
+  #dep-edit-panel { display: none; }
+  @media (max-width: 900px){ .dep-layout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block ct_content %}
+{% set qc_labels = {
+  'qc_non_functional': _('Не функціонує'),
+  'qc_stolen': _('Викрадена'),
+  'qc_hardware_issue': _('Проблема обладнання'),
+  'qc_firmware_issue': _('Проблема прошивки'),
+  'qc_settings_issue': _('Проблема налаштувань'),
+  'qc_battery_issue': _('Сіла батарея'),
+  'qc_sd_issue': _('Проблема SD-карти'),
+  'qc_no_data_uploaded_by_pa': _('ПЗ не завантажила дані'),
+  'qc_uploaded_data_is_not_raw': _('Дані не сирі'),
+  'qc_no_gps_coordinates': _('Немає GPS-координат'),
+  'qc_no_species_captured': _('Не зафіксовано видів'),
+  'qc_placement_incorrect': _('Неправильне розміщення'),
+  'qc_poor_placement': _('Погане розміщення'),
+  'qc_feeding_location': _('Біля годівниці'),
+  'qc_installation_incorrect': _('Неправильна установка'),
+  'qc_lapse_photos_missed': _('Немає lapse-фото'),
+  'qc_installation_photos_missed': _('Немає фото установки'),
+  'qc_deinstallation_photos_missed': _('Немає фото демонтажу'),
+  'qc_distance_reference_photos_missed': _('Немає реф. фото відстані'),
+  'qc_datetime_photos_missed': _('Немає фото дати/часу'),
+  'qc_local_datetime_not_set': _('Локальний час не виставлено'),
+  'qc_data_not_usable': _('Дані непридатні'),
+  'qc_used_brf': _('Використано BRF')
+} %}
+<div class="container-fluid mt-3">
+    <div class="page-header mb-2">
+        <h2 style="font-size:1.4rem;">{{ _('Управління деплойментами') }}</h2>
+    </div>
+
+    <div class="top-filter-bar d-flex gap-3 align-items-center mb-2 flex-wrap">
+        {% if filter_institutions %}
+        <div class="d-flex align-items-center gap-1">
+            <label for="dep-inst-filter" style="font-weight:500; white-space:nowrap;">
+                <i class="fas fa-filter text-primary me-1"></i>{{ _('Установа:') }}
+            </label>
+            <select id="dep-inst-filter" class="form-control form-control-sm" style="max-width:260px;">
+                <option value="">{{ _('Всі доступні мені') }}</option>
+                {% for inst in filter_institutions %}
+                    <option value="{{ inst.id }}">{{ inst.name_en if g.lang_code != 'uk' and inst.name_en else inst.name_uk }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div class="d-flex align-items-center gap-1">
+            <label for="dep-loc-filter" style="font-weight:500; white-space:nowrap;">
+                <i class="fas fa-map-marker-alt text-success me-1"></i>{{ _('Локація:') }}
+            </label>
+            <select id="dep-loc-filter" class="form-control form-control-sm" style="max-width:280px;">
+                <option value="">{{ _('Усі локації') }}</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="dep-layout">
+        <!-- Карта -->
+        <div><div id="dep-map"></div>
+            <small class="text-muted d-block mt-1">{{ _('Клацніть локацію, щоб відфільтрувати деплойменти.') }}</small>
+        </div>
+
+        <!-- Таблиця + форма -->
+        <div>
+            <div class="dep-table-wrap">
+                <table class="table table-sm table-hover dep-table mb-0">
+                    <thead class="table-light" style="position:sticky;top:0;">
+                        <tr>
+                            <th>{{ _('Назва') }}</th>
+                            <th>{{ _('Рік') }}</th>
+                            <th>{{ _('Сезон') }}</th>
+                            <th>{{ _('Початок') }}</th>
+                            <th>{{ _('Кінець') }}</th>
+                            <th>{{ _('Камера') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dep-tbody"></tbody>
+                </table>
+                <p id="dep-empty" class="text-muted small p-2 mb-0">{{ _('Немає деплойментів.') }}</p>
+            </div>
+
+            <!-- Форма редагування -->
+            <div id="dep-edit-panel" class="border rounded p-3 mt-3">
+                <h6 class="text-primary mb-3" id="dep-edit-title"></h6>
+                <form id="dep-edit-form">
+                    <input type="hidden" id="dep-id">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">{{ _('Назва (deployment_id)') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-name" required>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Рік') }}</label>
+                            <input type="number" class="form-control form-control-sm" id="f-study_year">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Сезон') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-study_season">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">{{ _('Дизайн дослідження') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-study_design">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('ID камери') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-camera_id">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Серійний №') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-serial_number">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">{{ _('Модель камери') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-camera_model">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Початок') }}</label>
+                            <input type="date" class="form-control form-control-sm" id="f-start_date">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Час початку') }}</label>
+                            <input type="time" class="form-control form-control-sm" id="f-start_time">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Кінець') }}</label>
+                            <input type="date" class="form-control form-control-sm" id="f-end_date">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Час кінця') }}</label>
+                            <input type="time" class="form-control form-control-sm" id="f-end_time">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Робочих днів (введ.)') }}</label>
+                            <input type="number" class="form-control form-control-sm" id="f-n_days_working">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('Днів (розрах.)') }}</label>
+                            <input type="text" class="form-control form-control-sm" id="f-n_days_calc" disabled>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label form-label-sm">{{ _('К-ть фото') }}</label>
+                            <input type="number" class="form-control form-control-sm" id="f-n_photos">
+                        </div>
+                    </div>
+
+                    <hr class="my-2">
+                    <label class="form-label form-label-sm text-muted mb-1">{{ _('Контроль якості') }}</label>
+                    <div class="qc-grid mb-2">
+                        {% for f in bool_fields %}
+                        <div class="form-check">
+                            <input class="form-check-input qc-check" type="checkbox" id="f-{{ f }}" data-field="{{ f }}">
+                            <label class="form-check-label small" for="f-{{ f }}">{{ qc_labels.get(f, f) }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">{{ _('Проблема з датою/часом') }}</label>
+                        <input type="text" class="form-control form-control-sm" id="f-qc_local_datetime_issue">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">{{ _('Коментар') }}</label>
+                        <textarea class="form-control form-control-sm" id="f-qc_comment" rows="2"></textarea>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-2 pt-2 border-top">
+                        <button type="submit" class="btn btn-primary btn-sm flex-fill">{{ _('Зберегти') }}</button>
+                        <button type="button" id="dep-cancel-btn" class="btn btn-outline-secondary btn-sm">{{ _('Скасувати') }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    const locationsData   = {{ locations_json_string|safe }};
+    const deploymentsData = {{ deployments_json_string|safe }};
+    const boolFields = {{ bool_fields|tojson }};
+    const strFields  = ['name','study_season','study_design','camera_id','camera_model','serial_number'];
+    const intFields  = ['study_year','n_days_working','n_photos'];
+    const dateFields = ['start_date','end_date'];
+    const timeFields = ['start_time','end_time'];
+    const textFields = ['qc_local_datetime_issue','qc_comment'];
+    const langCode = '{{ g.lang_code }}';
+
+    let map, markers = {}, markersGroup;
+    let activeLocId = null;
+    let activeDepId = null;
+
+    // ── Карта ───────────────────────────────────────────────────────────────
+    const iconOpts = { iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34],
+        shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png' };
+    const CM='https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
+    const defaultIcon = L.icon({ iconUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png', ...iconOpts });
+    const selectedIcon = L.icon({ iconUrl:CM+'marker-icon-grey.png', iconRetinaUrl:CM+'marker-icon-2x-grey.png', ...iconOpts });
+    const noDepIcon = L.icon({ iconUrl:CM+'marker-icon-gold.png', iconRetinaUrl:CM+'marker-icon-2x-gold.png', ...iconOpts });
+
+    function iconFor(loc){
+        if (loc.id == activeLocId) return selectedIcon;
+        return loc.deployment_count > 0 ? defaultIcon : noDepIcon;
+    }
+
+    map = L.map('dep-map').setView([49.8,23.6], 7);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(map);
+
+    markersGroup = L.featureGroup();
+    locationsData.forEach(loc => {
+        const m = L.marker([loc.latitude, loc.longitude], { icon: iconFor(loc) });
+        m.on('click', () => selectLocation(loc.id));
+        markers[loc.id] = m;
+        markersGroup.addLayer(m);
+    });
+    markersGroup.addTo(map);
+    if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
+
+    // ── Фільтр локацій (доповнює карту) ──────────────────────────────────────
+    function rebuildLocFilter(visibleLocs){
+        const sel = $('#dep-loc-filter');
+        const cur = sel.val();
+        sel.find('option:not(:first)').remove();
+        visibleLocs.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(loc=>{
+            sel.append(`<option value="${loc.id}">${loc.name} (${loc.deployment_count})</option>`);
+        });
+        if (cur && visibleLocs.some(l=>l.id==cur)) sel.val(cur);
+    }
+
+    function visibleByInstitution(){
+        const instId = $('#dep-inst-filter').val();
+        return locationsData.filter(loc=>{
+            const ids = (loc.institution_ids||[]).map(Number);
+            return !instId || ids.includes(Number(instId));
+        });
+    }
+
+    function applyInstitutionFilter(){
+        const visible = visibleByInstitution();
+        const visibleIds = new Set(visible.map(l=>l.id));
+        locationsData.forEach(loc=>{
+            const m = markers[loc.id];
+            if (!m) return;
+            if (visibleIds.has(loc.id)) { if(!markersGroup.hasLayer(m)) markersGroup.addLayer(m); }
+            else { if(markersGroup.hasLayer(m)) markersGroup.removeLayer(m); }
+        });
+        rebuildLocFilter(visible);
+        if (activeLocId && !visibleIds.has(activeLocId)) { activeLocId=null; }
+        if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
+        renderTable();
+    }
+
+    $('#dep-inst-filter').on('change', applyInstitutionFilter);
+    $('#dep-loc-filter').on('change', function(){
+        const locId = $(this).val();
+        if (locId) selectLocation(Number(locId));
+        else { activeLocId=null; refreshMarkers(); renderTable(); }
+    });
+
+    function refreshMarkers(){
+        locationsData.forEach(loc => { if(markers[loc.id]) markers[loc.id].setIcon(iconFor(loc)); });
+    }
+
+    function selectLocation(locId){
+        activeLocId = locId;
+        refreshMarkers();
+        const m = markers[locId];
+        if (m) map.panTo(m.getLatLng());
+        $('#dep-loc-filter').val(String(locId));
+        renderTable();
+    }
+
+    // ── Таблиця деплойментів ─────────────────────────────────────────────────
+    function currentDeployments(){
+        const visible = new Set(visibleByInstitution().map(l=>l.id));
+        return deploymentsData.filter(d=>{
+            if (!visible.has(d.location_id)) return false;
+            if (activeLocId && d.location_id != activeLocId) return false;
+            return true;
+        });
+    }
+
+    function renderTable(){
+        const rows = currentDeployments();
+        const tbody = $('#dep-tbody').empty();
+        $('#dep-empty').toggle(rows.length === 0);
+        rows.forEach(d=>{
+            const tr = $(`<tr data-dep-id="${d.id}" class="${d.qc_data_not_usable ? 'dep-row-bad':''}">
+                <td>${d.name||''}</td>
+                <td>${d.study_year||''}</td>
+                <td>${d.study_season||''}</td>
+                <td>${d.start_date||''}</td>
+                <td>${d.end_date||''}</td>
+                <td>${d.camera_id||''}</td>
+            </tr>`);
+            if (d.id == activeDepId) tr.addClass('active');
+            tbody.append(tr);
+        });
+    }
+
+    $('#dep-tbody').on('click', 'tr', function(){
+        const depId = $(this).data('dep-id');
+        openEditForm(depId);
+    });
+
+    // ── Форма ─────────────────────────────────────────────────────────────────
+    function openEditForm(depId){
+        activeDepId = depId;
+        $('#dep-tbody tr').removeClass('active');
+        $(`#dep-tbody tr[data-dep-id="${depId}"]`).addClass('active');
+        fetch(`/${langCode}/camera-traps/api/deployment/${depId}`)
+            .then(r=>r.json())
+            .then(data=>{ if(!data.error) populateForm(data); else alert(data.error); })
+            .catch(()=>alert('{{ _("Помилка завантаження.") }}'));
+    }
+
+    function populateForm(d){
+        $('#dep-id').val(d.id);
+        $('#dep-edit-title').text('{{ _("Редагування:") }} ' + (d.name||''));
+        strFields.forEach(f=>$('#f-'+f).val(d[f]||''));
+        intFields.forEach(f=>$('#f-'+f).val(d[f] != null ? d[f] : ''));
+        dateFields.forEach(f=>$('#f-'+f).val(d[f]||''));
+        timeFields.forEach(f=>$('#f-'+f).val(d[f]||''));
+        textFields.forEach(f=>$('#f-'+f).val(d[f]||''));
+        $('#f-n_days_calc').val(d.n_days_calc != null ? d.n_days_calc : '');
+        boolFields.forEach(f=>$('#f-'+f).prop('checked', d[f] === true));
+        $('#dep-edit-panel').show();
+        document.getElementById('dep-edit-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
+    }
+
+    $('#dep-cancel-btn').on('click', function(){
+        $('#dep-edit-panel').hide();
+        activeDepId = null;
+        $('#dep-tbody tr').removeClass('active');
+    });
+
+    $('#dep-edit-form').on('submit', function(e){
+        e.preventDefault();
+        const depId = $('#dep-id').val();
+        if (!$('#f-name').val().trim()){ alert('{{ _("Назва обов\'язкова.") }}'); return; }
+        const payload = {};
+        strFields.forEach(f=>payload[f]=$('#f-'+f).val());
+        intFields.forEach(f=>{ const v=$('#f-'+f).val(); payload[f]= v===''? null : v; });
+        dateFields.forEach(f=>{ const v=$('#f-'+f).val(); payload[f]= v||null; });
+        timeFields.forEach(f=>{ const v=$('#f-'+f).val(); payload[f]= v||null; });
+        textFields.forEach(f=>payload[f]=$('#f-'+f).val());
+        boolFields.forEach(f=>payload[f]=$('#f-'+f).is(':checked'));
+
+        fetch(`/${langCode}/camera-traps/api/update-deployment/${depId}`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token() }}'},
+            body: JSON.stringify(payload)
+        })
+        .then(r=>r.json())
+        .then(resp=>{
+            if (resp.success){
+                alert(resp.message);
+                const idx = deploymentsData.findIndex(d=>d.id==depId);
+                if (idx>-1){
+                    const d = resp.deployment;
+                    Object.assign(deploymentsData[idx], {
+                        name:d.name, study_year:d.study_year, study_season:d.study_season,
+                        start_date:d.start_date, end_date:d.end_date, camera_id:d.camera_id,
+                        qc_data_not_usable:d.qc_data_not_usable
+                    });
+                }
+                renderTable();
+            } else { throw new Error(resp.error); }
+        })
+        .catch(err=>alert('{{ _("Помилка збереження:") }} ' + err.message));
+    });
+
+    // init
+    applyInstitutionFilter();
+});
+</script>
+{% endblock %}
