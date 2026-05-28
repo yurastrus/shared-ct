@@ -3216,8 +3216,28 @@ QC_FILTER_ORDER = [
 
 
 def _b(v):
-    """None трактуємо як False для логіки якості."""
+    """None трактуємо як False для логіки якості (де треба обчислити «чи проблема»)."""
     return bool(v) if v is not None else False
+
+
+def _kor(*vals):
+    """3-значне OR (як в R). True переважає; за відсутності True NA дає NA."""
+    has_na = False
+    for v in vals:
+        if v is True:
+            return True
+        if v is None:
+            has_na = True
+    return None if has_na else False
+
+
+def _kand(a, b):
+    """3-значне AND. False переважає; за відсутності False NA дає NA."""
+    if a is False or b is False:
+        return False
+    if a is None or b is None:
+        return None
+    return True
 
 
 @camera_traps_bp.route('/data-quality')
@@ -3267,16 +3287,21 @@ def data_quality(lang_code):
             if n_days is None and dep.start_date and dep.end_date:
                 n_days = (dep.end_date - dep.start_date).days
 
-            qc_no_gps = (lat is None or lon is None)
-            data_not_usable = (
-                _b(dep.qc_data_not_usable) or qc_no_gps or _b(dep.qc_feeding_location)
-                or _b(dep.qc_hardware_issue)
-                or (_b(dep.qc_installation_incorrect) and _b(dep.qc_no_species_captured))
-                or (_b(dep.qc_placement_incorrect) and _b(dep.qc_no_species_captured))
-                or (_b(dep.qc_poor_placement) and _b(dep.qc_no_species_captured))
+            qc_no_gps = (lat is None or lon is None)  # завжди True/False
+            # 3-значна логіка (як в R-скрипті): NA OR NA = NA; NA OR TRUE = TRUE; FALSE OR FALSE = FALSE.
+            data_not_usable = _kor(
+                dep.qc_data_not_usable,
+                qc_no_gps,
+                dep.qc_feeding_location,
+                dep.qc_hardware_issue,
+                _kand(dep.qc_installation_incorrect, dep.qc_no_species_captured),
+                _kand(dep.qc_placement_incorrect,    dep.qc_no_species_captured),
+                _kand(dep.qc_poor_placement,         dep.qc_no_species_captured),
             )
-            qc_summary = (data_not_usable or _b(dep.qc_no_data_uploaded_by_pa)
-                          or _b(dep.qc_sd_issue) or _b(dep.qc_stolen) or _b(dep.qc_non_functional))
+            qc_summary = _kor(
+                data_not_usable, dep.qc_no_data_uploaded_by_pa,
+                dep.qc_sd_issue, dep.qc_stolen, dep.qc_non_functional,
+            )
             min_days_not_reached = None
             if n_days is not None and dep.study_season:
                 if dep.study_season == 'Winter':
@@ -3284,7 +3309,8 @@ def data_quality(lang_code):
                 elif dep.study_season == 'Summer':
                     min_days_not_reached = n_days < 60
 
-            if qc_summary:
+            # Для статусу маркера на мапі трактуємо None як «без проблеми» (None != True).
+            if qc_summary is True:
                 status = 'issue'
             elif dep.study_season == 'Summer':
                 status = 'normal_summer'
