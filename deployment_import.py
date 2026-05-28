@@ -265,6 +265,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
         'updated': 0,
         'locations_created': 0,
         'locations_without_institution': 0,
+        'no_coords_deployments': 0,
         'skipped_no_location': 0,
         'skipped_bad_coords': 0,
         'skipped_no_name': 0,
@@ -310,49 +311,62 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
             ps = report['per_sheet'][sheet]
             ps['rows'] += 1
 
-            # координати -> локація
-            lat = row.get('latitude')
-            lon = row.get('longitude')
-            try:
-                key = (_round5(lat), _round5(lon))
-            except (TypeError, ValueError):
-                report['skipped_bad_coords'] += 1
-                ps['skipped_bad_coords'] += 1
-                continue
-            if key in ambiguous:
-                report['ambiguous_location'] += 1
-                ps['ambiguous_location'] += 1
-                continue
-            location_id = loc_index.get(key)
-            if location_id is None:
-                if not create_missing_locations:
-                    report['skipped_no_location'] += 1
-                    ps['skipped_no_location'] += 1
+            # координати -> локація. NaN/відсутні -> деплоймент без локації (для QC-аналізу).
+            lat = row.get('latitude'); lon = row.get('longitude')
+            coords_finite = False
+            key = None
+            if not _is_na(lat) and not _is_na(lon):
+                try:
+                    lat_f = float(lat); lon_f = float(lon)
+                    if math.isfinite(lat_f) and math.isfinite(lon_f):
+                        coords_finite = True
+                        key = (round(lat_f, 5), round(lon_f, 5))
+                except (TypeError, ValueError):
+                    # Реально нечитані координати (текст) -> bad_coords
+                    report['skipped_bad_coords'] += 1
+                    ps['skipped_bad_coords'] += 1
                     continue
-                # Створюємо нову локацію (name = deployment_id) + прив'язка установи
-                dep_name = coerce_str(row.get(name_col), 200) if name_col else None
-                if not dep_name:
-                    report['skipped_no_name'] += 1
-                    ps['skipped_no_name'] += 1
+
+            if not coords_finite:
+                # Деплоймент без GPS — імпортуємо без локації; це qc_no_gps_coordinates у R-аналізі.
+                location_id = None
+                report['no_coords_deployments'] = report.get('no_coords_deployments', 0) + 1
+                ps['no_coords'] = ps.get('no_coords', 0) + 1
+            else:
+                if key in ambiguous:
+                    report['ambiguous_location'] += 1
+                    ps['ambiguous_location'] += 1
                     continue
-                inst_id = None
-                if park_col is not None:
-                    park = normalize_header(row.get(park_col)) if not _is_na(row.get(park_col)) else None
-                    inst_id = park_institution_map.get(park) if park else None
-                    if park and inst_id is None:
-                        report['unmapped_parks'].add(str(row.get(park_col)).strip())
-                new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
-                session.add(new_loc)
-                session.flush()  # отримати id
-                location_id = new_loc.id
-                loc_index[key] = location_id
-                report['locations_created'] += 1
-                ps['locations_created'] += 1
-                if inst_id is not None:
-                    session.execute(location_institutions.insert().values(
-                        location_id=location_id, institution_id=inst_id))
-                else:
-                    report['locations_without_institution'] += 1
+                location_id = loc_index.get(key)
+                if location_id is None:
+                    if not create_missing_locations:
+                        report['skipped_no_location'] += 1
+                        ps['skipped_no_location'] += 1
+                        continue
+                    # Створюємо нову локацію (name = deployment_id) + прив'язка установи
+                    dep_name = coerce_str(row.get(name_col), 200) if name_col else None
+                    if not dep_name:
+                        report['skipped_no_name'] += 1
+                        ps['skipped_no_name'] += 1
+                        continue
+                    inst_id = None
+                    if park_col is not None:
+                        park = normalize_header(row.get(park_col)) if not _is_na(row.get(park_col)) else None
+                        inst_id = park_institution_map.get(park) if park else None
+                        if park and inst_id is None:
+                            report['unmapped_parks'].add(str(row.get(park_col)).strip())
+                    new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
+                    session.add(new_loc)
+                    session.flush()  # отримати id
+                    location_id = new_loc.id
+                    loc_index[key] = location_id
+                    report['locations_created'] += 1
+                    ps['locations_created'] += 1
+                    if inst_id is not None:
+                        session.execute(location_institutions.insert().values(
+                            location_id=location_id, institution_id=inst_id))
+                    else:
+                        report['locations_without_institution'] += 1
 
             # збір значень полів
             values = {'location_id': location_id}
@@ -439,6 +453,7 @@ def format_report(report):
     lines.append(f"  Оновлено:                {report['updated']}")
     lines.append(f"  Створено локацій:        {report.get('locations_created', 0)}")
     lines.append(f"  Локацій без установи:    {report.get('locations_without_institution', 0)}")
+    lines.append(f"  Деплойменти без GPS:     {report.get('no_coords_deployments', 0)}")
     lines.append(f"  Пропущено (нема локації):{report['skipped_no_location']}")
     lines.append(f"  Пропущено (биті коорд.): {report['skipped_bad_coords']}")
     lines.append(f"  Пропущено (нема назви):  {report['skipped_no_name']}")

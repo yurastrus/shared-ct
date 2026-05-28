@@ -107,7 +107,9 @@ class Deployment(CTBase):
     __tablename__ = 'deployments'
 
     id = Column(Integer, primary_key=True)
-    location_id = Column(Integer, ForeignKey('locations.id'), nullable=False, index=True)
+    # Може бути NULL для деплойментів без GPS-координат (їх включаємо в QC-аналіз як
+    # qc_no_gps_coordinates=TRUE; локацію не створюємо, на мапі не показуємо).
+    location_id = Column(Integer, ForeignKey('locations.id'), nullable=True, index=True)
     name = Column(String(200), nullable=False)  # deployment_id з Екселю
 
     # Часовий інтервал деплойменту

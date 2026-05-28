@@ -2852,10 +2852,16 @@ def manage_deployments(lang_code):
         else:
             filter_institutions = []
 
-        # Деплойменти видимих локацій
-        if loc_ids:
-            deps = (ct_session.query(Deployment)
-                    .filter(Deployment.location_id.in_(loc_ids))
+        # Деплойменти видимих локацій. Адмін також бачить деплойменти без GPS (location_id IS NULL).
+        dep_q = ct_session.query(Deployment)
+        if is_admin:
+            cond = Deployment.location_id.is_(None)
+            if loc_ids:
+                cond = Deployment.location_id.in_(loc_ids) | cond
+            deps = dep_q.filter(cond).order_by(Deployment.location_id.nullslast(),
+                                               Deployment.start_date).all()
+        elif loc_ids:
+            deps = (dep_q.filter(Deployment.location_id.in_(loc_ids))
                     .order_by(Deployment.location_id, Deployment.start_date).all())
         else:
             deps = []
@@ -3228,8 +3234,15 @@ def data_quality(lang_code):
         if not loc_ids:
             loc_ids = []
 
-        deps = (ct_session.query(Deployment).filter(Deployment.location_id.in_(loc_ids)).all()
-                if loc_ids else [])
+        # Адмін бачить також деплойменти без GPS (location_id IS NULL) — для QC-аналізу.
+        dep_q = ct_session.query(Deployment)
+        if is_admin:
+            cond = Deployment.location_id.is_(None)
+            if loc_ids:
+                cond = Deployment.location_id.in_(loc_ids) | cond
+            deps = dep_q.filter(cond).all()
+        else:
+            deps = dep_q.filter(Deployment.location_id.in_(loc_ids)).all() if loc_ids else []
         locs = {l.id: l for l in ct_session.query(Location).filter(Location.id.in_(loc_ids)).all()} \
             if loc_ids else {}
         loc_inst = {}
