@@ -322,14 +322,28 @@ $(document).ready(function() {
 
     function loadAndDisplayCounter() {
         const counterElement = $('#identification-counter');
-        
+
         // Не показуємо лічильник у режимі перегляду
         if (reviewMode) {
             counterElement.hide();
             return;
         }
 
-        fetch("{{ url_for('camera_traps.api_get_identification_stats', lang_code=g.lang_code) }}")
+        const params = new URLSearchParams();
+        const scopeVal = $('#scope-select').val() || '';
+        if (scopeVal.startsWith('institution:')) {
+            params.set('scope_institution_id', scopeVal.split(':')[1]);
+        } else if (scopeVal.startsWith('ecoregion:')) {
+            params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
+        }
+        const aiSpeciesId = $('#ai-species-select').val();
+        if (aiSpeciesId) {
+            params.set('ai_species_id', aiSpeciesId);
+        }
+        const statsUrl = "{{ url_for('camera_traps.api_get_identification_stats', lang_code=g.lang_code) }}" +
+            (params.toString() ? '?' + params.toString() : '');
+
+        fetch(statsUrl)
             .then(response => {
                 if (!response.ok) return Promise.reject('Failed to fetch count');
                 return response.json();
@@ -416,6 +430,7 @@ $(document).ready(function() {
 
     // AI-фільтр: при зміні одразу завантажуємо нову серію.
     $('#ai-species-select').on('change', function() {
+        loadAndDisplayCounter();
         loadNextObservation();
     });
 
@@ -472,7 +487,10 @@ $(document).ready(function() {
     }
 
     $('#scope-select').on('change', function() {
-        refreshAiSpeciesList().then(loadNextObservation);
+        refreshAiSpeciesList().then(() => {
+            loadAndDisplayCounter();
+            loadNextObservation();
+        });
     });
 
     function displayExistingIdentifications(identifications) {

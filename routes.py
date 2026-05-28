@@ -3759,6 +3759,10 @@ def api_get_identification_stats(lang_code):
     """
     ct_session = get_ct_session()
     try:
+        scope_institution_id = request.args.get('scope_institution_id', type=int)
+        scope_ecoregion = request.args.get('scope_ecoregion', '')
+        ai_species_id = request.args.get('ai_species_id', type=int)
+
         # Отримуємо ID фотографій, вже ідентифікованих цим користувачем
         user_identified_photos = ct_session.query(Identification.photo_id)\
                                              .filter_by(user_id=current_user.id)
@@ -3778,6 +3782,40 @@ def api_get_identification_stats(lang_code):
             else:
                 location_filter = (Location.visibility_level == 0)
 
+        # Додатковий фільтр scope (вибрана установа або екорегіон)
+        scope_location_subq = None
+        if scope_institution_id:
+            if is_admin or scope_institution_id in user_inst_ids:
+                scope_location_subq = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id == scope_institution_id
+                )
+        elif scope_ecoregion:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_ecoregion).all()]
+            if not is_admin:
+                eco_inst_ids = [i for i in eco_inst_ids if i in user_inst_ids]
+            if eco_inst_ids:
+                scope_location_subq = select(location_institutions.c.location_id).where(
+                    location_institutions.c.institution_id.in_(eco_inst_ids)
+                )
+
+        # AI-фільтр: рахуємо лише серії, де AI визначив вибраний вид
+        # (від активної моделі). Тихо ігнорується, якщо AI ще не активний.
+        ai_observation_subq = None
+        if ai_species_id is not None:
+            from .ai_runner import is_ai_available
+            from .models import AIModel, AIPrediction
+            if is_ai_available():
+                active_model = ct_session.query(AIModel).filter_by(is_active=True).first()
+                if active_model is not None:
+                    ai_observation_subq = (
+                        select(AIPrediction.observation_id)
+                        .where(
+                            AIPrediction.model_id == active_model.id,
+                            AIPrediction.prediction_species_id == ai_species_id,
+                        )
+                        .distinct()
+                    )
+
         # Рахуємо кількість спостережень, які в статусі 'pending' і
         # НЕ містять жодного фото, яке користувач вже ідентифікував
         query = ct_session.query(Observation.id)\
@@ -3789,6 +3827,12 @@ def api_get_identification_stats(lang_code):
         if not is_admin:
             query = query.join(Location, Observation.location_id == Location.id)\
                 .filter(location_filter)
+
+        if scope_location_subq is not None:
+            query = query.filter(Observation.location_id.in_(scope_location_subq))
+
+        if ai_observation_subq is not None:
+            query = query.filter(Observation.id.in_(ai_observation_subq))
 
         remaining_count = query.count()
 
