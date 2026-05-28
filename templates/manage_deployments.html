@@ -35,6 +35,20 @@
   .qc-fieldset > legend { font-size: .82rem; font-weight: 600; color: #6c757d; float: none; width: auto; margin: 0 0 6px; padding: 0; }
   .qc-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 3px 18px; }
   .qc-grid .form-check { margin-bottom: 0; }
+  /* Tri-state QC button: null (порожня) / false (зелена ✓) / true (червона ✗) */
+  .qc-row { display: flex; align-items: center; gap: 6px; }
+  .qc-tri { width: 18px; height: 18px; padding: 0; border: 1px solid #adb5bd; border-radius: 3px;
+            background: #fff; color: transparent; font-size: 11px; line-height: 1; font-weight: 700;
+            display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+            flex-shrink: 0; transition: background .12s, border-color .12s; }
+  .qc-tri:hover { border-color: #6c757d; }
+  .qc-tri[data-value="true"]  { background: #cb2b3e; border-color: #a92132; color: #fff; }
+  .qc-tri[data-value="true"]::after  { content: "\2715"; color: #fff; }   /* ✕ */
+  .qc-tri[data-value="false"] { background: #2a9d3e; border-color: #237f33; color: #fff; }
+  .qc-tri[data-value="false"]::after { content: "\2713"; color: #fff; }   /* ✓ */
+  .qc-tri-label { cursor: pointer; user-select: none; }
+  .qc-tri-legend { width: 12px; height: 12px; vertical-align: middle; margin: 0 2px; }
+  .qc-tri-legend::after { font-size: 8px; }
   .dep-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; }
 
   /* Власна сітка полів форми (не залежить від Bootstrap row/col) */
@@ -251,12 +265,22 @@
                     </div>
 
                     <fieldset class="qc-fieldset mt-3 mb-2">
-                        <legend>{{ _('Контроль якості') }}</legend>
+                        <legend>
+                            {{ _('Контроль якості') }}
+                            <span class="text-muted small" style="font-weight:normal;">
+                                — {{ _('клік перемикає:') }}
+                                <span class="qc-tri-legend qc-tri" data-value="null"></span> {{ _('невідомо') }}
+                                · <span class="qc-tri-legend qc-tri" data-value="false"></span> {{ _('немає проблеми') }}
+                                · <span class="qc-tri-legend qc-tri" data-value="true"></span> {{ _('є проблема') }}
+                            </span>
+                        </legend>
                         <div class="qc-grid">
                             {% for f in bool_fields %}
-                            <div class="form-check">
-                                <input class="form-check-input qc-check" type="checkbox" id="f-{{ f }}" data-field="{{ f }}">
-                                <label class="form-check-label small" for="f-{{ f }}">{{ qc_labels.get(f, f) }}</label>
+                            <div class="qc-row">
+                                <button type="button" class="qc-tri" id="f-{{ f }}"
+                                        data-field="{{ f }}" data-value="null"
+                                        title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
+                                <label class="qc-tri-label small" for="f-{{ f }}">{{ qc_labels.get(f, f) }}</label>
                             </div>
                             {% endfor %}
                         </div>
@@ -478,7 +502,7 @@ $(document).ready(function() {
         $('#dep-id').val('');
         strFields.concat(intFields, dateFields, timeFields, textFields).forEach(f=>$('#f-'+f).val(''));
         $('#f-n_days_calc').val('');
-        boolFields.forEach(f=>$('#f-'+f).prop('checked', false));
+        boolFields.forEach(f=>$('#f-'+f).attr('data-value', 'null'));
     }
 
     function showPanel(){
@@ -520,7 +544,11 @@ $(document).ready(function() {
         timeFields.forEach(f=>$('#f-'+f).val(d[f]||''));
         textFields.forEach(f=>$('#f-'+f).val(d[f]||''));
         $('#f-n_days_calc').val(d.n_days_calc != null ? d.n_days_calc : '');
-        boolFields.forEach(f=>$('#f-'+f).prop('checked', d[f] === true));
+        boolFields.forEach(f => {
+            const v = d[f];
+            const s = (v === true) ? 'true' : (v === false ? 'false' : 'null');
+            $('#f-'+f).attr('data-value', s);
+        });
         showPanel();
     }
 
@@ -540,7 +568,10 @@ $(document).ready(function() {
         dateFields.forEach(f=>{ const v=$('#f-'+f).val(); payload[f]= v||null; });
         timeFields.forEach(f=>{ const v=$('#f-'+f).val(); payload[f]= v||null; });
         textFields.forEach(f=>payload[f]=$('#f-'+f).val());
-        boolFields.forEach(f=>payload[f]=$('#f-'+f).is(':checked'));
+        boolFields.forEach(f => {
+            const v = $('#f-'+f).attr('data-value');
+            payload[f] = (v === 'true') ? true : (v === 'false' ? false : null);
+        });
         return payload;
     }
 
@@ -610,6 +641,17 @@ $(document).ready(function() {
             renderTable();
         })
         .catch(err=>alert('{{ _("Помилка видалення:") }} ' + err.message));
+    });
+
+    // Tri-state QC: клік на кнопці циклічно null -> true -> false -> null
+    // Клік на лейблі QC робить теж саме (зручніше попадати).
+    const _qcCycle = { 'null': 'true', 'true': 'false', 'false': 'null' };
+    $('#dep-edit-form').on('click', '.qc-tri', function(){
+        const cur = $(this).attr('data-value') || 'null';
+        $(this).attr('data-value', _qcCycle[cur]);
+    });
+    $('#dep-edit-form').on('click', '.qc-tri-label', function(){
+        $('#' + $(this).attr('for')).trigger('click');
     });
 
     // init
