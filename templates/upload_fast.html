@@ -18,6 +18,19 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<style>
+  /* Tri-state QC button: null/false/true (як на manage-deployments) */
+  .qc-tri-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .qc-tri-up { width: 18px; height: 18px; padding: 0; border: 1px solid #adb5bd; border-radius: 3px;
+               background: #fff; display: inline-flex; align-items: center; justify-content: center;
+               cursor: pointer; flex-shrink: 0; vertical-align: middle; font-size: 11px; line-height: 1; }
+  .qc-tri-up:hover { border-color: #6c757d; }
+  .qc-tri-up[data-value="true"]  { background: #cb2b3e; border-color: #a92132; }
+  .qc-tri-up[data-value="true"]::after  { content: "\2715"; color: #fff; }
+  .qc-tri-up[data-value="false"] { background: #2a9d3e; border-color: #237f33; }
+  .qc-tri-up[data-value="false"]::after { content: "\2713"; color: #fff; }
+  .qc-tri-up-label { cursor: pointer; user-select: none; margin: 0; }
+</style>
 {% endblock %}
 
 {% block ct_content %}
@@ -165,23 +178,26 @@
                                 <input type="time" class="form-control" id="dep-end-time">
                             </div>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="dep-not-usable">
-                            <label class="form-check-label small" for="dep-not-usable">
-                                {{ _('Дані непридатні для аналізу') }}
-                            </label>
+                        <small class="text-muted d-block mb-1">
+                            {{ _('клік перемикає:') }}
+                            <span class="qc-tri-up" data-value="null"></span> {{ _('невідомо') }}
+                            · <span class="qc-tri-up" data-value="false"></span> {{ _('немає проблеми') }}
+                            · <span class="qc-tri-up" data-value="true"></span> {{ _('є проблема') }}
+                        </small>
+                        <div class="qc-tri-row">
+                            <button type="button" class="qc-tri-up" id="dep-not-usable" data-value="null"
+                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
+                            <label class="qc-tri-up-label small" for="dep-not-usable">{{ _('Дані непридатні для аналізу') }}</label>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="dep-feeding-location">
-                            <label class="form-check-label small" for="dep-feeding-location">
-                                {{ _('Камера біля годівниці') }}
-                            </label>
+                        <div class="qc-tri-row">
+                            <button type="button" class="qc-tri-up" id="dep-feeding-location" data-value="null"
+                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
+                            <label class="qc-tri-up-label small" for="dep-feeding-location">{{ _('Камера біля годівниці') }}</label>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="dep-installation-incorrect">
-                            <label class="form-check-label small" for="dep-installation-incorrect">
-                                {{ _('Неправильна установка') }}
-                            </label>
+                        <div class="qc-tri-row">
+                            <button type="button" class="qc-tri-up" id="dep-installation-incorrect" data-value="null"
+                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
+                            <label class="qc-tri-up-label small" for="dep-installation-incorrect">{{ _('Неправильна установка') }}</label>
                         </div>
                         <div class="mt-2">
                             <label class="form-label text-muted">{{ _('Коментар') }}</label>
@@ -262,6 +278,16 @@
 
 <script>
 $(document).ready(function () {
+    // Tri-state QC у блоці деплойменту: клік перемикає null -> true -> false -> null.
+    const _qcCycleUp = { 'null': 'true', 'true': 'false', 'false': 'null' };
+    $(document).on('click', 'button.qc-tri-up', function(){
+        const cur = $(this).attr('data-value') || 'null';
+        $(this).attr('data-value', _qcCycleUp[cur]);
+    });
+    $(document).on('click', '.qc-tri-up-label', function(){
+        $('#' + $(this).attr('for')).trigger('click');
+    });
+
     // Coord inputs: дозволяємо як крапку, так і кому як десятковий
     // розділювач (Ukrainian Excel використовує кому). На input — одразу
     // нормалізуємо до крапки, щоб parseFloat коректно прочитав.

@@ -2790,8 +2790,8 @@ def _apply_deployment_fields(dep, data):
 
 
 def _user_can_access_location(ct_session, location_id):
-    """admin -> завжди; manager -> лише якщо локація належить його установі."""
-    if current_user.has_role('admin'):
+    """admin/qc_control -> завжди; manager -> лише якщо локація належить його установі."""
+    if current_user.has_role('admin') or current_user.has_role('qc_control'):
         return True
     user_inst_ids = [inst.id for inst in current_user.institutions]
     if not user_inst_ids:
@@ -2807,15 +2807,16 @@ def _user_can_access_location(ct_session, location_id):
 
 @camera_traps_bp.route('/manage-deployments')
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def manage_deployments(lang_code):
     """Сторінка управління деплойментами: карта локацій + таблиця/форма деплойментів."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
+        is_full_access = is_admin or current_user.has_role('qc_control')
         user_inst_ids = [inst.id for inst in current_user.institutions]
 
-        if is_admin:
+        if is_full_access:
             locations_objects = ct_session.query(Location).order_by(Location.name).all()
         elif user_inst_ids:
             locations_objects = (
@@ -2844,7 +2845,7 @@ def manage_deployments(lang_code):
         used_inst_ids = set()
         for ids in loc_inst_map.values():
             used_inst_ids.update(ids)
-        if is_admin and used_inst_ids:
+        if is_full_access and used_inst_ids:
             filter_institutions = Institution.query.filter(
                 Institution.id.in_(used_inst_ids)).order_by(Institution.name_uk).all()
         elif used_inst_ids:
@@ -2852,9 +2853,10 @@ def manage_deployments(lang_code):
         else:
             filter_institutions = []
 
-        # Деплойменти видимих локацій. Адмін також бачить деплойменти без GPS (location_id IS NULL).
+        # Деплойменти видимих локацій. Адмін / qc_control також бачать деплойменти
+        # без GPS (location_id IS NULL); звичайний менеджер — лише з локацією.
         dep_q = ct_session.query(Deployment)
-        if is_admin:
+        if is_full_access:
             cond = Deployment.location_id.is_(None)
             if loc_ids:
                 cond = Deployment.location_id.in_(loc_ids) | cond
@@ -2901,7 +2903,7 @@ def manage_deployments(lang_code):
                                geoserver_url=current_app.config['GEOSERVER_URL'],
                                filter_institutions=filter_institutions,
                                years=years,
-                               is_admin=is_admin,
+                               is_admin=is_full_access,  # qc_control теж бачить усе
                                bool_fields=DEPLOYMENT_BOOL_FIELDS)
     except Exception as e:
         current_app.logger.error(f"Error loading deployment management page: {e}", exc_info=True)
@@ -2913,7 +2915,7 @@ def manage_deployments(lang_code):
 
 @camera_traps_bp.route('/api/deployment/<int:deployment_id>')
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def api_get_deployment(lang_code, deployment_id):
     ct_session = get_ct_session()
     try:
@@ -2929,7 +2931,7 @@ def api_get_deployment(lang_code, deployment_id):
 
 @camera_traps_bp.route('/api/update-deployment/<int:deployment_id>', methods=['POST'])
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def update_deployment(lang_code, deployment_id):
     """Оновлення полів деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
     ct_session = get_ct_session()
@@ -2961,7 +2963,7 @@ def update_deployment(lang_code, deployment_id):
 
 @camera_traps_bp.route('/api/deployment/create', methods=['POST'])
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def api_create_deployment(lang_code):
     """Створення нового деплойменту на вибраній локації."""
     ct_session = get_ct_session()
@@ -2999,7 +3001,7 @@ def api_create_deployment(lang_code):
 
 @camera_traps_bp.route('/api/deployment/<int:deployment_id>/delete', methods=['POST'])
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def delete_deployment(lang_code, deployment_id):
     """Видалення деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
     ct_session = get_ct_session()
@@ -3073,7 +3075,7 @@ def _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institutio
 
 @camera_traps_bp.route('/export-deployments')
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def export_deployments(lang_code):
     """Експорт деплойментів в Ексель з урахуванням фільтрів (установа, рік).
     Структура файлу повторює вихідний ARD-Ексель + назва установи й природний регіон."""
@@ -3083,12 +3085,13 @@ def export_deployments(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
+        is_full_access = is_admin or current_user.has_role('qc_control')
         user_inst_ids = [inst.id for inst in current_user.institutions]
 
         institution_id = request.args.get('institution_id', type=int)
         year = request.args.get('year', type=int)
 
-        loc_ids = _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institution_id)
+        loc_ids = _resolve_export_location_ids(ct_session, is_full_access, user_inst_ids, institution_id)
         if loc_ids is None:
             flash(_('Немає доступу до цієї установи.'), 'danger')
             return redirect(url_for('camera_traps.manage_deployments', lang_code=lang_code))
@@ -3242,21 +3245,24 @@ def _kand(a, b):
 
 @camera_traps_bp.route('/data-quality')
 @login_required
-@role_required('manager')
+@role_required('manager', 'qc_control')
 def data_quality(lang_code):
     """Сторінка оцінки якості даних: карта + інтерактивні графіки QC.
     Похідні поля рахуються як у R-скрипті 01_Camera_trap_location_analysis."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
+        is_full_access = is_admin or current_user.has_role('qc_control')
         user_inst_ids = [inst.id for inst in current_user.institutions]
-        loc_ids = _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, None)
+        # _resolve_export_location_ids приймає is_admin — для qc_control «увесь доступ»
+        # передаємо True, щоб отримати ВСІ локації.
+        loc_ids = _resolve_export_location_ids(ct_session, is_full_access, user_inst_ids, None)
         if not loc_ids:
             loc_ids = []
 
-        # Адмін бачить також деплойменти без GPS (location_id IS NULL) — для QC-аналізу.
+        # Адмін / qc_control бачать також деплойменти без GPS (location_id IS NULL).
         dep_q = ct_session.query(Deployment)
-        if is_admin:
+        if is_full_access:
             cond = Deployment.location_id.is_(None)
             if loc_ids:
                 cond = Deployment.location_id.in_(loc_ids) | cond
