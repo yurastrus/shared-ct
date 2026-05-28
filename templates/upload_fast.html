@@ -1,5 +1,42 @@
 {% extends "ct_base.html" %}
 
+{# QC-мітки доступні і в ct_content, і в scripts. Узгоджено зі сторінкою якості. #}
+{% set qc_labels = {
+  'qc_non_functional': _('Не функціонує'),
+  'qc_stolen': _('Викрадена'),
+  'qc_hardware_issue': _('Проблема обладнання'),
+  'qc_firmware_issue': _('Проблема прошивки'),
+  'qc_settings_issue': _('Проблема налаштувань'),
+  'qc_battery_issue': _('Проблема з батарейками'),
+  'qc_sd_issue': _('Проблема SD-карти'),
+  'qc_no_data_uploaded_by_pa': _('Установа не завантажила дані'),
+  'qc_uploaded_data_is_not_raw': _('Дані не сирі'),
+  'qc_no_species_captured': _('Не зафіксовано видів'),
+  'qc_placement_incorrect': _('Неправильне розміщення'),
+  'qc_poor_placement': _('Погане розміщення'),
+  'qc_feeding_location': _('Біля годівниці'),
+  'qc_installation_incorrect': _('Неправильна установка'),
+  'qc_lapse_photos_missed': _('Немає lapse-фото'),
+  'qc_installation_photos_missed': _('Немає фото встановлення'),
+  'qc_deinstallation_photos_missed': _('Немає фото демонтажу'),
+  'qc_distance_reference_photos_missed': _('Немає реф. фото відстані'),
+  'qc_datetime_photos_missed': _('Немає фото дати/часу'),
+  'qc_local_datetime_not_set': _('Локальний час не виставлено'),
+  'qc_data_not_usable': _('Дані непридатні'),
+  'qc_used_brf': _('Використано BRF'),
+} %}
+{# Поля QC, які доречно ставити при завантаженні (без qc_no_gps_coordinates — воно автоматичне) #}
+{% set qc_upload_fields = [
+  'qc_data_not_usable', 'qc_feeding_location', 'qc_installation_incorrect',
+  'qc_placement_incorrect', 'qc_poor_placement', 'qc_no_species_captured',
+  'qc_non_functional', 'qc_stolen', 'qc_hardware_issue', 'qc_firmware_issue',
+  'qc_settings_issue', 'qc_battery_issue', 'qc_sd_issue',
+  'qc_no_data_uploaded_by_pa', 'qc_uploaded_data_is_not_raw',
+  'qc_lapse_photos_missed', 'qc_installation_photos_missed',
+  'qc_deinstallation_photos_missed', 'qc_distance_reference_photos_missed',
+  'qc_datetime_photos_missed', 'qc_local_datetime_not_set', 'qc_used_brf',
+] %}
+
 {# ──────────────────────────────────────────────────────────────────────────
    upload_fast.html — клон upload.html для масштабних завантажень.
    Відмінності від legacy /upload:
@@ -30,6 +67,10 @@
   .qc-tri-up[data-value="false"] { background: #2a9d3e; border-color: #237f33; }
   .qc-tri-up[data-value="false"]::after { content: "\2713"; color: #fff; }
   .qc-tri-up-label { cursor: pointer; user-select: none; margin: 0; }
+  .qc-up-section { border: 1px solid #e3e6ea; border-radius: 6px; padding: 8px 10px; margin-top: 4px; background: #fff; }
+  .qc-up-legend { font-size: .78rem; font-weight: 600; color: #6c757d; margin-bottom: 6px; }
+  .qc-up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+  @media (max-width: 520px){ .qc-up-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
@@ -178,26 +219,25 @@
                                 <input type="time" class="form-control" id="dep-end-time">
                             </div>
                         </div>
-                        <small class="text-muted d-block mb-1">
-                            {{ _('клік перемикає:') }}
-                            <span class="qc-tri-up" data-value="null"></span> {{ _('невідомо') }}
-                            · <span class="qc-tri-up" data-value="false"></span> {{ _('немає проблеми') }}
-                            · <span class="qc-tri-up" data-value="true"></span> {{ _('є проблема') }}
-                        </small>
-                        <div class="qc-tri-row">
-                            <button type="button" class="qc-tri-up" id="dep-not-usable" data-value="null"
-                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
-                            <label class="qc-tri-up-label small" for="dep-not-usable">{{ _('Дані непридатні для аналізу') }}</label>
-                        </div>
-                        <div class="qc-tri-row">
-                            <button type="button" class="qc-tri-up" id="dep-feeding-location" data-value="null"
-                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
-                            <label class="qc-tri-up-label small" for="dep-feeding-location">{{ _('Камера біля годівниці') }}</label>
-                        </div>
-                        <div class="qc-tri-row">
-                            <button type="button" class="qc-tri-up" id="dep-installation-incorrect" data-value="null"
-                                    title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
-                            <label class="qc-tri-up-label small" for="dep-installation-incorrect">{{ _('Неправильна установка') }}</label>
+                        <div class="qc-up-section">
+                            <div class="qc-up-legend">
+                                {{ _('Контроль якості') }}
+                                <span class="text-muted small">
+                                    — {{ _('клік перемикає:') }}
+                                    <span class="qc-tri-up" data-value="null"></span> {{ _('невідомо') }}
+                                    · <span class="qc-tri-up" data-value="false"></span> {{ _('немає проблеми') }}
+                                    · <span class="qc-tri-up" data-value="true"></span> {{ _('є проблема') }}
+                                </span>
+                            </div>
+                            <div class="qc-up-grid">
+                                {% for f in qc_upload_fields %}
+                                <div class="qc-tri-row">
+                                    <button type="button" class="qc-tri-up" id="dep-{{ f }}" data-field="{{ f }}" data-value="null"
+                                            title="{{ _('клік перемикає невідомо / немає / є проблема') }}"></button>
+                                    <label class="qc-tri-up-label small" for="dep-{{ f }}">{{ qc_labels.get(f, f) }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
                         </div>
                         <div class="mt-2">
                             <label class="form-label text-muted">{{ _('Коментар') }}</label>
