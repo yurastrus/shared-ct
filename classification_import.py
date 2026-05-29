@@ -44,7 +44,9 @@ IMPORT_MODEL_VERSION = '1.4.1'
 NON_ANIMAL_LABELS = {'empty', 'human', 'vehicle'}
 
 CSV_DATE_FMT = '%Y:%m:%d %H:%M:%S'
-REQUIRED_COLUMNS = {'filename', 'date', 'predictionbase', 'scorebase', 'top1', 'count', 'humancount'}
+# Лише справді необхідні колонки. Решта (top1, count, humancount) — опційні:
+# різні експорти/версії DeepFaune дають різний набір (напр. без `count`).
+REQUIRED_COLUMNS = {'filename', 'date', 'predictionbase', 'scorebase'}
 
 
 # ──────────────────────────────────────────────────────────────────────────
