@@ -1,0 +1,215 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Імпорт класифікації DeepFaune') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+{% endblock %}
+
+{% block ct_content %}
+<input type="hidden" id="csrf-field" value="{{ csrf_token() }}"/>
+
+<div class="container-fluid px-3 py-3" style="max-width: 900px;">
+
+    <h4 class="mb-1" style="font-size:1.2rem;">{{ _('Імпорт зовнішньої класифікації DeepFaune') }}</h4>
+    <p class="text-muted" style="font-size:.9rem;">
+        {{ _('Накладає результати локального прогону (CSV) на вже завантажені фото обраної локації. Серверні прогнози не змінюються — імпорт зберігається окремою моделлю (рівень MDR).') }}
+    </p>
+
+    <!-- STEP 1: локація -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="card-title">{{ _('1. Локація') }}</h6>
+
+            <div class="mb-2 d-flex align-items-center gap-2">
+                <label style="white-space:nowrap;margin:0;">{{ _('Установа:') }}</label>
+                <select id="institution-select" class="form-select">
+                    <option value="">{{ _('-- Усі доступні установи --') }}</option>
+                    {% for inst in institutions %}
+                        <option value="{{ inst.id }}">
+                            {{ inst.name_uk if g.lang_code == 'uk' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <select id="location-select" class="form-select">
+                {% for val, label in location_choices %}
+                    <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <!-- Рівень моделі (обов'язково) -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="card-title">{{ _('2. Рівень моделі (детектор)') }} *</h6>
+            <select id="level-select" class="form-select" required>
+                <option value="" selected disabled>{{ _('-- Оберіть рівень --') }}</option>
+                {% for lv in level_choices %}
+                    <option value="{{ lv.id }}">{{ lv.code }} — {{ lv.name }}</option>
+                {% endfor %}
+            </select>
+            <small class="text-muted">{{ _('Яким детектором прогнано цей CSV. Обов’язково.') }}</small>
+        </div>
+    </div>
+
+    <!-- STEP 2: файл -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="card-title">{{ _('3. CSV-файл DeepFaune') }}</h6>
+            <input type="file" id="csv-input" class="form-control" accept=".csv">
+            <small class="text-muted">{{ _('Один файл на локацію (напр. 0801.csv).') }}</small>
+        </div>
+    </div>
+
+    <!-- STEP 3: дії -->
+    <div class="d-flex gap-2 mb-3">
+        <button id="btn-preview" class="btn btn-outline-primary">{{ _('Прев’ю (без запису)') }}</button>
+        <button id="btn-run" class="btn btn-success" disabled>{{ _('Імпортувати') }}</button>
+        <span id="spinner" class="align-self-center text-muted" style="display:none;">{{ _('Обробка…') }}</span>
+    </div>
+
+    <div id="result" style="display:none;"></div>
+
+</div>
+
+<script>
+(function () {
+    const csrf = document.getElementById('csrf-field').value;
+    const locationsData = {{ locations_json_string | safe }};
+    const instSelect = document.getElementById('institution-select');
+    const locSelect = document.getElementById('location-select');
+    const levelSelect = document.getElementById('level-select');
+    const csvInput = document.getElementById('csv-input');
+    let lastMatched = null;   // к-сть збігів останнього прев'ю (null = прев'ю не робили)
+    const btnPreview = document.getElementById('btn-preview');
+    const btnRun = document.getElementById('btn-run');
+    const spinner = document.getElementById('spinner');
+    const result = document.getElementById('result');
+
+    const allOptions = Array.from(locSelect.options).map(o => ({
+        value: o.value, text: o.text
+    }));
+
+    // Фільтр локацій за установою
+    instSelect.addEventListener('change', function () {
+        const instId = this.value ? parseInt(this.value, 10) : null;
+        const allowed = instId
+            ? new Set(locationsData.filter(l => l.institution_ids.includes(instId)).map(l => l.id))
+            : null;
+        locSelect.innerHTML = '';
+        allOptions.forEach(opt => {
+            const idNum = parseInt(opt.value, 10);
+            if (idNum < 0 || allowed === null || allowed.has(idNum)) {
+                const o = document.createElement('option');
+                o.value = opt.value; o.textContent = opt.text;
+                locSelect.appendChild(o);
+            }
+        });
+        invalidate();
+    });
+
+    // Import дозволено лише коли є збіги в прев'ю І обрано рівень моделі.
+    function updateRunGate() {
+        btnRun.disabled = !(lastMatched > 0 && levelSelect.value);
+    }
+    function invalidate() {
+        lastMatched = null;
+        btnRun.disabled = true;
+        result.style.display = 'none';
+    }
+    locSelect.addEventListener('change', invalidate);
+    csvInput.addEventListener('change', invalidate);
+    levelSelect.addEventListener('change', updateRunGate);   // рівень не скидає прев'ю
+
+    function currentForm(includeLevel) {
+        const locId = parseInt(locSelect.value, 10);
+        if (!locId || locId <= 0) { alert("{{ _('Оберіть локацію') }}"); return null; }
+        if (!csvInput.files.length) { alert("{{ _('Оберіть CSV-файл') }}"); return null; }
+        const fd = new FormData();
+        fd.append('location_id', locId);
+        fd.append('file', csvInput.files[0]);
+        if (includeLevel) {
+            if (!levelSelect.value) { alert("{{ _('Оберіть рівень моделі') }}"); return null; }
+            fd.append('level_id', levelSelect.value);
+        }
+        return fd;
+    }
+
+    function busy(on) {
+        spinner.style.display = on ? 'inline' : 'none';
+        btnPreview.disabled = on;
+    }
+
+    function esc(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+    btnPreview.addEventListener('click', function () {
+        const fd = currentForm(false);
+        if (!fd) return;
+        busy(true); result.style.display = 'none';
+        fetch("{{ url_for('camera_traps.import_classification_preview', lang_code=g.lang_code) }}", {
+            method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd
+        }).then(r => r.json().then(d => ({ok: r.ok, d}))).then(({ok, d}) => {
+            busy(false);
+            if (!ok) { showError(d.error || 'error'); return; }
+            const matched = d.matched;
+            result.style.display = 'block';
+            result.innerHTML =
+                '<div class="card"><div class="card-body">' +
+                '<h6>' + "{{ _('Результат прев’ю') }}" + '</h6>' +
+                '<ul class="mb-2">' +
+                '<li>' + "{{ _('Рядків у CSV:') }}" + ' <b>' + d.csv_rows + '</b></li>' +
+                '<li>' + "{{ _('Фото на локації (згрупованих):') }}" + ' <b>' + d.location_photos + '</b></li>' +
+                '<li class="text-success">' + "{{ _('Співпало:') }}" + ' <b>' + matched + '</b></li>' +
+                '<li class="text-warning">' + "{{ _('CSV без фото в БД:') }}" + ' <b>' + d.csv_unmatched + '</b></li>' +
+                '<li class="text-muted">' + "{{ _('Фото без рядка в CSV:') }}" + ' <b>' + d.db_without_prediction + '</b></li>' +
+                (d.csv_duplicate_keys ? '<li class="text-muted">' + "{{ _('Дублікатів-ключів у CSV:') }}" + ' ' + d.csv_duplicate_keys + '</li>' : '') +
+                (d.location_placeholder_photos ? '<li class="text-warning">' + "{{ _('Фото без EXIF-часу на локації (не зматчаться):') }}" + ' ' + d.location_placeholder_photos + '</li>' : '') +
+                (d.parse_error_count ? '<li class="text-danger">' + "{{ _('Помилок парсингу:') }}" + ' ' + d.parse_error_count + '</li>' : '') +
+                '</ul>' +
+                (d.sample_unmatched && d.sample_unmatched.length
+                    ? '<details><summary class="text-muted">' + "{{ _('Приклади незіставлених') }}" + '</summary><pre style="font-size:.8rem;">' +
+                      esc(d.sample_unmatched.map(x => x.filename + '  ' + x.captured_at).join('\n')) + '</pre></details>'
+                    : '') +
+                (matched === 0
+                    ? '<div class="alert alert-warning mt-2 mb-0">' + "{{ _('Жодного збігу — перевірте, чи це правильна локація і файл.') }}" + '</div>'
+                    : '') +
+                '</div></div>';
+            lastMatched = matched;
+            updateRunGate();
+        }).catch(e => { busy(false); showError(e); });
+    });
+
+    btnRun.addEventListener('click', function () {
+        const fd = currentForm(true);
+        if (!fd) return;
+        if (!confirm("{{ _('Записати імпортовані класифікації в базу?') }}")) return;
+        busy(true); btnRun.disabled = true;
+        fetch("{{ url_for('camera_traps.import_classification_run', lang_code=g.lang_code) }}", {
+            method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd
+        }).then(r => r.json().then(d => ({ok: r.ok, d}))).then(({ok, d}) => {
+            busy(false);
+            if (!ok) { showError(d.error || 'error'); return; }
+            result.style.display = 'block';
+            result.innerHTML =
+                '<div class="alert alert-success">' +
+                '<h6>' + "{{ _('Імпорт завершено') }}" + '</h6>' +
+                "{{ _('Зіставлено фото:') }}" + ' <b>' + d.matched + '</b><br>' +
+                "{{ _('Додано:') }}" + ' ' + d.added + ' · ' +
+                "{{ _('Оновлено:') }}" + ' ' + d.updated + ' · ' +
+                "{{ _('Пропущено (не кращий score):') }}" + ' ' + d.skipped_lower_score + '<br>' +
+                "{{ _('Перераховано серій:') }}" + ' <b>' + d.observations_recomputed + '</b><br>' +
+                "{{ _('CSV без фото в БД:') }}" + ' ' + d.csv_unmatched +
+                '</div>';
+        }).catch(e => { busy(false); showError(e); });
+    });
+
+    function showError(msg) {
+        result.style.display = 'block';
+        result.innerHTML = '<div class="alert alert-danger">' + esc(msg) + '</div>';
+    }
+})();
+</script>
+{% endblock %}

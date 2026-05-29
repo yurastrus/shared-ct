@@ -1257,6 +1257,133 @@ def batch_uploaded_files(lang_code, batch_id):
         close_ct_session()
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ІМПОРТ ЗОВНІШНЬОЇ КЛАСИФІКАЦІЇ DeepFaune (CSV) — по одній локації.
+# Накладає кращі локальні результати (MDR) на ВЖЕ завантажені фото. Не чіпає
+# серверні прогнози DF+MDS (окрема модель ai_models за level_id). Логіка —
+# у classification_import.py. Двокроковий UX: preview (dry-run) → run (commit).
+# ═════════════════════════════════════════════════════════════════════════════
+def _accessible_locations(ct_session):
+    """Локації, доступні поточному користувачу, + дані для JS-фільтра по
+    установах. Спільна логіка з upload/upload_fast."""
+    user_inst_ids = [inst.id for inst in current_user.institutions]
+    is_admin = current_user.has_role('admin')
+    if is_admin:
+        locations = ct_session.query(Location).order_by(Location.name).all()
+        institutions_list = Institution.query.order_by(Institution.name_uk).all()
+    elif user_inst_ids:
+        locations = ct_session.query(Location)\
+            .join(location_institutions, Location.id == location_institutions.c.location_id)\
+            .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
+            .order_by(Location.name).distinct().all()
+        institutions_list = current_user.institutions
+    else:
+        locations, institutions_list = [], []
+
+    loc_to_inst = {}
+    for record in ct_session.query(location_institutions).all():
+        loc_to_inst.setdefault(record.location_id, []).append(record.institution_id)
+
+    locations_data = [{
+        'id': loc.id,
+        'name': loc.name,
+        'institution_ids': loc_to_inst.get(loc.id, []),
+    } for loc in locations]
+    return locations, locations_data, institutions_list
+
+
+@camera_traps_bp.route('/import-classification', methods=['GET'])
+@login_required
+@role_required('manager')
+def import_classification(lang_code):
+    ct_session = get_ct_session()
+    try:
+        from .classification_import import get_import_levels
+        locations, locations_data, institutions_list = _accessible_locations(ct_session)
+        location_choices = [(-1, _('-- Будь ласка, виберіть локацію --'))] + \
+                           [(loc.id, loc.name) for loc in locations]
+        levels = [
+            {'id': lv.id, 'code': lv.code, 'name': lv.name}
+            for lv in get_import_levels(ct_session)
+        ]
+        return render_template(
+            'import_classification.html',
+            location_choices=location_choices,
+            level_choices=levels,
+            locations_json_string=json.dumps(locations_data),
+            institutions=institutions_list,
+        )
+    finally:
+        close_ct_session()
+
+
+def _read_uploaded_csv():
+    """Парсить вкладений CSV із request.files['file'].
+    Повертає (rows, errors). rows=None — фатальна помилка (errors[0] — текст)."""
+    from .classification_import import parse_deepfaune_csv
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return None, [_('Файл не передано')]
+    return parse_deepfaune_csv(f.stream)
+
+
+@camera_traps_bp.route('/import-classification/preview', methods=['POST'])
+@login_required
+@role_required('manager')
+def import_classification_preview(lang_code):
+    from .classification_import import preview_import
+    location_id = request.form.get('location_id', type=int)
+    if not location_id or location_id <= 0:
+        return jsonify({'error': _('Оберіть локацію')}), 400
+    rows, errors = _read_uploaded_csv()
+    if rows is None:
+        return jsonify({'error': errors[0]}), 400
+    ct_session = get_ct_session()
+    try:
+        stats = preview_import(ct_session, location_id, rows)
+        stats['parse_errors'] = errors[:20]
+        stats['parse_error_count'] = len(errors)
+        return jsonify(stats), 200
+    except Exception as e:
+        current_app.logger.exception(f"import-classification preview failed: {e}")
+        return jsonify({'error': _('Помилка прев’ю імпорту')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/import-classification/run', methods=['POST'])
+@login_required
+@role_required('manager')
+def import_classification_run(lang_code):
+    from .classification_import import run_import, get_import_levels
+    location_id = request.form.get('location_id', type=int)
+    level_id = request.form.get('level_id', type=int)
+    if not location_id or location_id <= 0:
+        return jsonify({'error': _('Оберіть локацію')}), 400
+    if not level_id:
+        return jsonify({'error': _('Оберіть рівень моделі')}), 400
+    rows, errors = _read_uploaded_csv()
+    if rows is None:
+        return jsonify({'error': errors[0]}), 400
+    ct_session = get_ct_session()
+    try:
+        # Валідація: рівень має бути серед дозволених для імпорту.
+        allowed_level_ids = {lv.id for lv in get_import_levels(ct_session)}
+        if level_id not in allowed_level_ids:
+            return jsonify({'error': _('Недопустимий рівень моделі')}), 400
+        report = run_import(ct_session, location_id, rows, level_id, user_id=current_user.id)
+        ct_session.commit()
+        report['success'] = True
+        report['parse_error_count'] = len(errors)
+        return jsonify(report), 200
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.exception(f"import-classification run failed: {e}")
+        return jsonify({'error': _('Помилка імпорту класифікації')}), 500
+    finally:
+        close_ct_session()
+
+
 @camera_traps_bp.route('/photo/<int:photo_id>')
 @camera_traps_bp.route('/observation/<int:observation_id>/photo/<int:photo_index>')
 @login_required
@@ -1999,23 +2126,13 @@ def next_observation_for_identification(lang_code):
                 )
 
         # AI-фільтр: показуємо лише серії, де AI визначив вибраний вид
-        # (від активної моделі). Працює тихо: якщо AI ще не використовувався
-        # на цій інсталяції — параметр просто ігнорується.
+        # (від ПЕРЕМОЖНОЇ моделі — найвищий accuracy_rank на серію). Працює
+        # тихо: якщо AI ще не використовувався — параметр ігнорується.
         ai_observation_subq = None
         if ai_species_id is not None:
-            from .ai_runner import is_ai_available
-            from .models import AIModel, AIPrediction
+            from .ai_runner import is_ai_available, observations_subq_for_ai_species
             if is_ai_available():
-                active_model = ct_session.query(AIModel).filter_by(is_active=True).first()
-                if active_model is not None:
-                    ai_observation_subq = (
-                        select(AIPrediction.observation_id)
-                        .where(
-                            AIPrediction.model_id == active_model.id,
-                            AIPrediction.prediction_species_id == ai_species_id,
-                        )
-                        .distinct()
-                    )
+                ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
 
         if review_mode:
             # В review режимі показуємо як pending так і completed з ідентифікаціями
@@ -3799,22 +3916,13 @@ def api_get_identification_stats(lang_code):
                 )
 
         # AI-фільтр: рахуємо лише серії, де AI визначив вибраний вид
-        # (від активної моделі). Тихо ігнорується, якщо AI ще не активний.
+        # (від ПЕРЕМОЖНОЇ моделі — найвищий accuracy_rank на серію).
+        # Тихо ігнорується, якщо AI ще не активний.
         ai_observation_subq = None
         if ai_species_id is not None:
-            from .ai_runner import is_ai_available
-            from .models import AIModel, AIPrediction
+            from .ai_runner import is_ai_available, observations_subq_for_ai_species
             if is_ai_available():
-                active_model = ct_session.query(AIModel).filter_by(is_active=True).first()
-                if active_model is not None:
-                    ai_observation_subq = (
-                        select(AIPrediction.observation_id)
-                        .where(
-                            AIPrediction.model_id == active_model.id,
-                            AIPrediction.prediction_species_id == ai_species_id,
-                        )
-                        .distinct()
-                    )
+                ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
 
         # Рахуємо кількість спостережень, які в статусі 'pending' і
         # НЕ містять жодного фото, яке користувач вже ідентифікував

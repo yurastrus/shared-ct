@@ -487,6 +487,35 @@ class LocationStats(CTBase):
 # не помічає (feature-flag перевіряє наявність таблиць + кофіг).
 # ════════════════════════════════════════════════════════════════════════════
 
+class AIModelLevel(CTBase):
+    """Довідник рівнів детектора DeepFaune (нормалізація, щоб не дублювати
+    текст детектора в кожному рядку ai_models / ai_predictions).
+
+    DeepFaune v1.4.1 має три базові детектори, які можна комбінувати в
+    ensemble. accuracy_rank упорядковує їх за точністю (більше = точніше) —
+    сторінка ідентифікації може віддавати перевагу прогнозу з вищим рівнем.
+
+        DF       deepfaune-yolov8s_960            швидкий
+        MDS      md_v1000.0.0-sorrel              середній (MegaDetector Sorrel)
+        DF+MDS   deepfaune-yolov8s_960 + sorrel   ensemble (поточний прод)
+        MDR      md_v1000.0.0-redwood             точний (MegaDetector Redwood, 1280px)
+    """
+    __tablename__ = 'ai_model_levels'
+
+    id            = Column(Integer, primary_key=True)
+    code          = Column(String(32), nullable=False, unique=True)   # 'DF' | 'MDS' | 'DF+MDS' | 'MDR'
+    name          = Column(String(128), nullable=False)               # людська назва
+    detector      = Column(String(128), nullable=True)                # рядок детектора як у config_json
+    accuracy_rank = Column(Integer, nullable=False, default=0)        # більше = точніше
+    description   = Column(Text, nullable=True)
+    created_at    = Column(DateTime, default=func.now(), nullable=False)
+
+    models = relationship('AIModel', back_populates='level')
+
+    def __repr__(self):
+        return f'<AIModelLevel {self.code} rank={self.accuracy_rank}>'
+
+
 class AIModel(CTBase):
     """Реєстр AI-моделей, що використовувалися для класифікації.
 
@@ -501,12 +530,16 @@ class AIModel(CTBase):
     version     = Column(String(32), nullable=False)   # '1.4.1'
     config_json = Column(JSONB, nullable=True)         # {detector, threshold, ...}
     is_active   = Column(Boolean, default=True, nullable=False)
+    level_id    = Column(Integer, ForeignKey('ai_model_levels.id'), nullable=True)  # рівень детектора (довідник)
     created_at  = Column(DateTime, default=func.now(), nullable=False)
 
     predictions = relationship('AIPrediction', back_populates='model')
+    level       = relationship('AIModelLevel', back_populates='models')
 
     __table_args__ = (
-        UniqueConstraint('name', 'version', name='uq_ai_models_name_version'),
+        # Розрізняємо моделі ще й за рівнем детектора: та сама версія DeepFaune
+        # може бути прогнана на різних рівнях (DF+MDS на проді, MDR імпортом).
+        UniqueConstraint('name', 'version', 'level_id', name='uq_ai_models_name_version_level'),
     )
 
     def __repr__(self):
@@ -570,6 +603,31 @@ class AIPrediction(CTBase):
 
     def __repr__(self):
         return f'<AIPrediction photo={self.photo_id} → {self.prediction_label} ({self.prediction_score})>'
+
+
+class AILabelMap(CTBase):
+    """Довідник: сирий label від DeepFaune → biomon Species.id.
+
+    ЄДИНЕ джерело правди для мапінгу labels, спільне для:
+      • worker (services/biomon_ai) — читає при старті, fallback на
+        вшитий DEEPFAUNE_TO_SPECIES_ID, якщо таблиця порожня/недоступна;
+      • сторінки імпорту класифікацій (app/camera_traps).
+
+    species_id = NULL означає, що виду немає в Species — сирий label усе
+    одно зберігається в ai_predictions.prediction_label, тож при додаванні
+    виду можна back-fill. Редагується без редеплою коду.
+    """
+    __tablename__ = 'ai_label_map'
+
+    label      = Column(String(64), primary_key=True)               # 'roe deer', 'bird raptor', 'empty', ...
+    species_id = Column(Integer, ForeignKey('species.id'), nullable=True)
+    note       = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    species = relationship('Species', foreign_keys=[species_id])
+
+    def __repr__(self):
+        return f'<AILabelMap {self.label!r} → {self.species_id}>'
 
 
 class AIRunQueue(CTBase):

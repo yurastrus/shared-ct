@@ -16,7 +16,7 @@ from flask import current_app
 from sqlalchemy import inspect
 
 from .database import get_ct_engine, get_ct_session
-from .models import AIModel, AIRunQueue
+from .models import AIModel, AIModelLevel, AIRunQueue
 
 
 _AI_TABLES = ('ai_models', 'ai_predictions', 'ai_run_queue')
@@ -174,8 +174,11 @@ def get_species_with_ai_predictions(
     """
     from sqlalchemy import bindparam, text as sql_text
     sess = get_ct_session()
-    active = sess.query(AIModel).filter_by(is_active=True).first()
-    if active is None:
+    # Раніше фільтрували по активній моделі. Тепер на кожну observation беремо
+    # прогноз від моделі з НАЙВИЩИМ accuracy_rank (напр. імпортований MDR
+    # перемагає серверний DF+MDS там, де є обидва). Якщо жодної моделі —
+    # AI ще не налаштований.
+    if sess.query(AIModel.id).first() is None:
         return []
 
     # Будуємо access-clause (та сама логіка що в next_observation_for_identification)
@@ -246,23 +249,35 @@ def get_species_with_ai_predictions(
         """
         scope_params = {'scope_inst_ids': tuple(eco_inst_ids)}
 
+    # win — по одному рядку-переможцю на observation: прогноз від моделі з
+    # найвищим accuracy_rank (tie-break: новіший model.id). COALESCE(...,0) —
+    # моделі без рівня вважаємо найнижчими.
     sql = sql_text(f"""
+        WITH win AS (
+            SELECT DISTINCT ON (ap.observation_id)
+                   ap.observation_id,
+                   ap.prediction_species_id
+            FROM ai_predictions ap
+            JOIN observations o2 ON o2.id = ap.observation_id AND o2.status = 'pending'
+            JOIN ai_models m ON m.id = ap.model_id
+            LEFT JOIN ai_model_levels lvl ON lvl.id = m.level_id
+            ORDER BY ap.observation_id, COALESCE(lvl.accuracy_rank, 0) DESC, m.id DESC
+        )
         SELECT s.id,
                s.common_name_ua,
                s.common_name_en,
                s.scientific_name,
-               COUNT(DISTINCT ap.observation_id) AS pending_count
-        FROM species s
-        JOIN ai_predictions ap ON ap.prediction_species_id = s.id
-        JOIN observations o ON o.id = ap.observation_id
+               COUNT(DISTINCT win.observation_id) AS pending_count
+        FROM win
+        JOIN species s ON s.id = win.prediction_species_id
+        JOIN observations o ON o.id = win.observation_id
         JOIN locations l ON l.id = o.location_id
-        WHERE ap.model_id = :model_id
-          AND o.status = 'pending'
+        WHERE o.status = 'pending'
           {user_clause}
           {access_clause}
           {scope_clause}
         GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name
-        HAVING COUNT(DISTINCT ap.observation_id) > 0
+        HAVING COUNT(DISTINCT win.observation_id) > 0
         ORDER BY s.common_name_ua
     """)
 
@@ -276,7 +291,6 @@ def get_species_with_ai_predictions(
         sql = sql.bindparams(*expanding)
 
     rows = sess.execute(sql, {
-        'model_id': active.id,
         **user_params,
         **access_params,
         **scope_params,
@@ -297,12 +311,12 @@ def get_species_with_ai_predictions(
 
 
 def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
-    """Повертає прогноз AI для observation (від активної моделі) або None.
+    """Повертає найкращий прогноз AI для observation або None.
 
-    Оскільки worker зберігає прогноз на кожне фото, але для серії всі фото
-    мають однаковий sequence-aware prediction, беремо просто перший рядок.
-    Якщо prediction_species_id IS NULL (немає мапінга на наш Species) —
-    повертаємо тільки сирий label без species_id.
+    Якщо для серії є прогнози від кількох моделей (напр. серверний DF+MDS і
+    імпортований MDR), беремо від моделі з НАЙВИЩИМ accuracy_rank; у межах
+    моделі — рядок з найбільшим score. Якщо prediction_species_id IS NULL
+    (немає мапінга на наш Species) — повертаємо лише сирий label.
 
     Структура повернення:
         {
@@ -312,20 +326,20 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
             'animal_count':     int,
         }
     """
+    from sqlalchemy import func
     from .models import AIPrediction
 
     sess = get_ct_session()
-    active = sess.query(AIModel).filter_by(is_active=True).first()
-    if active is None:
-        return None
 
     row = (
         sess.query(AIPrediction)
-        .filter(
-            AIPrediction.observation_id == observation_id,
-            AIPrediction.model_id == active.id,
+        .join(AIModel, AIModel.id == AIPrediction.model_id)
+        .outerjoin(AIModelLevel, AIModelLevel.id == AIModel.level_id)
+        .filter(AIPrediction.observation_id == observation_id)
+        .order_by(
+            func.coalesce(AIModelLevel.accuracy_rank, 0).desc(),
+            AIPrediction.prediction_score.desc().nullslast(),
         )
-        .order_by(AIPrediction.prediction_score.desc().nullslast())
         .first()
     )
     if row is None:
@@ -337,3 +351,33 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
         'score':         row.prediction_score,
         'animal_count':  row.animal_count,
     }
+
+
+def observations_subq_for_ai_species(ai_species_id: int):
+    """SQLAlchemy select(observation_id) для серій, де ПЕРЕМОЖНИЙ прогноз
+    (модель з найвищим accuracy_rank, tie-break — новіший model.id) визначив
+    вид ai_species_id.
+
+    Узгоджено з get_species_with_ai_predictions / get_observation_ai_prediction:
+    якщо на серію є прогнози кількох моделей (DF+MDS + імпортований MDR),
+    «переможцем» вважаємо лише найточніший — щоб AI-фільтр на /identify давав
+    рівно ті серії, що показані в довіднику видів."""
+    from sqlalchemy import select, func
+    from .models import AIPrediction
+
+    win = (
+        select(
+            AIPrediction.observation_id.label('observation_id'),
+            AIPrediction.prediction_species_id.label('species_id'),
+        )
+        .join(AIModel, AIModel.id == AIPrediction.model_id)
+        .outerjoin(AIModelLevel, AIModelLevel.id == AIModel.level_id)
+        .distinct(AIPrediction.observation_id)
+        .order_by(
+            AIPrediction.observation_id,
+            func.coalesce(AIModelLevel.accuracy_rank, 0).desc(),
+            AIModel.id.desc(),
+        )
+        .subquery()
+    )
+    return select(win.c.observation_id).where(win.c.species_id == ai_species_id)

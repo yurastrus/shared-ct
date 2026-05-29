@@ -31,6 +31,12 @@
                 <span class="hub-card__title">{{ _('Завантаження') }}</span>
                 <span class="hub-card__desc">{{ _('Додати фото з пасток до бази даних.') }}</span>
             </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.import_classification', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🧠</span>
+                <span class="hub-card__title">{{ _('Імпорт класифікації') }}</span>
+                <span class="hub-card__desc">{{ _('Накласти результати локального DeepFaune (CSV) на фото локації.') }}</span>
+            </a>
             {% endif %}
 
             {% if can_manage %}
