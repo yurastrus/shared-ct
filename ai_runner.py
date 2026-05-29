@@ -136,6 +136,20 @@ def get_classification_stats() -> dict:
               SELECT 1 FROM ai_predictions ap
               WHERE ap.observation_id = o.id AND ap.model_id = :mid
           )
+          -- Вибірковість (як у worker pick_pending_observations): не рахуємо
+          -- серії, для яких уже є краща/рівна локальна класифікація.
+          AND NOT EXISTS (
+              SELECT 1 FROM ai_predictions ap2
+              JOIN ai_models m2 ON m2.id = ap2.model_id
+              LEFT JOIN ai_model_levels l2 ON l2.id = m2.level_id
+              WHERE ap2.observation_id = o.id
+                AND COALESCE(l2.accuracy_rank, 0) >= (
+                    SELECT COALESCE(l.accuracy_rank, 0)
+                    FROM ai_models m
+                    LEFT JOIN ai_model_levels l ON l.id = m.level_id
+                    WHERE m.id = :mid
+                )
+          )
           AND EXISTS (
               SELECT 1 FROM photos p
               WHERE p.observation_id = o.id
