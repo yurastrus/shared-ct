@@ -1,0 +1,126 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Всі учасники') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .contributors-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .contributors-table th, .contributors-table td {
+        padding: 8px 12px; border-bottom: 1px solid #e0e0e0; text-align: right;
+    }
+    .contributors-table th:nth-child(2), .contributors-table td:nth-child(2),
+    .contributors-table th:first-child, .contributors-table td:first-child { text-align: left; }
+    .contributors-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .contributors-table th.sorted-asc::after { content: " \25B2"; }
+    .contributors-table th.sorted-desc::after { content: " \25BC"; }
+    .contributors-table tbody tr:hover { background: #f6f8fa; }
+    .col-total { font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+    <div class="dashboard-wrapper">
+
+        <div class="page-header">
+            <h1>{{ _('Всі учасники') }}</h1>
+            <h4>{{ _('Повний перелік учасників та їхній внесок за ковзні періоди.') }}</h4>
+        </div>
+
+        <!-- Панель фільтрів -->
+        <form id="filters-form" method="GET" class="filters-panel">
+            <div class="filter-group filter-group--grow">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" name="scope" class="form-control">
+                    <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}" {% if selected_scope == 'institution:' ~ inst.id %}selected{% endif %}>
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}" {% if selected_scope == 'ecoregion:' ~ eco_key %}selected{% endif %}>{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+            <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
+                <a href="{{ url_for('camera_traps.contributors', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
+            </div>
+        </form>
+
+        <div class="dashboard-section" style="margin-top: 20px;">
+            {% if contributors %}
+            <table class="contributors-table" id="contributors-table">
+                <thead>
+                    <tr>
+                        <th data-type="text">#</th>
+                        <th data-type="text">{{ _('Учасник') if show_full_name else _('Нікнейм') }}</th>
+                        <th data-type="num">{{ _('Сьогодні') }}</th>
+                        <th data-type="num">{{ _('Тиждень') }}</th>
+                        <th data-type="num">{{ _('Місяць') }}</th>
+                        <th data-type="num">{{ _('Рік') }}</th>
+                        <th data-type="num" class="sorted-desc">{{ _('Усього') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contributors %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ c.name }}</td>
+                        <td>{{ c.d_today }}</td>
+                        <td>{{ c.d_week }}</td>
+                        <td>{{ c.d_month }}</td>
+                        <td>{{ c.d_year }}</td>
+                        <td class="col-total">{{ c.total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="info-message">{{ _('За цими фільтрами немає даних про ідентифікації.') }}</div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#scope-select').select2({ width: '100%' });
+
+    // Просте клієнтське сортування таблиці
+    $('#contributors-table th').on('click', function() {
+        var table = $('#contributors-table');
+        var rows = table.find('tbody tr').get();
+        var idx = $(this).index();
+        var type = $(this).data('type');
+        var asc = !$(this).hasClass('sorted-asc');
+
+        table.find('th').removeClass('sorted-asc sorted-desc');
+        $(this).addClass(asc ? 'sorted-asc' : 'sorted-desc');
+
+        rows.sort(function(a, b) {
+            var x = $(a).children('td').eq(idx).text().trim();
+            var y = $(b).children('td').eq(idx).text().trim();
+            if (type === 'num') { x = parseFloat(x) || 0; y = parseFloat(y) || 0; return asc ? x - y : y - x; }
+            return asc ? x.localeCompare(y) : y.localeCompare(x);
+        });
+        $.each(rows, function(i, row) { table.children('tbody').append(row); });
+    });
+});
+</script>
+{% endblock %}

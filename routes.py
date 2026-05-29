@@ -2,9 +2,10 @@
 
 from flask import render_template, g, flash, redirect, url_for, jsonify, request, current_app, send_from_directory, abort, Response
 from datetime import datetime, date, timedelta
+from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from flask_babel import gettext as _
-from sqlalchemy import func, distinct, extract, select, text, or_
+from sqlalchemy import func, distinct, extract, select, text, or_, case
 import io
 import csv
 import os
@@ -179,28 +180,24 @@ def dashboard(lang_code):
         # Отримуємо список біотопів для передачі в шаблон
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
-        raw_inst_ids = request.args.getlist('institution_id')
-        if not raw_inst_ids:
-            raw_inst_ids = request.args.get('institution_id', '').split(',')
-        selected_inst_ids =[int(i) for i in raw_inst_ids if str(i).isdigit()]
-        institution_id_str = ','.join(map(str, selected_inst_ids))
-
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        
+
+        # Комбінований фільтр «Установа / Екорегіон» (як на species-dashboard).
+        institutions_list = get_accessible_institutions(is_admin)
+        ecoregions = build_ecoregions(institutions_list, g.lang_code)
+        selected_scope, selected_inst_ids = resolve_scope(
+            request.args.get('scope', ''), institutions_list)
+
         # Передаємо table_alias='locations' (без ніяких .replace)
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
         )
         inst_condition_orm = text(inst_condition)
 
-        if is_admin:
-            institutions_list = Institution.query.order_by(Institution.name_uk).all()
-        elif current_user.is_authenticated:
-            institutions_list = current_user.institutions
-        else:
-            institutions_list =[]
-        
+        # Резолвлені ID установ для map/chart API (JS передає їх як institution_id).
+        effective_inst_ids = [i for i in (selected_inst_ids or []) if i > 0]
+
         # Total Photos
         query_photos = ct_session.query(func.count(Photo.id)).join(Observation).join(Location)\
             .filter(Photo.captured_at.between(start_date, end_date))\
@@ -312,23 +309,204 @@ def dashboard(lang_code):
             'top_contributors': top_contributors
         }
         
-        return render_template('dashboard.html', 
-                             stats=stats, 
-                             start_date=start_date_str, 
-                             end_date=end_date_str, 
+        return render_template('dashboard.html',
+                             stats=stats,
+                             start_date=start_date_str,
+                             end_date=end_date_str,
                              biotopes=biotopes_list,
                              selected_locations=location_ids_str,
                              selected_biotopes=biotope_ids,
                              institutions=institutions_list,
-                             selected_institutions=selected_inst_ids)
-        
+                             ecoregions=ecoregions,
+                             selected_scope=selected_scope,
+                             effective_inst_ids=effective_inst_ids,
+                             is_admin=is_admin)
+
     except Exception as e:
         current_app.logger.error(f"Error in dashboard: {str(e)}")
         stats = {'total_photos': 0, 'total_locations': 0, 'total_identifications': 0, 'identified_species_count': 0, 'top_contributors': []}
         flash(_('Помилка завантаження статистики.'), 'warning')
-        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[])
+        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[], institutions=[], ecoregions={}, selected_scope='global:', effective_inst_ids=[], is_admin=False)
     finally:
         close_ct_session()
+
+
+#
+# --- СПІЛЬНІ ХЕЛПЕРИ ФІЛЬТРУ «УСТАНОВА / ЕКОРЕГІОН» ---
+#
+def get_accessible_institutions(is_admin):
+    """Установи в межах доступу: admin — усі, залогінений — свої, анонім — жодної."""
+    if is_admin:
+        return Institution.query.order_by(Institution.name_uk).all()
+    if current_user.is_authenticated:
+        return sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+    return []
+
+
+def build_ecoregions(institutions, lang):
+    """{ecoregion_uk: локалізована_назва} серед переданих установ."""
+    ecoregions = {}
+    for inst in institutions:
+        if inst.ecoregion_uk:
+            display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+            ecoregions[inst.ecoregion_uk] = display
+    return ecoregions
+
+
+def resolve_scope(scope_arg, accessible_institutions):
+    """
+    Розбирає комбінований фільтр `scope` ('institution:<id>' | 'ecoregion:<key>'
+    | 'global:') у набір установ для get_institution_filter().
+
+    Повертає (normalized_scope, selected_inst_ids):
+      - global         → (None) — без додаткового звуження (усі доступні);
+      - institution:id → [id];
+      - ecoregion:key  → список установ цього екорегіону (в межах доступу),
+                         або [-1] якщо жодної (гарантовано порожній результат).
+    """
+    scope_arg = (scope_arg or '').strip()
+    if ':' in scope_arg:
+        scope_type, scope_id = scope_arg.split(':', 1)
+    else:
+        scope_type, scope_id = 'global', ''
+
+    if scope_type == 'institution' and scope_id.isdigit():
+        return f'institution:{scope_id}', [int(scope_id)]
+    if scope_type == 'ecoregion' and scope_id:
+        ids = [i.id for i in accessible_institutions if i.ecoregion_uk == scope_id]
+        return f'ecoregion:{scope_id}', (ids or [-1])
+    return 'global:', None
+
+
+#
+# --- ПОВНИЙ СПИСОК УЧАСНИКІВ ---
+#
+def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
+                            location_ids=None, biotope_ids=None):
+    """
+    Повертає статистику внеску по кожному користувачу з ковзними вікнами,
+    прив'язаними до `today`. Метрика — кількість унікальних спостережень
+    (distinct observation_id), у які користувач зробив ідентифікацію.
+
+    ВАЖЛИВО: вікна рахуються за ЧАСОМ ВИЗНАЧЕННЯ (`Identification.created_at`,
+    коли користувач опрацював серію), а НЕ за часом зйомки фото
+    (`Photo.captured_at`, коли камера зафіксувала тварину — це може бути давно).
+
+    Вікна (ковзні від `today`):
+      - d_today : сьогодні
+      - d_week  : останні 7 днів
+      - d_month : останній календарний місяць
+      - d_year  : останній календарний рік
+      - total   : за весь час
+
+    Доступ фільтрується через `inst_condition_orm`/`inst_params`
+    (результат get_institution_filter), тож функція не вирішує питання прав сама.
+    Повертає список Row, відсортований за total desc.
+    """
+    start_today = datetime.combine(today, datetime.min.time())
+    start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
+    start_month = datetime.combine(today - relativedelta(months=1), datetime.min.time())
+    start_year = datetime.combine(today - relativedelta(years=1), datetime.min.time())
+
+    def _window(threshold):
+        return func.count(distinct(
+            case((Identification.created_at >= threshold, Photo.observation_id))
+        ))
+
+    query = ct_session.query(
+        Identification.user_id,
+        _window(start_today).label('d_today'),
+        _window(start_week).label('d_week'),
+        _window(start_month).label('d_month'),
+        _window(start_year).label('d_year'),
+        func.count(distinct(Photo.observation_id)).label('total'),
+    ).join(Photo, Identification.photo_id == Photo.id)\
+        .join(Observation).join(Location)\
+        .filter(inst_condition_orm).params(**inst_params)
+
+    if location_ids:
+        query = query.filter(Location.id.in_(location_ids))
+    if biotope_ids:
+        query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+
+    return query.group_by(Identification.user_id)\
+        .order_by(func.count(distinct(Photo.observation_id)).desc())\
+        .all()
+
+
+@camera_traps_bp.route('/contributors')
+def contributors(lang_code):
+    """
+    Повний перелік учасників зі статистикою внеску за ковзні періоди
+    (сьогодні / тиждень / місяць / рік / усього).
+
+    Видимість:
+      - незалогінений / звичайний користувач — лише нікнейм + статистика;
+      - manager / admin — повне ім'я (User.full_name).
+    Комбінований фільтр `scope` ('institution:<id>' | 'ecoregion:<key>' | 'global:')
+    обмежений доступами користувача.
+    """
+    ct_session = get_ct_session()
+    try:
+        today = date.today()
+
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        is_manager = current_user.is_authenticated and current_user.has_role('manager')
+        user_inst_ids = [inst.id for inst in current_user.institutions] \
+            if current_user.is_authenticated else []
+
+        accessible_institutions = get_accessible_institutions(is_admin)
+        ecoregions = build_ecoregions(accessible_institutions, g.lang_code)
+
+        selected_scope, selected_inst_ids = resolve_scope(
+            request.args.get('scope', ''), accessible_institutions)
+
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
+        )
+        inst_condition_orm = text(inst_condition)
+
+        rows = query_contributor_stats(ct_session, today, inst_condition_orm, inst_params)
+
+        # --- Підтягуємо імена з головної БД ---
+        contributors = []
+        if rows:
+            user_ids = [r.user_id for r in rows]
+            users = User.query.filter(User.id.in_(user_ids)).all()
+            if is_manager:
+                name_map = {u.id: u.full_name for u in users}
+            else:
+                name_map = {u.id: u.username for u in users}
+            for r in rows:
+                contributors.append({
+                    'name': name_map.get(r.user_id, f"Користувач (ID: {r.user_id})"),
+                    'd_today': r.d_today or 0,
+                    'd_week': r.d_week or 0,
+                    'd_month': r.d_month or 0,
+                    'd_year': r.d_year or 0,
+                    'total': r.total or 0,
+                })
+
+        return render_template(
+            'contributors.html',
+            contributors=contributors,
+            institutions=accessible_institutions,
+            ecoregions=ecoregions,
+            selected_scope=selected_scope,
+            is_admin=is_admin,
+            show_full_name=is_manager,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error in contributors: {str(e)}")
+        flash(_('Помилка завантаження списку учасників.'), 'warning')
+        return render_template(
+            'contributors.html', contributors=[], institutions=[],
+            ecoregions={}, selected_scope='global:', is_admin=False,
+            show_full_name=False,
+        )
+    finally:
+        close_ct_session()
+
 
 #
 # --- СТОРІНКА ДЕТАЛЬНОГО АНАЛІЗУ ПО ВИДАХ ---
@@ -1478,8 +1656,13 @@ def stats_top_species(lang_code):
         # ВИПРАВЛЕНО: Повертаємо вашу дату за замовчуванням '2020-08-01'
         start_date_str = request.args.get('start_date', '2020-08-01')
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
-        institution_id_str = request.args.get('institution_id', '')
-        
+        # institution_id може приходити кількома значеннями (напр. екорегіон → набір
+        # установ) АБО рядком через кому. Збираємо все в список, як у stats_locations.
+        raw_inst_ids = request.args.getlist('institution_id')
+        if not raw_inst_ids:
+            raw_inst_ids = request.args.get('institution_id', '').split(',')
+        selected_inst_ids = [int(i) for i in raw_inst_ids if str(i).isdigit()]
+
         params = {
             'start_date': start_date_str,
             'end_date': end_date_str
@@ -1494,7 +1677,7 @@ def stats_top_species(lang_code):
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         # Передаємо table_alias='l' для сирого SQL
         inst_condition, inst_params = get_institution_filter(
-            user_inst_ids, is_admin, selected_inst_id=institution_id_str, table_alias='l'
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='l'
         )
         params.update(inst_params)
 
