@@ -78,7 +78,7 @@
 <script>
 (function () {
     const csrf = document.getElementById('csrf-field').value;
-    const locationsData = {{ locations_json_string | safe }};
+    const locationsData = {{ locations_data | tojson }};
     const instSelect = document.getElementById('institution-select');
     const locSelect = document.getElementById('location-select');
     const levelSelect = document.getElementById('level-select');

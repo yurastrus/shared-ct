@@ -9,7 +9,6 @@ from sqlalchemy import func, distinct, extract, select, text, or_, case
 import io
 import csv
 import os
-import json
 from functools import lru_cache
 
 from . import camera_traps_bp
@@ -1178,12 +1177,11 @@ def upload(lang_code):
                 'institution_ids': loc_to_inst.get(loc.id, [])
             })
         
-        locations_json_string = json.dumps(locations_data)
         geoserver_url = current_app.config['GEOSERVER_URL']
-        
-        return render_template('upload.html', 
+
+        return render_template('upload.html',
                                form=form,
-                               locations_json_string=locations_json_string,
+                               locations_data=locations_data,
                                geoserver_url=geoserver_url,
                                institutions=institutions_list)
     finally:
@@ -1356,7 +1354,7 @@ def upload_fast(lang_code):
         return render_template(
             'upload_fast.html',
             form=form,
-            locations_json_string=json.dumps(locations_data),
+            locations_data=locations_data,
             geoserver_url=current_app.config['GEOSERVER_URL'],
             institutions=institutions_list,
         )
@@ -1488,7 +1486,7 @@ def import_classification(lang_code):
             'import_classification.html',
             location_choices=location_choices,
             level_choices=levels,
-            locations_json_string=json.dumps(locations_data),
+            locations_data=locations_data,
             institutions=institutions_list,
         )
     finally:
@@ -2986,7 +2984,6 @@ def manage_locations(lang_code):
                 'institution_ids': loc_inst_map.get(loc.id, [])
             })
 
-        locations_json_string = json.dumps(locations_data)
         geoserver_url = current_app.config['GEOSERVER_URL']
 
         # Менеджер з установами теж може редагувати/створювати локації
@@ -3003,7 +3000,6 @@ def manage_locations(lang_code):
                                biotopes=biotopes,
                                battery_types=battery_types,
                                visit_purposes=visit_purposes,
-                               locations_json_string=locations_json_string,
                                geoserver_url=geoserver_url,
                                can_edit=can_edit,
                                user_institutions=user_institutions,
@@ -3198,8 +3194,7 @@ def manage_deployments(lang_code):
 
         return render_template('manage_deployments.html',
                                locations=locations_data,
-                               locations_json_string=json.dumps(locations_data),
-                               deployments_json_string=json.dumps(deployments_data),
+                               deployments_data=deployments_data,
                                geoserver_url=current_app.config['GEOSERVER_URL'],
                                filter_institutions=filter_institutions,
                                years=years,
@@ -3657,7 +3652,7 @@ def data_quality(lang_code):
         }
 
         return render_template('data_quality.html',
-                               records_json=json.dumps(records),
+                               records=records,
                                filter_options=filter_options,
                                qc_fields=QC_FILTER_ORDER,
                                geoserver_url=current_app.config['GEOSERVER_URL'])

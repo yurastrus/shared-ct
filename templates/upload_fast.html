@@ -356,7 +356,7 @@ $(document).ready(function () {
     const RESUME_LS_KEY    = 'ct_fast_upload_batch_v1';
 
     // ─── Стан ────────────────────────────────────────────────────────────
-    const locationsData = {{ locations_json_string|safe }};
+    const locationsData = {{ locations_data|tojson }};
     let selectedFiles   = [];
     let activeLocationId = null;
     let map, markers = {};

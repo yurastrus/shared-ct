@@ -320,8 +320,8 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
-    const locationsData   = {{ locations_json_string|safe }};
-    const deploymentsData = {{ deployments_json_string|safe }};
+    const locationsData   = {{ locations|tojson }};
+    const deploymentsData = {{ deployments_data|tojson }};
     const boolFields = {{ bool_fields|tojson }};
     const strFields  = ['name','study_season','study_design','camera_id','camera_model','serial_number'];
     const intFields  = ['study_year','n_days_working','n_photos'];

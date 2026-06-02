@@ -223,7 +223,7 @@ $(document).ready(function () {
     const GEOSERVER_BASE_URL = '{{ geoserver_url }}';
 
     // ─── Стан ─────────────────────────────────────────────────────────────────
-    const locationsData = {{ locations_json_string|safe }};
+    const locationsData = {{ locations_data|tojson }};
     let selectedFiles   = [];
     let activeLocationId = null;
     let map, markers = {};
