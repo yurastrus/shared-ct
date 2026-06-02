@@ -2361,7 +2361,7 @@ def next_observation_for_identification(lang_code):
             observation = query.first()
 
         else:
-            # Звичайний режим - тільки pending, завжди випадково
+            # Звичайний режим - тільки pending
             query = ct_session.query(Observation).filter(
                 Observation.status == 'pending',
                 ~Observation.photos.any(Photo.id.in_(user_identified_photos))
@@ -2377,7 +2377,29 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
-            observation = query.order_by(func.random()).first()
+            # Пріоритет серіям, ближчим до консенсусу: спірні → з голосами → свіжі,
+            # всередині групи — випадково. Агрегат звужено до pending-серій,
+            # бо більшість identifications належить уже завершеним.
+            pending_votes_subq = (
+                select(
+                    Photo.observation_id.label('observation_id'),
+                    func.count(func.distinct(Identification.user_id)).label('votes'),
+                )
+                .select_from(Identification)
+                .join(Photo, Photo.id == Identification.photo_id)
+                .join(Observation, Observation.id == Photo.observation_id)
+                .where(Observation.status == 'pending')
+                .group_by(Photo.observation_id)
+                .subquery()
+            )
+            query = query.outerjoin(
+                pending_votes_subq,
+                pending_votes_subq.c.observation_id == Observation.id
+            )
+            observation = query.order_by(
+                func.coalesce(pending_votes_subq.c.votes, 0).desc(),
+                func.random(),
+            ).first()
         
         if not observation:
             if review_mode:
