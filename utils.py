@@ -56,8 +56,20 @@ def get_institution_filter(user_inst_ids=None, is_admin=False, selected_inst_id=
     return base_condition, params
 
 
+# Sanity-межі для EXIF-дат (Idea 1). Дата поза межами означає скинутий
+# або збитий годинник камери → timestamp недостовірний → повертаємо None,
+# і process_single_photo підставить помітний placeholder (1900-01-01 + offset)
+# так само, як для фото зовсім без EXIF.
+EXIF_MIN_VALID_DATE = datetime(2010, 1, 1)
+EXIF_MAX_FUTURE_DRIFT = timedelta(hours=24)
+
+
 def extract_datetime_from_exif(file_stream):
-    """Зчитує дату та час з EXIF-даних файлу, включаючи долі секунди."""
+    """Зчитує дату та час з EXIF-даних файлу, включаючи долі секунди.
+
+    Повертає None, якщо тегу немає, він не парситься АБО дата неправдоподібна
+    (раніше EXIF_MIN_VALID_DATE чи далі ніж EXIF_MAX_FUTURE_DRIFT у майбутнє).
+    """
     try:
         file_stream.seek(0)
         # Зчитуємо всі необхідні теги за один раз
@@ -79,10 +91,21 @@ def extract_datetime_from_exif(file_stream):
                     # Ми нормалізуємо це до 6 знаків (мікросекунди), доповнюючи нулями справа.
                     subsec_normalized = subsec_str.ljust(6, '0')
                     microseconds = int(subsec_normalized)
-                    
+
                     # Додаємо мікросекунди до нашого об'єкта datetime
                     dt_object += timedelta(microseconds=microseconds)
-            
+
+            # Sanity-guard: збитий годинник камери (2000-й рік, майбутнє)
+            if (dt_object < EXIF_MIN_VALID_DATE
+                    or dt_object > datetime.now() + EXIF_MAX_FUTURE_DRIFT):
+                current_app.logger.warning(
+                    f"Implausible EXIF DateTimeOriginal {dt_object.isoformat()} "
+                    f"(allowed {EXIF_MIN_VALID_DATE.date()} … now+"
+                    f"{int(EXIF_MAX_FUTURE_DRIFT.total_seconds() // 3600)}h) — "
+                    f"treating as missing"
+                )
+                return None
+
             return dt_object
 
     except Exception as e:
