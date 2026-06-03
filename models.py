@@ -266,6 +266,10 @@ class Photo(CTBase):
         # OVER (ORDER BY captured_at, id) для фотографій конкретного batchʼа.
         # Покриває WHERE upload_batch_id=:b AND status='uploaded' + ORDER BY.
         Index('idx_photos_batch_captured', 'upload_batch_id', 'captured_at', 'id'),
+        # Фільтр за статусом: cleanup (status='completed'/'pending') і
+        # dashboard. На проді індекс уже існує — декларуємо, щоб create_all
+        # на нових/dev-інсталяціях теж його створював (метадані = реальна БД).
+        Index('idx_photos_status', 'status'),
     )
 
     def __repr__(self):
@@ -307,6 +311,10 @@ class Identification(CTBase):
     # Унікальне обмеження: один користувач може ідентифікувати одне фото тільки раз
     __table_args__ = (
         UniqueConstraint('photo_id', 'user_id', name='_photo_user_uc'),
+        # Фільтр/групування за автором: dashboard top-contributors,
+        # сторінка внеску. На проді індекс уже існує — декларуємо для
+        # консистентності з create_all на нових/dev-інсталяціях.
+        Index('idx_identifications_user_id', 'user_id'),
     )
 
     def __repr__(self):
