@@ -142,6 +142,7 @@
                             <div class="main-buttons">
                                 <button type="submit" class="btn btn-primary">{{ _('Надіслати') }}</button>
                                 <button type="button" id="skip-btn" class="btn btn-secondary">{{ _('Пропустити') }}</button>
+                                <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩 {{ _('Прапорець') }}</button>
                             </div>
                             
                             <!-- Компактний перемикач теми з review режимом -->
@@ -674,6 +675,28 @@ $(document).ready(function() {
     });
 
     skipBtn.on('click', loadNextObservation);
+
+    // Прапорець «на повторний розгляд» (Idea 6): позначити поточну серію
+    // і перейти до наступної (fire-and-move-on).
+    $('#flag-btn').on('click', function() {
+        const obsId = observationIdInput.val();
+        if (!obsId) return;
+        const note = prompt("{{ _('Коментар до позначки (за бажанням):') }}");
+        if (note === null) return;  // користувач скасував
+        const token = $('input[name="csrf_token"]').val();
+        const fd = new FormData();
+        fd.append('note', note || '');
+        fd.append('csrf_token', token);
+        fetch(`/${langCode}/camera-traps/observation/${obsId}/flag`, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: { 'X-CSRFToken': token }
+        }).then(r => {
+            if (r.ok) loadNextObservation();
+            else alert("{{ _('Помилка позначення серії.') }}");
+        }).catch(() => alert("{{ _('Помилка позначення серії.') }}"));
+    });
 
     form.on('submit', function(e) {
         e.preventDefault();

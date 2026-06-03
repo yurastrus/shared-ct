@@ -105,6 +105,18 @@ def admin_panel(lang_code):
     except Exception as e:
         current_app.logger.warning(f"CT admin: cannot load storage/batch stats: {e}")
 
+    # Лічильник серій, позначених на повторний розгляд (Idea 6) — badge.
+    flagged_count = 0
+    ct_session = get_ct_session()
+    try:
+        flagged_count = ct_session.query(func.count(Observation.id)).filter(
+            Observation.flagged.is_(True)
+        ).scalar() or 0
+    except Exception as e:
+        current_app.logger.warning(f"CT admin: cannot load flagged count: {e}")
+    finally:
+        close_ct_session()
+
     return render_template(
         'admin.html',
         ai_available=ai_available,
@@ -114,7 +126,89 @@ def admin_panel(lang_code):
         ai_stats=ai_stats,
         storage_stats=storage_stats,
         batch_stats=batch_stats,
+        flagged_count=flagged_count,
     )
+
+
+@camera_traps_bp.route('/observation/<int:obs_id>/flag', methods=['POST'])
+@login_required
+@role_required('ct_verifier')
+def flag_observation(lang_code, obs_id):
+    """Позначає серію на повторний розгляд (Idea 6). note — необов'язковий."""
+    ct_session = get_ct_session()
+    try:
+        obs = ct_session.query(Observation).get(obs_id)
+        if not obs:
+            flash(_('Серію не знайдено.'), 'danger')
+        else:
+            obs.flagged = True
+            obs.flag_note = (request.form.get('note') or '').strip() or None
+            ct_session.commit()
+            flash(_('Серію позначено на повторний розгляд.'), 'success')
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error flagging observation {obs_id}: {e}")
+        flash(_('Помилка позначення серії.'), 'danger')
+    finally:
+        close_ct_session()
+    return redirect(request.referrer or url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+
+@camera_traps_bp.route('/observation/<int:obs_id>/unflag', methods=['POST'])
+@login_required
+@role_required('ct_verifier')
+def unflag_observation(lang_code, obs_id):
+    """Знімає позначку повторного розгляду (Idea 6)."""
+    ct_session = get_ct_session()
+    try:
+        obs = ct_session.query(Observation).get(obs_id)
+        if not obs:
+            flash(_('Серію не знайдено.'), 'danger')
+        else:
+            obs.flagged = False
+            obs.flag_note = None
+            ct_session.commit()
+            flash(_('Позначку знято.'), 'success')
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error unflagging observation {obs_id}: {e}")
+        flash(_('Помилка зняття позначки.'), 'danger')
+    finally:
+        close_ct_session()
+    return redirect(request.referrer or url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+
+@camera_traps_bp.route('/admin/flagged')
+@login_required
+@role_required('admin')
+def admin_flagged_list(lang_code):
+    """Список серій, позначених на повторний розгляд (Idea 6, admin)."""
+    ct_session = get_ct_session()
+    try:
+        flagged = (
+            ct_session.query(Observation)
+            .filter(Observation.flagged.is_(True))
+            .order_by(Observation.series_start_time.desc())
+            .all()
+        )
+        items = []
+        for obs in flagged:
+            first_photo = (
+                ct_session.query(Photo)
+                .filter(Photo.observation_id == obs.id)
+                .order_by(Photo.captured_at)
+                .first()
+            )
+            items.append({
+                'id': obs.id,
+                'location_name': obs.location.name if obs.location else '',
+                'series_start_time': obs.series_start_time,
+                'flag_note': obs.flag_note,
+                'thumb': first_photo.system_filename if first_photo else None,
+            })
+        return render_template('flagged_list.html', items=items)
+    finally:
+        close_ct_session()
 
 
 @camera_traps_bp.route('/admin/ai/run', methods=['POST'])

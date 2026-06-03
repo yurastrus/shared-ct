@@ -205,6 +205,12 @@ class Observation(CTBase):
     uploaded_by_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=func.now())
 
+    # Прапорець «на повторний розгляд» (Idea 6) — організаційна позначка для
+    # верифікаторів/адміна. НЕ змінює status і НЕ виключає серію з аналітики
+    # (це окреме, спірне рішення — поки не застосовуємо).
+    flagged = Column(Boolean, nullable=False, default=False, server_default='false')
+    flag_note = Column(Text)
+
     # Зв'язки
     location = relationship('Location', back_populates='observations')
     

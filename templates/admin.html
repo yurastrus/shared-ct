@@ -9,6 +9,12 @@
     <div class="hub-header">
         <h1>⚙️ {{ _('Адмін-панель') }}</h1>
         <p>{{ _('Технічні дії над базою даних фотопасток. Доступно лише адміністраторам.') }}</p>
+        <p>
+            <a href="{{ url_for('camera_traps.admin_flagged_list', lang_code=g.lang_code) }}"
+               class="btn btn-sm {% if flagged_count %}btn-warning{% else %}btn-secondary{% endif %}">
+                🚩 {{ _('На повторний розгляд') }}: {{ flagged_count }}
+            </a>
+        </p>
     </div>
 
     {# ── AI-класифікатор (показуємо тільки якщо worker встановлений) ── #}

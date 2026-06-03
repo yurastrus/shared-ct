@@ -1,0 +1,51 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Серії на повторний розгляд') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>🚩 {{ _('Серії на повторний розгляд') }}</h1>
+        <p>{{ _('Серії, які верифікатори позначили для перегляду. Усього:') }}
+           <strong>{{ items|length }}</strong></p>
+    </div>
+
+    {% if not items %}
+        <p class="text-muted">{{ _('Наразі немає позначених серій.') }}</p>
+    {% else %}
+    <div class="flagged-grid">
+        {% for it in items %}
+        <div class="flagged-card">
+            {% if it.thumb %}
+            <img class="flagged-thumb"
+                 src="{{ url_for('camera_traps.serve_thumbnail', lang_code=g.lang_code, filename=it.thumb) }}"
+                 alt="{{ _('Прев’ю серії') }}">
+            {% else %}
+            <div class="flagged-thumb flagged-thumb--empty">—</div>
+            {% endif %}
+            <div class="flagged-card__body">
+                <div class="flagged-card__meta">
+                    <span class="flagged-loc">{{ it.location_name }}</span>
+                    <span class="flagged-time">{{ it.series_start_time.strftime('%d.%m.%Y %H:%M') }}</span>
+                </div>
+                {% if it.flag_note %}
+                <p class="flagged-note">{{ it.flag_note }}</p>
+                {% else %}
+                <p class="flagged-note flagged-note--empty">{{ _('(без коментаря)') }}</p>
+                {% endif %}
+                <form method="post"
+                      action="{{ url_for('camera_traps.unflag_observation', lang_code=g.lang_code, obs_id=it.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-sm btn-secondary">{{ _('Зняти позначку') }}</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}
