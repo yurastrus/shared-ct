@@ -93,6 +93,18 @@ def admin_panel(lang_code):
         finally:
             close_ct_session()
 
+    # Health-метрики сховища та батчів (обидві функції самі керують ct-сесією
+    # і закривають її у власному finally; get_cleanup_statistics може кинути
+    # виняток, get_batch_statistics повертає {} — ловимо обидва випадки).
+    storage_stats = {}
+    batch_stats = {}
+    try:
+        from .background_tasks import get_cleanup_statistics, get_batch_statistics
+        storage_stats = get_cleanup_statistics() or {}
+        batch_stats = get_batch_statistics() or {}
+    except Exception as e:
+        current_app.logger.warning(f"CT admin: cannot load storage/batch stats: {e}")
+
     return render_template(
         'admin.html',
         ai_available=ai_available,
@@ -100,6 +112,8 @@ def admin_panel(lang_code):
         ai_recent=ai_recent,
         ai_model=ai_model,
         ai_stats=ai_stats,
+        storage_stats=storage_stats,
+        batch_stats=batch_stats,
     )
 
 

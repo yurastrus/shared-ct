@@ -140,6 +140,43 @@
         </div>
     </section>
 
+    {# ── Сховище та батчі (health-метрики) ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">💾 {{ _('Сховище та батчі') }}</h2>
+        <p class="ai-meta text-muted">
+            {{ _('Поточний стан перед очищенням нижче. Оновлюється при кожному відкритті сторінки.') }}
+        </p>
+
+        <div class="ai-stats">
+            <div class="ai-stat ai-stat--pending">
+                <div class="ai-stat__num">{{ '{:,}'.format(storage_stats.get('observations_count', 0)).replace(',', ' ') }}</div>
+                <div class="ai-stat__label">{{ _('Серій готових до архівації') }}</div>
+            </div>
+            <div class="ai-stat ai-stat--pending">
+                <div class="ai-stat__num">{{ '{:,}'.format(storage_stats.get('estimated_size_mb', 0)).replace(',', ' ') }} {{ _('МБ') }}</div>
+                <div class="ai-stat__label">{{ _('Орієнтовно звільниться') }}</div>
+            </div>
+            <div class="ai-stat ai-stat--pending">
+                <div class="ai-stat__num">{{ '{:,}'.format(batch_stats.get('orphaned_photos', 0)).replace(',', ' ') }}</div>
+                <div class="ai-stat__label">{{ _('Фото без серій (сироти)') }}</div>
+            </div>
+            <div class="ai-stat ai-stat--done">
+                {% set oldest = batch_stats.get('oldest_pending_batch') %}
+                <div class="ai-stat__num">{% if oldest %}{{ '%.1f'|format(oldest.age_hours) }} {{ _('год') }}{% else %}—{% endif %}</div>
+                <div class="ai-stat__label">{{ _('Вік найстарішого незавершеного батчу') }}</div>
+            </div>
+        </div>
+
+        {% if batch_stats.get('batches_by_status') %}
+        <p class="ai-meta">
+            {{ _('Батчі за статусом:') }}
+            {% for status, count in batch_stats.batches_by_status.items() %}
+                <strong>{{ status }}</strong>&nbsp;{{ count }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+        </p>
+        {% endif %}
+    </section>
+
     {# ── Очищення ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Очищення даних') }}</h2>
