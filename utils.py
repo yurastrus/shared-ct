@@ -556,16 +556,22 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
             vote_percentage = winner_votes / len(user_identifications)
             
             if vote_percentage > 0.5:
-                mark_observation_complete(observation_id, db_session=db_session)
+                mark_observation_complete(observation_id, db_session=db_session,
+                                          winner_species_id=winner_species)
                 current_app.logger.info(f"Completed observation {observation_id}")
                     
     except Exception as e:
         current_app.logger.error(f"Error in check_consensus_for_observation {observation_id}: {e}")
         raise
 
-def mark_observation_complete(observation_id, db_session):
-    """Позначає спостереження як завершене"""
-    # ВИДАЛЕНО: ct_session = get_ct_session()
+def mark_observation_complete(observation_id, db_session, winner_species_id=None):
+    """Позначає спостереження як завершене.
+
+    Якщо передано winner_species_id (консенсусний вид) — фіксує
+    правильність AI-прогнозів для цієї серії (Idea 4):
+      was_correct = (prediction_species_id == winner_species_id),
+      None — якщо AI не визначив вид (prediction_species_id IS NULL).
+    """
     try:
         # ЗМІНЕНО: використовуємо передану сесію 'db_session'
         observation = db_session.query(Observation).get(observation_id)
@@ -573,13 +579,32 @@ def mark_observation_complete(observation_id, db_session):
             for photo in observation.photos:
                 photo.status = 'completed'
             observation.status = 'completed'
-            # ВИДАЛЕНО: ct_session.commit()
+
+            # Фіксуємо правильність AI на момент консенсусу (Idea 4).
+            # Обгорнуто окремо: на інсталяціях без AI-схеми (ai_predictions
+            # не існує) це не повинно зривати сам консенсус.
+            if winner_species_id is not None:
+                try:
+                    from .models import AIPrediction
+                    preds = db_session.query(AIPrediction).filter(
+                        AIPrediction.observation_id == observation_id
+                    ).all()
+                    for pred in preds:
+                        if pred.prediction_species_id is None:
+                            pred.was_correct = None  # AI не визначив вид → невизначено
+                        else:
+                            pred.was_correct = (
+                                pred.prediction_species_id == winner_species_id
+                            )
+                except Exception as ai_exc:
+                    current_app.logger.warning(
+                        f"was_correct skip for obs {observation_id}: {ai_exc}"
+                    )
+
             current_app.logger.info(f"Observation {observation_id} marked as complete")
     except Exception as e:
         current_app.logger.error(f"Error marking observation complete: {e}")
-        # ВИДАЛЕНО: ct_session.rollback()
         raise # Повторно генеруємо виняток
-    # ВИДАЛЕНО: finally: close_ct_session()
 
 def migrate_pending_observations_to_single_identification():
     """
@@ -619,7 +644,8 @@ def migrate_pending_observations_to_single_identification():
         
         completed_count = 0
         for obs_id, species_id, votes, total_users in consensus_observations:
-            mark_observation_complete(obs_id, db_session=ct_session)
+            mark_observation_complete(obs_id, db_session=ct_session,
+                                      winner_species_id=species_id)
             completed_count += 1
             current_app.logger.info(f"Completed observation {obs_id}: {votes}/{total_users} votes for species {species_id}")
         

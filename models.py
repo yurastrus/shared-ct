@@ -598,6 +598,11 @@ class AIPrediction(CTBase):
     human_count           = Column(Integer, nullable=True)
     bbox_json             = Column(JSONB, nullable=True)        # найкращий bbox від детектора
 
+    # Чи збігся прогноз із консенсусним видом — заповнюється у момент
+    # досягнення консенсусу (Idea 4). nullable: None = ще не оцінено
+    # (pending-серія) або AI не визначив вид (prediction_species_id IS NULL).
+    was_correct           = Column(Boolean, nullable=True)
+
     processed_at          = Column(DateTime, default=func.now(), nullable=False)
     error_msg             = Column(Text, nullable=True)
 
