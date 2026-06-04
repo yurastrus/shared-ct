@@ -3168,6 +3168,89 @@ def remove_from_favorites(lang_code):
     finally:
         close_ct_session()
 
+@camera_traps_bp.route('/location/<int:location_id>/coverage')
+@login_required
+@role_required('manager')
+def ct_location_coverage(lang_code, location_id):
+    """Календар покриття фотопасткою по днях (#38).
+
+    Покриття = «камера працювала»: дні в межах deployment-інтервалів
+    (start..end) ∪ дні з фото із заповненням прогалин ≤ COVERAGE_MAX_GAP_DAYS
+    (фото тригерні, тож прогалини між ними не означають простій камери).
+    Інтенсивність (під градацію #43) — к-сть фото за день.
+    """
+    ct_session = get_ct_session()
+    try:
+        location = ct_session.query(Location).get(location_id)
+        if not location:
+            flash(_('Локацію не знайдено.'), 'danger')
+            return redirect(url_for('camera_traps.manage_locations', lang_code=g.lang_code))
+
+        # Доступ: admin бачить усе; інакше локація має належати установі юзера
+        if not current_user.has_role('admin'):
+            user_inst_ids = [i.id for i in current_user.institutions]
+            allowed = False
+            if user_inst_ids:
+                allowed = ct_session.execute(
+                    select(location_institutions.c.location_id).where(
+                        location_institutions.c.location_id == location_id,
+                        location_institutions.c.institution_id.in_(user_inst_ids),
+                    ).limit(1)
+                ).first()
+            if not allowed:
+                flash(_('Немає доступу до цієї локації.'), 'danger')
+                return redirect(url_for('camera_traps.manage_locations', lang_code=g.lang_code))
+
+        cfg = current_app.config.get('CAMERA_TRAP_CONFIG', {})
+        max_gap = cfg.get('COVERAGE_MAX_GAP_DAYS', 10)
+        good_photos = cfg.get('COVERAGE_GOOD_PHOTOS', 1)
+
+        # 1) Дні в межах deployment-інтервалів (камера фізично стояла)
+        deps = ct_session.query(Deployment.start_date, Deployment.end_date).filter(
+            Deployment.location_id == location_id,
+            Deployment.start_date.isnot(None),
+            Deployment.end_date.isnot(None),
+        ).all()
+        deployment_days = set()
+        for s, e in deps:
+            if s and e and e >= s:
+                for k in range((e - s).days + 1):
+                    deployment_days.add(s + timedelta(days=k))
+
+        # 2) Фото за день (виключаємо placeholder-дати 1900 від фото без EXIF)
+        photo_rows = ct_session.query(
+            func.date(Photo.captured_at).label('day'),
+            func.count(Photo.id).label('cnt'),
+        ).join(Observation, Photo.observation_id == Observation.id).filter(
+            Observation.location_id == location_id
+        ).group_by(func.date(Photo.captured_at)).all()
+        photo_counts = {}
+        for r in photo_rows:
+            d = r.day
+            if isinstance(d, datetime):
+                d = d.date()
+            elif isinstance(d, str):  # SQLite повертає DATE() рядком
+                d = datetime.strptime(d, '%Y-%m-%d').date()
+            if d and d.year >= 2010:
+                photo_counts[d] = r.cnt
+
+        from .utils import build_ct_coverage_calendar, fill_day_gaps
+        covered = deployment_days | fill_day_gaps(set(photo_counts), max_gap)
+        coverage = build_ct_coverage_calendar(covered, photo_counts,
+                                               good_photos=good_photos)
+
+        return render_template(
+            'ct_location_coverage.html',
+            location_id=location_id,
+            location_name=location.name,
+            coverage=coverage,
+            good_photos=good_photos,
+            max_gap=max_gap,
+        )
+    finally:
+        close_ct_session()
+
+
 @camera_traps_bp.route('/manage-locations')
 @login_required
 @role_required('manager')

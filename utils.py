@@ -3,8 +3,9 @@
 import os
 import uuid
 import hashlib
+import calendar
 import exifread
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
 from werkzeug.utils import secure_filename
 from PIL import Image
 from sqlalchemy import func, text
@@ -727,3 +728,90 @@ def calculate_total_effort(session, start_date, end_date, location_ids=None):
     return total_effort_days
 
 
+
+
+# ── Календар покриття фотопасток (#38) ───────────────────────────────────────
+#
+# Покриття дня = «камера працювала». Фото у CT тригерні, тож «дні з фото»
+# занижують покриття. Тому covered_days = об'єднання deployment-інтервалів
+# (start..end) ∪ gap-filled дні з фото (для локацій/деплойментів без дат).
+# Інтенсивність клітинки (під градацію #43) — к-сть фото за день.
+
+
+def fill_day_gaps(days, max_gap_days):
+    """Повертає set дат: вхідні дні + заповнені прогалини між сусідніми
+    датами, якщо прогалина <= max_gap_days (камера стояла, тварини не йшли).
+
+    days: iterable[date]; max_gap_days: int (0 = без заповнення).
+    """
+    days = sorted({d for d in days if d is not None})
+    if not days:
+        return set()
+    out = set(days)
+    if max_gap_days and max_gap_days > 0:
+        for a, b in zip(days, days[1:]):
+            gap = (b - a).days
+            if 1 < gap <= max_gap_days + 1:
+                for k in range(1, gap):
+                    out.add(a + timedelta(days=k))
+    return out
+
+
+def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1):
+    """Помісячний календар покриття фотопасток. Чиста функція (без БД).
+
+    covered_days: set[date] — дні, коли камера працювала.
+    photo_counts: {date: int} — к-сть фото за день (для інтенсивності/градації).
+    good_photos: поріг «добре» у фото/день.
+
+    Повертає dict як PAM build_coverage_calendar:
+        months[], total_photos, active_camera_days, days_with_photos, day_range.
+    cell = {day, date, covered(bool), photos(int), level: good|partial|missing}
+      level: missing — камера не працювала; partial — працювала, 0..<good фото;
+             good — працювала і >= good_photos фото.
+    """
+    covered_days = {d for d in (covered_days or set()) if d is not None}
+    photo_counts = {d: c for d, c in (photo_counts or {}).items() if d is not None}
+
+    all_days = covered_days | set(photo_counts)
+    if not all_days:
+        return {'months': [], 'total_photos': 0, 'active_camera_days': 0,
+                'days_with_photos': 0, 'day_range': None}
+
+    first, last = min(all_days), max(all_days)
+    total_photos = sum(photo_counts.values())
+
+    cal = calendar.Calendar(firstweekday=0)
+    months = []
+    y, m = first.year, first.month
+    while (y, m) <= (last.year, last.month):
+        weeks = []
+        for week in cal.monthdatescalendar(y, m):
+            row = []
+            for d in week:
+                if d.month != m:
+                    row.append(None)
+                    continue
+                covered = d in covered_days
+                photos = photo_counts.get(d, 0)
+                if not covered:
+                    level = 'missing'
+                elif photos >= good_photos:
+                    level = 'good'
+                else:
+                    level = 'partial'
+                row.append({'day': d.day, 'date': d, 'covered': covered,
+                            'photos': photos, 'level': level})
+            weeks.append(row)
+        months.append({'year': y, 'month': m, 'label': f'{y}-{m:02d}', 'weeks': weeks})
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+
+    return {
+        'months': months,
+        'total_photos': total_photos,
+        'active_camera_days': len(covered_days),
+        'days_with_photos': len(photo_counts),
+        'day_range': (first, last),
+    }

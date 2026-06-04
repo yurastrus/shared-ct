@@ -1,0 +1,87 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Календар покриття') }} — {{ location_name }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="coverage-header">
+        <div>
+            <h1>📅 {{ _('Календар покриття фотопасткою') }}</h1>
+            <p class="coverage-loc">{{ location_name }}</p>
+        </div>
+        <a href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}"
+           class="btn btn-secondary btn-sm">&larr; {{ _('До локацій') }}</a>
+    </div>
+
+    <p class="text-muted" style="font-size:.9rem;">
+        {{ _('«Камера працювала» = дні в межах деплойментів та дні з фото (прогалини до %(n)s днів вважаються неперервними).') | format(n=max_gap) }}
+    </p>
+
+    {# ── Зведення ── #}
+    <div class="coverage-summary">
+        <div class="coverage-stat">
+            <div class="coverage-stat__num">{{ '{:,}'.format(coverage.active_camera_days).replace(',', ' ') }}</div>
+            <div class="coverage-stat__label">{{ _('Днів роботи камери') }}</div>
+        </div>
+        <div class="coverage-stat">
+            <div class="coverage-stat__num">{{ '{:,}'.format(coverage.days_with_photos).replace(',', ' ') }}</div>
+            <div class="coverage-stat__label">{{ _('Днів із фото') }}</div>
+        </div>
+        <div class="coverage-stat">
+            <div class="coverage-stat__num">{{ '{:,}'.format(coverage.total_photos).replace(',', ' ') }}</div>
+            <div class="coverage-stat__label">{{ _('Усього фото') }}</div>
+        </div>
+        {% if coverage.day_range %}
+        <div class="coverage-stat">
+            <div class="coverage-stat__num">{{ coverage.day_range[0].strftime('%d.%m.%Y') }} – {{ coverage.day_range[1].strftime('%d.%m.%Y') }}</div>
+            <div class="coverage-stat__label">{{ _('Діапазон') }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── Легенда ── #}
+    <div class="coverage-legend">
+        <span><i class="coverage-swatch coverage-good"></i> {{ _('Працювала, є фото') }}</span>
+        <span><i class="coverage-swatch coverage-partial"></i> {{ _('Працювала, без фото') }}</span>
+        <span><i class="coverage-swatch coverage-missing"></i> {{ _('Не працювала') }}</span>
+    </div>
+
+    {% if not coverage.months %}
+        <p class="coverage-empty text-muted">{{ _('Для цієї локації ще немає даних про покриття.') }}</p>
+    {% else %}
+    {% set weekdays = [_('Пн'), _('Вт'), _('Ср'), _('Чт'), _('Пт'), _('Сб'), _('Нд')] %}
+    <div class="coverage-grid">
+        {% for month in coverage.months %}
+        <div class="coverage-month">
+            <h4 class="coverage-month__title">{{ month.label }}</h4>
+            <table class="coverage-table">
+                <thead>
+                    <tr>{% for wd in weekdays %}<th>{{ wd }}</th>{% endfor %}</tr>
+                </thead>
+                <tbody>
+                    {% for week in month.weeks %}
+                    <tr>
+                        {% for cell in week %}
+                            {% if cell is none %}
+                                <td class="coverage-cell coverage-empty-cell"></td>
+                            {% else %}
+                                <td class="coverage-cell coverage-{{ cell.level }}"
+                                    title="{{ cell.date.strftime('%d.%m.%Y') }}: {% if cell.covered %}{{ _('камера працювала') }}{% else %}{{ _('не працювала') }}{% endif %}, {{ cell.photos }} {{ _('фото') }}">
+                                    {{ cell.day }}
+                                </td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}
