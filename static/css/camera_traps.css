@@ -1725,13 +1725,10 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .behavior-checkboxes {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 4px 14px;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background-color: var(--input-bg);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
+.tags-label { font-weight: 600; color: var(--text-primary); white-space: nowrap; margin-right: 2px; }
 .behavior-checkboxes .form-check         { margin-bottom: 0; flex: 0 0 auto; }
 .behavior-checkboxes .form-check-label   { font-size: 0.82rem; white-space: nowrap; color: var(--text-primary); transition: color 0.3s ease; }
 

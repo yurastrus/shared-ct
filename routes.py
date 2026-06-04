@@ -1130,6 +1130,57 @@ def get_species_ranking():
     finally:
         close_ct_session()
 
+# Кеш для рейтингу поведінкових тегів (аналогічно рейтингу видів)
+_behavior_ranking_cache = {
+    'data': None,
+    'timestamp': None,
+    'ttl_hours': 24
+}
+
+def get_behavior_ranking():
+    """Рейтинг поведінкових тегів за частотою використання (з кешуванням)."""
+    global _behavior_ranking_cache
+
+    now = datetime.now()
+
+    # Перевіряємо, чи актуальний кеш
+    if (_behavior_ranking_cache['data'] is not None and
+        _behavior_ranking_cache['timestamp'] is not None and
+        (now - _behavior_ranking_cache['timestamp']).total_seconds() < _behavior_ranking_cache['ttl_hours'] * 3600):
+        return _behavior_ranking_cache['data']
+
+    # Оновлюємо кеш
+    ct_session = get_ct_session()
+    try:
+        # Кількість серій (спостережень), у яких використано кожен тег
+        behavior_counts = ct_session.query(
+            BehaviorType.id,
+            func.count(distinct(Observation.id)).label('observation_count')
+        ).select_from(BehaviorType)\
+         .join(identification_behaviors,
+               identification_behaviors.c.behavior_type_id == BehaviorType.id)\
+         .join(Identification,
+               Identification.id == identification_behaviors.c.identification_id)\
+         .join(Photo, Identification.photo_id == Photo.id)\
+         .join(Observation, Photo.observation_id == Observation.id)\
+         .filter(Observation.status.in_(['completed', 'archived']))\
+         .group_by(BehaviorType.id)\
+         .all()
+
+        ranking = {behavior_id: count for behavior_id, count in behavior_counts}
+
+        _behavior_ranking_cache['data'] = ranking
+        _behavior_ranking_cache['timestamp'] = now
+
+        current_app.logger.info(f"Behavior ranking cache updated with {len(ranking)} behaviors")
+        return ranking
+
+    except Exception as e:
+        current_app.logger.error(f"Error updating behavior ranking cache: {e}")
+        return {}
+    finally:
+        close_ct_session()
+
 @camera_traps_bp.route('/identify', methods=['GET'])
 @login_required
 @role_required('ct_verifier')
@@ -1205,9 +1256,14 @@ def identify(lang_code):
 
         # --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
         
-        # Заповнюємо вибір для поведінки (залишається без змін)
+        # Заповнюємо вибір для поведінки — сортуємо за частотою використання
+        # (як і список видів: найчастіші теги першими, далі за спаданням;
+        #  однаково-часті лишаються за абеткою — стабільне сортування).
+        behavior_ranking = get_behavior_ranking()
         behavior_types = ct_session.query(BehaviorType).order_by(BehaviorType.name_ua).all()
-        form.behaviors.choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
+        behavior_choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
+        behavior_choices.sort(key=lambda c: behavior_ranking.get(c[0], 0), reverse=True)
+        form.behaviors.choices = behavior_choices
 
         # AI-фільтр: список видів з AI-прогнозами (тільки якщо AI доступний).
         # Враховуємо доступ юзера до локацій і вже зроблені ним ідентифікації —
