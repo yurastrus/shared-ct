@@ -266,7 +266,7 @@ a {
 /* ── Identification: 2-column grid ── */
 .identification-layout {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 3.7fr 1fr; /* species column narrowed again (~21%) → larger photo */
     gap: 25px;
     align-items: flex-start;
 }
@@ -274,6 +274,8 @@ main .identification-container {
     display: block !important;
     text-align: left !important;
     align-items: stretch !important;
+    width: 96%;          /* reclaim the empty side area (default .container is 80%) */
+    max-width: 1800px;   /* sane cap on very wide monitors */
 }
 
 
@@ -302,8 +304,16 @@ main .identification-container {
 .scope-filter-bar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.6rem;
     margin-bottom: 1rem;
+}
+/* Counter + theme/review toggle, kept together at the right edge of the top bar */
+.scope-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: auto;
 }
 .scope-filter-label {
     white-space: nowrap;
@@ -1289,7 +1299,7 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 }
 #photo-display {
     max-width: 100%;
-    max-height: 70vh;
+    max-height: 78vh;
     object-fit: contain;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -1534,11 +1544,36 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .viewer-and-form { display: flex; flex-direction: column; gap: 20px; }
 .identification-form-main {
     background-color: var(--card-bg);
-    padding: 20px;
+    padding: 12px 16px;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
+/* Quantity + "У вибране", relocated above the species list (right column) */
+.quantity-panel {
+    background-color: var(--card-bg);
+    padding: 8px 12px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.quantity-field,
+.favorite-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+/* Vertical divider between "Кількість особин" and "У вибране"
+   (degrades to a short left tick if the row wraps on a narrow column). */
+.favorite-field { border-left: 1px solid var(--border-color); padding-left: 12px; }
+.quantity-panel .form-label        { margin-bottom: 0; white-space: nowrap; font-weight: 600; cursor: pointer; }
+.quantity-panel input.form-control { max-width: 70px; }
+.quantity-panel .form-check-input  { margin: 0; cursor: pointer; }
 .fullsize-btn {
     position: absolute;
     top: 15px; right: 15px;
@@ -1568,9 +1603,11 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     z-index: 20;
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
-.buttons-and-theme { display: flex; align-items: center; gap: 8px; }
-.main-buttons      { display: flex; gap: 2px; flex: 1; }
-.action-buttons-container .btn { font-size: 0.85rem; padding: 6px 8px; flex: 1; min-width: 0; }
+.buttons-and-theme { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.main-buttons      { display: flex; gap: 2px; flex: 1 1 auto; }
+.action-buttons-container .btn { font-size: 0.85rem; padding: 6px 8px; flex: 1; min-width: 0; white-space: nowrap; }
+/* Flag button: compact like the sun/moon toggles — submit + skip take the rest */
+#flag-btn { flex: 0 0 auto; width: 34px; padding-left: 0; padding-right: 0; }
 
 /* Compact theme + review toggle */
 .theme-and-review-toggle {
@@ -1688,15 +1725,15 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .behavior-checkboxes {
     display: flex;
     flex-wrap: wrap;
-    gap: 15px;
-    padding: 8px;
+    gap: 4px 14px;
+    padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background-color: var(--input-bg);
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 .behavior-checkboxes .form-check         { margin-bottom: 0; flex: 0 0 auto; }
-.behavior-checkboxes .form-check-label   { font-size: 0.9rem; white-space: nowrap; color: var(--text-primary); transition: color 0.3s ease; }
+.behavior-checkboxes .form-check-label   { font-size: 0.82rem; white-space: nowrap; color: var(--text-primary); transition: color 0.3s ease; }
 
 
 /* ──────────────────────────────────────────────────────────
@@ -1996,6 +2033,7 @@ body.dark-theme .message-container.error {
     .action-buttons-container { position: static; }
     .species-selection-panel  { max-height: none; }
     .main-buttons             { flex-direction: column; gap: 8px; }
+    .main-buttons #flag-btn   { width: 100%; }
     .buttons-and-theme        { flex-direction: column; align-items: stretch; gap: 8px; }
     .gallery-layout .theme-toggle { align-self: center; }
     .filter-row               { flex-direction: column; align-items: stretch; }

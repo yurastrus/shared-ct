@@ -40,7 +40,7 @@ class IdentificationForm(FlaskForm):
     # Залишаємо поле для того, щоб можна було легко отримати його ім'я в шаблоні.
     species = RadioField(_l('Вид тварини'), coerce=int, validators=[Optional()])
     
-    quantity = IntegerField(_l('Кількість особин'), default=1, validators=[DataRequired(), NumberRange(min=1, max=100)])
+    quantity = IntegerField(_l('Особин'), default=1, validators=[DataRequired(), NumberRange(min=1, max=100)])
     
     behaviors = SelectMultipleField(
         _l('Додаткові теги'),
@@ -50,4 +50,4 @@ class IdentificationForm(FlaskForm):
         option_widget=widgets.CheckboxInput()
     )
     
-    is_favorite = BooleanField(_l('Зберегти у вибране'))
+    is_favorite = BooleanField(_l('У вибране'))

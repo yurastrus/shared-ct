@@ -5,12 +5,6 @@
 
 {% block ct_content %}
 <div class="container mt-4 identification-container">
-    <div class="page-header">
-        <h1>{{ _('Ідентифікація тварин') }}</h1>
-        <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 1rem; vertical-align: middle; margin-left: 10px;"></span>
-    </div>
-
-    {% if institutions or ecoregions or ai_available %}
     <div class="scope-filter-bar">
 
         {% if institutions or ecoregions %}
@@ -48,8 +42,27 @@
         </select>
         {% endif %}
 
+        <div class="scope-bar-right">
+            <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 0.95rem;"></span>
+
+            <!-- Перемикач теми + режим перегляду (перенесено з правої колонки) -->
+            <div class="theme-and-review-toggle">
+                <div class="theme-toggle-option active" data-theme="light">
+                    <span class="theme-icon">☀️</span>
+                </div>
+                <div class="theme-toggle-option" data-theme="dark">
+                    <span class="theme-icon">🌙</span>
+                </div>
+
+                {% if can_review %}
+                <div class="review-toggle-container">
+                    <input type="checkbox" id="review-mode-toggle" class="review-checkbox form-check-input">
+                    <span class="review-icon" title="{{ _('Режим перегляду визначених серій') }}">📋</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
-    {% endif %}
 
     <div id="identification-wrapper" style="display: none;">
         <!-- Індикатор review режиму -->
@@ -114,29 +127,20 @@
                     </div>
 
                     <div class="identification-form-main">
-                        <div class="row">
-                            <div class="col-md-4">{{ render_field(form.quantity) }}</div>
-                            <div class="col-md-8">
-                                <div class="form-group">
-                                    {{ form.behaviors.label(class="form-label") }}
-                                    <div class="behavior-checkboxes">
-                                        {% for subfield in form.behaviors %}
-                                            <div class="form-check">
-                                                {{ subfield(class="form-check-input") }}
-                                                {{ subfield.label(class="form-check-label") }}
-                                            </div>
-                                        {% endfor %}
-                                    </div>
+                        <div class="behavior-checkboxes">
+                            {% for subfield in form.behaviors %}
+                                <div class="form-check">
+                                    {{ subfield(class="form-check-input") }}
+                                    {{ subfield.label(class="form-check-label") }}
                                 </div>
-                            </div>
+                            {% endfor %}
                         </div>
-                        <div class="mt-3">{{ render_field(form.is_favorite) }}</div>
                     </div>
                 </div>
 
                 <!-- Права колонка: два окремих контейнери -->
                 <div class="right-column">
-                    <!-- Окремий контейнер для кнопок, теми та review режиму -->
+                    <!-- Кнопки дій (тема та режим перегляду — у верхній панелі) -->
                     <div class="action-buttons-container">
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
@@ -144,27 +148,21 @@
                                 <button type="button" id="skip-btn" class="btn btn-secondary">{{ _('Пропустити') }}</button>
                                 <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩</button>
                             </div>
-                            
-                            <!-- Компактний перемикач теми з review режимом -->
-                            <div class="theme-and-review-toggle">
-                                <div class="theme-toggle-option active" data-theme="light">
-                                    <span class="theme-icon">☀️</span>
-                                </div>
-                                <div class="theme-toggle-option" data-theme="dark">
-                                    <span class="theme-icon">🌙</span>
-                                </div>
-                                
-                                <!-- Review режим контроли для модераторів -->
-                                {% if can_review %}
-                                <div class="review-toggle-container">
-                                    <input type="checkbox" id="review-mode-toggle" class="review-checkbox form-check-input">
-                                    <span class="review-icon" title="{{ _('Режим перегляду визначених серій') }}">📋</span>
-                                </div>
-                                {% endif %}
-                            </div>
                         </div>
                     </div>
                     
+                    <!-- Кількість особин + У вибране — над списком видів -->
+                    <div class="quantity-panel">
+                        <div class="quantity-field">
+                            {{ form.quantity.label(class="form-label") }}
+                            {{ form.quantity(class="form-control") }}
+                        </div>
+                        <div class="favorite-field">
+                            {{ form.is_favorite.label(class="form-label") }}
+                            {{ form.is_favorite(class="form-check-input") }}
+                        </div>
+                    </div>
+
                     <!-- Окремий контейнер для списку видів -->
                     <div class="species-selection-panel">
 
