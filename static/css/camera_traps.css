@@ -2028,3 +2028,34 @@ body.dark-theme .message-container.error {
     .theme-toggle { width: auto; }
     .main-buttons .btn { font-size: 0.8rem; }
 }
+
+/* ──────────────────────────────────────────────────────────
+   Калібрування AI: точність по видах (Idea 5)
+   ────────────────────────────────────────────────────────── */
+.ai-calib-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+.ai-calib-table th,
+.ai-calib-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color, #dee2e6);
+    text-align: left;
+}
+.ai-calib-table th {
+    background: var(--bg-secondary, #f8f9fa);
+    user-select: none;
+    white-space: nowrap;
+}
+.ai-calib-table th:hover { background: #eef1f4; }
+.ai-calib-table tbody tr:hover { background: #f5f9ff; }
+.ai-acc {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.ai-acc--good { background: #d4edda; color: #155724; }
+.ai-acc--mid  { background: #fff3cd; color: #856404; }
+.ai-acc--low  { background: #f8d7da; color: #721c24; }

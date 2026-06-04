@@ -1,0 +1,85 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Калібрування AI') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>🎯 {{ _('Калібрування AI: точність по видах') }}</h1>
+        <p>{{ _('Точність прогнозів AI на серіях, де люди досягли консенсусу. Що більша вибірка — то надійніший показник.') }}</p>
+        <p class="text-muted" style="font-size:.9rem;">
+            {{ _('Середня впевненість «вгадав» помітно вища за «помилився» — ознака доброго калібрування моделі.') }}
+        </p>
+    </div>
+
+    {% if not rows %}
+        <p class="text-muted">{{ _('Поки немає даних: жоден вид не має верифікованих AI-прогнозів за обраним порогом вибірки.') }}</p>
+    {% else %}
+    <div class="table-responsive">
+        <table class="ai-calib-table" id="ai-calib-table">
+            <thead>
+                <tr>
+                    <th data-sort="text"    data-col="0">{{ _('Вид') }}</th>
+                    <th data-sort="num"     data-col="1">{{ _('Вибірка') }}</th>
+                    <th data-sort="num"     data-col="2">{{ _('Точність, %') }}</th>
+                    <th data-sort="num"     data-col="3">{{ _('Сер. впевненість (вгадав)') }}</th>
+                    <th data-sort="num"     data-col="4">{{ _('Сер. впевненість (помилка)') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ r.species_name }}</td>
+                    <td data-val="{{ r.total }}">{{ r.total }}</td>
+                    <td data-val="{{ r.accuracy }}">
+                        <span class="ai-acc {% if r.accuracy >= 80 %}ai-acc--good{% elif r.accuracy >= 50 %}ai-acc--mid{% else %}ai-acc--low{% endif %}">
+                            {{ r.accuracy }}%
+                        </span>
+                        <small class="text-muted">({{ r.correct }}/{{ r.total }})</small>
+                    </td>
+                    <td data-val="{{ r.mean_score_correct if r.mean_score_correct is not none else -1 }}">
+                        {{ r.mean_score_correct if r.mean_score_correct is not none else '—' }}
+                    </td>
+                    <td data-val="{{ r.mean_score_wrong if r.mean_score_wrong is not none else -1 }}">
+                        {{ r.mean_score_wrong if r.mean_score_wrong is not none else '—' }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+</div>
+</div>
+
+<script>
+(function () {
+    const table = document.getElementById('ai-calib-table');
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    table.querySelectorAll('th[data-sort]').forEach(function (th) {
+        th.style.cursor = 'pointer';
+        let asc = false;
+        th.addEventListener('click', function () {
+            asc = !asc;
+            const col = +th.dataset.col;
+            const type = th.dataset.sort;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort(function (a, b) {
+                const ca = a.children[col], cb = b.children[col];
+                if (type === 'num') {
+                    const va = parseFloat(ca.dataset.val), vb = parseFloat(cb.dataset.val);
+                    return asc ? va - vb : vb - va;
+                }
+                const ta = ca.textContent.trim(), tb = cb.textContent.trim();
+                return asc ? ta.localeCompare(tb) : tb.localeCompare(ta);
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+})();
+</script>
+{% endblock %}

@@ -211,6 +211,69 @@ def admin_flagged_list(lang_code):
         close_ct_session()
 
 
+@camera_traps_bp.route('/admin/ai/accuracy')
+@login_required
+@role_required('admin')
+def ai_calibration(lang_code):
+    """Дашборд калібрування AI: точність по видах на верифікованих серіях.
+
+    Спирається на ai_predictions.was_correct (Idea 4), зафіксований у момент
+    консенсусу. ?min=N — мінімальний розмір вибірки на вид (дефолт 1, бо
+    верифікованих AI-серій поки мало; надійність видно з колонки «вибірка»).
+    """
+    from .database import get_ct_engine
+
+    min_samples = request.args.get('min', default=1, type=int)
+    if min_samples < 1:
+        min_samples = 1
+
+    rows_data = []
+    try:
+        engine = get_ct_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT p.prediction_species_id            AS species_id,
+                       s.scientific_name,
+                       s.common_name_ua,
+                       s.common_name_en,
+                       COUNT(*)                            AS total,
+                       COUNT(*) FILTER (WHERE p.was_correct) AS correct,
+                       AVG(p.prediction_score) FILTER (WHERE p.was_correct)        AS mean_score_correct,
+                       AVG(p.prediction_score) FILTER (WHERE p.was_correct = FALSE) AS mean_score_wrong
+                FROM ai_predictions p
+                JOIN species s ON s.id = p.prediction_species_id
+                WHERE p.was_correct IS NOT NULL
+                GROUP BY p.prediction_species_id, s.scientific_name,
+                         s.common_name_ua, s.common_name_en
+                HAVING COUNT(*) >= :min_samples
+                ORDER BY total DESC, correct DESC
+            """), {'min_samples': min_samples}).mappings().fetchall()
+
+        for r in rows:
+            total = r['total'] or 0
+            correct = r['correct'] or 0
+            name = r['scientific_name']
+            if lang_code == 'uk' and r['common_name_ua']:
+                name = f"{r['common_name_ua']} ({r['scientific_name']})"
+            elif lang_code == 'en' and r['common_name_en']:
+                name = f"{r['common_name_en']} ({r['scientific_name']})"
+            rows_data.append({
+                'species_name': name,
+                'total': total,
+                'correct': correct,
+                'accuracy': round(correct / total * 100, 1) if total else 0.0,
+                'mean_score_correct': (round(r['mean_score_correct'], 3)
+                                       if r['mean_score_correct'] is not None else None),
+                'mean_score_wrong': (round(r['mean_score_wrong'], 3)
+                                     if r['mean_score_wrong'] is not None else None),
+            })
+    except Exception as e:
+        current_app.logger.warning(f"AI calibration query failed: {e}")
+
+    return render_template('ai_calibration.html',
+                           rows=rows_data, min_samples=min_samples)
+
+
 @camera_traps_bp.route('/admin/ai/run', methods=['POST'])
 @login_required
 @role_required('admin')
