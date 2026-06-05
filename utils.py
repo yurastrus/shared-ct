@@ -757,8 +757,12 @@ def fill_day_gaps(days, max_gap_days):
     return out
 
 
-def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1):
+def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1, mode='all'):
     """Помісячний календар покриття фотопасток. Чиста функція (без БД).
+
+    mode='all' (дефолт): усі роки помісячно. mode='aggregated': один умовний
+    рік (12 міс), кожен (місяць,день) зводить усі роки + cell['years'] = к-сть
+    років із даними.
 
     covered_days: set[date] — дні, коли камера працювала.
     photo_counts: {date: int} — к-сть фото за день (для інтенсивності/градації).
@@ -776,12 +780,56 @@ def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1):
     all_days = covered_days | set(photo_counts)
     if not all_days:
         return {'months': [], 'total_photos': 0, 'active_camera_days': 0,
-                'days_with_photos': 0, 'day_range': None}
+                'days_with_photos': 0, 'day_range': None, 'mode': mode}
 
     first, last = min(all_days), max(all_days)
     total_photos = sum(photo_counts.values())
-
     cal = calendar.Calendar(firstweekday=0)
+
+    def _level(covered, photos):
+        if not covered:
+            return 'missing'
+        return 'good' if photos >= good_photos else 'partial'
+
+    if mode == 'aggregated':
+        # Згортка по (month, day) за всі роки.
+        agg = {}  # (m, d) -> {'cov_years': set, 'photos': int, 'years': set}
+        for d in covered_days:
+            a = agg.setdefault((d.month, d.day),
+                               {'cov_years': set(), 'photos': 0, 'years': set()})
+            a['cov_years'].add(d.year)
+            a['years'].add(d.year)
+        for d, cnt in photo_counts.items():
+            a = agg.setdefault((d.month, d.day),
+                               {'cov_years': set(), 'photos': 0, 'years': set()})
+            a['photos'] += cnt
+            a['years'].add(d.year)
+        months = []
+        for m in range(1, 13):
+            weeks = []
+            for week in cal.monthdatescalendar(2000, m):  # 2000 — високосний
+                row = []
+                for d in week:
+                    if d.month != m:
+                        row.append(None)
+                        continue
+                    a = agg.get((m, d.day))
+                    covered = bool(a and a['cov_years'])
+                    photos = a['photos'] if a else 0
+                    row.append({'day': d.day, 'date': d, 'covered': covered,
+                                'photos': photos,
+                                'years': len(a['years']) if a else 0,
+                                'level': _level(covered, photos)})
+                weeks.append(row)
+            months.append({'year': 2000, 'month': m, 'label': f'{m:02d}', 'weeks': weeks})
+        return {
+            'months': months, 'total_photos': total_photos,
+            'active_camera_days': len(covered_days),
+            'days_with_photos': len(photo_counts),
+            'day_range': (first, last), 'mode': 'aggregated',
+            'years': sorted({d.year for d in all_days}),
+        }
+
     months = []
     y, m = first.year, first.month
     while (y, m) <= (last.year, last.month):
@@ -794,14 +842,8 @@ def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1):
                     continue
                 covered = d in covered_days
                 photos = photo_counts.get(d, 0)
-                if not covered:
-                    level = 'missing'
-                elif photos >= good_photos:
-                    level = 'good'
-                else:
-                    level = 'partial'
                 row.append({'day': d.day, 'date': d, 'covered': covered,
-                            'photos': photos, 'level': level})
+                            'photos': photos, 'level': _level(covered, photos)})
             weeks.append(row)
         months.append({'year': y, 'month': m, 'label': f'{y}-{m:02d}', 'weeks': weeks})
         m += 1
@@ -814,4 +856,5 @@ def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1):
         'active_camera_days': len(covered_days),
         'days_with_photos': len(photo_counts),
         'day_range': (first, last),
+        'mode': 'all',
     }

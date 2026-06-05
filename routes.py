@@ -3234,10 +3234,13 @@ def ct_location_coverage(lang_code, location_id):
             if d and d.year >= 2010:
                 photo_counts[d] = r.cnt
 
+        mode = request.args.get('mode', 'all')
+        if mode not in ('all', 'aggregated'):
+            mode = 'all'
         from .utils import build_ct_coverage_calendar, fill_day_gaps
         covered = deployment_days | fill_day_gaps(set(photo_counts), max_gap)
         coverage = build_ct_coverage_calendar(covered, photo_counts,
-                                               good_photos=good_photos)
+                                               good_photos=good_photos, mode=mode)
 
         return render_template(
             'ct_location_coverage.html',

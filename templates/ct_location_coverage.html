@@ -15,6 +15,12 @@
            class="btn btn-secondary btn-sm">&larr; {{ _('До локацій') }}</a>
     </div>
 
+    {# ── Режим відображення ── #}
+    <div class="coverage-modes">
+        <a href="?mode=all" class="btn btn-sm {{ 'btn-primary' if coverage.mode != 'aggregated' else 'btn-outline-secondary' }}">{{ _('Усі роки') }}</a>
+        <a href="?mode=aggregated" class="btn btn-sm {{ 'btn-primary' if coverage.mode == 'aggregated' else 'btn-outline-secondary' }}">{{ _('Зведено за рік') }}</a>
+    </div>
+
     <p class="text-muted" style="font-size:.9rem;">
         {{ _('«Камера працювала» = дні в межах деплойментів та дні з фото (прогалини до %(n)s днів вважаються неперервними).') | format(n=max_gap) }}
     </p>
@@ -68,7 +74,7 @@
                                 <td class="coverage-cell coverage-empty-cell"></td>
                             {% else %}
                                 <td class="coverage-cell coverage-{{ cell.level }}"
-                                    title="{{ cell.date.strftime('%d.%m.%Y') }}: {% if cell.covered %}{{ _('камера працювала') }}{% else %}{{ _('не працювала') }}{% endif %}, {{ cell.photos }} {{ _('фото') }}">
+                                    title="{% if coverage.mode == 'aggregated' %}{{ cell.date.strftime('%d.%m') }}: {{ cell.photos }} {{ _('фото') }}, {{ cell.years }} {{ _('р.') }}{% else %}{{ cell.date.strftime('%d.%m.%Y') }}: {% if cell.covered %}{{ _('камера працювала') }}{% else %}{{ _('не працювала') }}{% endif %}, {{ cell.photos }} {{ _('фото') }}{% endif %}">
                                     {{ cell.day }}
                                 </td>
                             {% endif %}

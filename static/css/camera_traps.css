@@ -2125,3 +2125,5 @@ body.dark-theme .message-container.error {
 @media (max-width: 575px) {
     .coverage-grid { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:8px; }
 }
+
+.coverage-modes { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
