@@ -266,7 +266,7 @@ a {
 /* ── Identification: 2-column grid ── */
 .identification-layout {
     display: grid;
-    grid-template-columns: 3.7fr 1fr; /* species column narrowed again (~21%) → larger photo */
+    grid-template-columns: 3.3fr 1fr; /* species column ~23% (widened a couple % so the quantity row fits one line on tablets) */
     gap: 25px;
     align-items: flex-start;
 }
@@ -322,7 +322,9 @@ main .identification-container {
     margin: 0;
 }
 .scope-filter-select {
-    max-width: 320px;
+    flex: 1 1 auto;     /* shrink/grow to share the top row with AI + counter */
+    min-width: 120px;
+    max-width: 300px;
     background-color: var(--input-bg);
     color: var(--text-primary);
     border-color: var(--input-border);
@@ -1558,27 +1560,27 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 /* Quantity + "У вибране", relocated above the species list (right column) */
 .quantity-panel {
     background-color: var(--card-bg);
-    padding: 8px 12px;
+    padding: 8px 10px;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px 12px;
+    gap: 6px 8px;
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 .quantity-field,
 .favorite-field {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     margin: 0;
 }
-/* Vertical divider between "Кількість особин" and "У вибране"
+/* Vertical divider between "Особин" and "У вибране"
    (degrades to a short left tick if the row wraps on a narrow column). */
-.favorite-field { border-left: 1px solid var(--border-color); padding-left: 12px; }
-.quantity-panel .form-label        { margin-bottom: 0; white-space: nowrap; font-weight: 600; cursor: pointer; }
-.quantity-panel input.form-control { max-width: 70px; }
+.favorite-field { border-left: 1px solid var(--border-color); padding-left: 8px; }
+.quantity-panel .form-label        { margin-bottom: 0; white-space: nowrap; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.quantity-panel input.form-control { max-width: 48px; }
 .quantity-panel .form-check-input  { margin: 0; cursor: pointer; }
 .fullsize-btn {
     position: absolute;
