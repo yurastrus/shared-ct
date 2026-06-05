@@ -47,11 +47,12 @@
         {% endif %}
     </div>
 
-    {# ── Легенда ── #}
+    {# ── Легенда (градієнт за к-стю фото) ── #}
     <div class="coverage-legend">
-        <span><i class="coverage-swatch coverage-good"></i> {{ _('Працювала, є фото') }}</span>
-        <span><i class="coverage-swatch coverage-partial"></i> {{ _('Працювала, без фото') }}</span>
-        <span><i class="coverage-swatch coverage-missing"></i> {{ _('Не працювала') }}</span>
+        <span>{{ _('менше') }}</span>
+        <i class="coverage-gradient-bar"></i>
+        <span>{{ _('більше фото') }}</span>
+        <span class="coverage-legend-sep"><i class="coverage-swatch coverage-missing"></i> {{ _('Не працювала') }}</span>
     </div>
 
     {% if not coverage.months %}
@@ -73,7 +74,8 @@
                             {% if cell is none %}
                                 <td class="coverage-cell coverage-empty-cell"></td>
                             {% else %}
-                                <td class="coverage-cell coverage-{{ cell.level }}"
+                                <td class="coverage-cell{% if cell.intensity is none %} coverage-missing{% endif %}"
+                                    {% if cell.intensity is not none %}style="background: rgba(76,175,80,{{ (0.15 + 0.85 * cell.intensity)|round(3) }}); color: {{ '#fff' if cell.intensity > 0.55 else '#333' }};"{% endif %}
                                     title="{% if coverage.mode == 'aggregated' %}{{ cell.date.strftime('%d.%m') }}: {{ cell.photos }} {{ _('фото') }}, {{ cell.years }} {{ _('р.') }}{% else %}{{ cell.date.strftime('%d.%m.%Y') }}: {% if cell.covered %}{{ _('камера працювала') }}{% else %}{{ _('не працювала') }}{% endif %}, {{ cell.photos }} {{ _('фото') }}{% endif %}">
                                     {{ cell.day }}
                                 </td>

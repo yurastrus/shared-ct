@@ -757,6 +757,24 @@ def fill_day_gaps(days, max_gap_days):
     return out
 
 
+def _apply_coverage_intensity(months, value_of, include):
+    """cell['intensity'] ∈ [0,1] лінійно min→max (#43). include(cell) → у шкалі,
+    інакше None. Всі рівні → 1.0."""
+    vals = [value_of(c) for mo in months for wk in mo['weeks']
+            for c in wk if c and include(c)]
+    if vals:
+        lo, hi = min(vals), max(vals)
+        span = (hi - lo) or 1.0
+    else:
+        lo, span = 0, 1.0
+    for mo in months:
+        for wk in mo['weeks']:
+            for c in wk:
+                if not c:
+                    continue
+                c['intensity'] = ((value_of(c) - lo) / span) if include(c) else None
+
+
 def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1, mode='all'):
     """Помісячний календар покриття фотопасток. Чиста функція (без БД).
 
@@ -822,6 +840,7 @@ def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1, mode='
                                 'level': _level(covered, photos)})
                 weeks.append(row)
             months.append({'year': 2000, 'month': m, 'label': f'{m:02d}', 'weeks': weeks})
+        _apply_coverage_intensity(months, lambda c: c['photos'], lambda c: c['covered'])
         return {
             'months': months, 'total_photos': total_photos,
             'active_camera_days': len(covered_days),
@@ -850,6 +869,7 @@ def build_ct_coverage_calendar(covered_days, photo_counts, good_photos=1, mode='
         if m > 12:
             m, y = 1, y + 1
 
+    _apply_coverage_intensity(months, lambda c: c['photos'], lambda c: c['covered'])
     return {
         'months': months,
         'total_photos': total_photos,
