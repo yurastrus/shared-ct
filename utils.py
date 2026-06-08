@@ -11,8 +11,61 @@ from PIL import Image
 from sqlalchemy import func, text
 
 from flask import current_app
-from .database import get_ct_session, close_ct_session
+from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import Location, Observation, Photo, UploadBatch, Identification
+
+
+def get_user_ct_stats(user_id, lang='uk'):
+    """#31: персональна CT-статистика користувача (read-only).
+
+    Через окреме engine-з'єднання (контекст-менеджер гарантовано закриває —
+    не чіпає scoped ct_session). Повертає dict:
+      series          — унікальні серії, де користувач робив визначення,
+      identifications — усього визначень,
+      species_count   — унікальні види (species_id > 0),
+      top_species     — топ-5 [{name, count}] за к-стю серій.
+    """
+    engine = get_ct_engine()
+    with engine.connect() as conn:
+        agg = conn.execute(text("""
+            SELECT COUNT(*) AS idents,
+                   COUNT(DISTINCT p.observation_id) AS series,
+                   COUNT(DISTINCT CASE WHEN i.species_id > 0 THEN i.species_id END) AS species
+            FROM identifications i
+            JOIN photos p ON p.id = i.photo_id
+            WHERE i.user_id = :uid
+        """), {"uid": user_id}).fetchone()
+
+        top_rows = conn.execute(text("""
+            SELECT i.species_id AS sid, COUNT(DISTINCT p.observation_id) AS n
+            FROM identifications i
+            JOIN photos p ON p.id = i.photo_id
+            WHERE i.user_id = :uid AND i.species_id > 0
+            GROUP BY i.species_id
+            ORDER BY n DESC
+            LIMIT 5
+        """), {"uid": user_id}).fetchall()
+
+        top_species = []
+        if top_rows:
+            ids = [r.sid for r in top_rows]
+            name_rows = conn.execute(text("""
+                SELECT id, common_name_ua, common_name_en, scientific_name
+                FROM species WHERE id = ANY(:ids)
+            """), {"ids": ids}).fetchall()
+            names = {}
+            for nr in name_rows:
+                names[nr.id] = ((nr.common_name_en if lang == 'en' else nr.common_name_ua)
+                                or nr.scientific_name or f'#{nr.id}')
+            top_species = [{'name': names.get(r.sid, f'#{r.sid}'), 'count': r.n} for r in top_rows]
+
+    return {
+        'series': (agg.series if agg else 0) or 0,
+        'identifications': (agg.idents if agg else 0) or 0,
+        'species_count': (agg.species if agg else 0) or 0,
+        'top_species': top_species,
+    }
+
 
 def get_institution_filter(user_inst_ids=None, is_admin=False, selected_inst_id=None, table_alias='l'):
     """
