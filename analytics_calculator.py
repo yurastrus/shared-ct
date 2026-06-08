@@ -2,14 +2,18 @@
 
 import logging
 import random
+import threading
 from collections import defaultdict
 import numpy as np
-from datetime import datetime
-from sqlalchemy import func, extract, select, distinct
+from datetime import datetime, timedelta
+from typing import Optional
+from sqlalchemy import func, extract, select, distinct, text
+
+from flask import current_app
 
 # Важливо: Імпортуємо моделі та функції для роботи з сесією
 # з існуючих файлів вашого проєкту.
-from .database import get_ct_session, close_ct_session
+from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import (
     Observation, Photo, Identification, Species, Location,
     LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend,
@@ -250,6 +254,13 @@ def _calculate_yearly_trends_with_bootstrap():
 def update_analytics_tables(force_run=False):
     """
     Головна функція. Перевіряє, чи потрібен перерахунок, і запускає обидва етапи.
+
+    Повертає:
+        True  — перерахунок завершено успішно (або пропущено: змін немає);
+        False — один з етапів впав або сталася помилка.
+    Раніше функція повертала None і «ковтала» всі помилки, тож виклик
+    /admin/run-analytics завжди рапортував успіх. Тепер результат явний —
+    і HTTP-роут, і фоновий потік можуть коректно проставити статус.
     """
     session = get_ct_session()
     try:
@@ -263,21 +274,21 @@ def update_analytics_tables(force_run=False):
 
         if not force_run and current_count == last_count:
             logging.info("No changes detected. Skipping calculation.")
-            return
+            return True
 
         logging.info("Changes detected or force_run=True. Starting analytics calculation...")
-        
+
         # Етап 1: Розрахунок щомісячної активності
         success_monthly = _calculate_monthly_activity()
         if not success_monthly:
             logging.error("Monthly activity calculation failed. Aborting further calculations.")
-            return
+            return False
 
         # Етап 2: Розрахунок річних трендів
         success_yearly = _calculate_yearly_trends_with_bootstrap()
         if not success_yearly:
             logging.error("Yearly trend calculation failed. Log will not be updated.")
-            return
+            return False
 
         # Етап 3: Якщо все успішно, оновлюємо лог
         logging.info("All calculations successful. Updating log.")
@@ -291,15 +302,211 @@ def update_analytics_tables(force_run=False):
                 last_calculated_at=datetime.utcnow()
             )
             session.add(new_log_entry)
-        
+
         session.commit()
         logging.info("Log updated successfully.")
+        return True
 
     except Exception as e:
         logging.error(f"An error occurred in the main update function: {e}", exc_info=True)
         session.rollback()
+        return False
     finally:
         close_ct_session()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# АСИНХРОННИЙ ЗАПУСК (threading; точка заміни на Celery надалі)
+#
+# Проблема, яку це вирішує: update_analytics_tables() триває ~3 хв на бойових
+# даних. Виклик синхронно з HTTP-запиту перевищував gunicorn --timeout → воркер
+# убивався → 500. Тепер роут стартує фоновий потік і миттєво повертається, а
+# клієнт опитує статус. Дзеркалить патерн cleanup.py / fast_upload.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Джерело, за яким ведеться облік у calculation_log (єдиний рядок аналітики).
+ANALYTICS_SOURCE = 'completed_observations'
+# 'running' старший за цей поріг вважаємо «застряглим» (воркер убитий) —
+# його можна перезапустити / прибрати recover_stuck_analytics().
+ANALYTICS_STUCK_MINUTES = 30
+
+
+def _ensure_log_row(conn) -> None:
+    """Гарантує існування рядка calculation_log для ANALYTICS_SOURCE."""
+    conn.execute(
+        text("""
+            INSERT INTO calculation_log (source_name, last_count, status)
+            VALUES (:src, 0, 'idle')
+            ON CONFLICT (source_name) DO NOTHING
+        """),
+        {"src": ANALYTICS_SOURCE},
+    )
+
+
+def try_start_analytics_run(triggered_by: Optional[int] = None) -> bool:
+    """
+    Атомарний compare-and-set «захопити» право на перерахунок.
+
+    Один UPSERT через ON CONFLICT ... WHERE: переводить рядок у 'running'
+    ЛИШЕ якщо він зараз НЕ 'running' (або 'running', але застряг — started_at
+    старший за ANALYTICS_STUCK_MINUTES). Працює крос-воркерно (3 gunicorn-
+    воркери) без advisory-lock: гонка двох кліків «Запустити» вирішується на
+    рівні БД — лише один отримає rowcount==1.
+
+    Повертає True, якщо саме цей виклик захопив запуск; False — якщо
+    перерахунок уже триває.
+    """
+    engine = get_ct_engine()
+    stuck_cutoff = datetime.utcnow() - timedelta(minutes=ANALYTICS_STUCK_MINUTES)
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                INSERT INTO calculation_log
+                    (source_name, last_count, status, started_at, error_message)
+                VALUES
+                    (:src, 0, 'running', NOW(), NULL)
+                ON CONFLICT (source_name) DO UPDATE
+                   SET status = 'running',
+                       started_at = NOW(),
+                       error_message = NULL
+                 WHERE calculation_log.status IS DISTINCT FROM 'running'
+                    OR calculation_log.started_at IS NULL
+                    OR calculation_log.started_at < :cutoff
+            """),
+            {"src": ANALYTICS_SOURCE, "cutoff": stuck_cutoff},
+        )
+        # rowcount==1 → або свіжий INSERT, або DO UPDATE спрацював (WHERE true).
+        # rowcount==0 → конфлікт був, але WHERE false → вже 'running'.
+        return (result.rowcount or 0) == 1
+
+
+def _finish_analytics_run(status: str, error_message: Optional[str] = None) -> None:
+    """Проставляє фінальний статус ('completed' / 'failed') після фонового run."""
+    engine = get_ct_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                UPDATE calculation_log
+                   SET status = :st,
+                       error_message = :err
+                 WHERE source_name = :src
+            """),
+            {"src": ANALYTICS_SOURCE, "st": status,
+             "err": (error_message[:500] if error_message else None)},
+        )
+
+
+def _run_analytics_in_thread(app, triggered_by: Optional[int]) -> None:
+    """Тіло фонового потоку. Виконується поза HTTP-контекстом."""
+    with app.app_context():
+        try:
+            ok = update_analytics_tables(force_run=True)
+            if ok:
+                _finish_analytics_run('completed')
+            else:
+                _finish_analytics_run(
+                    'failed',
+                    'Перерахунок завершився з помилкою — деталі у логах сервера.'
+                )
+        except Exception as e:
+            current_app.logger.exception("[analytics] background run crashed")
+            try:
+                _finish_analytics_run('failed', str(e))
+            except Exception:
+                pass
+
+
+def start_async_analytics(triggered_by: Optional[int] = None) -> bool:
+    """
+    Стартує фоновий перерахунок аналітики. Повертається МИТТЄВО.
+
+    Повертає:
+        True  — запуск стартував у фоні (потік створено);
+        False — перерахунок уже виконується, новий не стартував.
+
+    NB: шар спеціально тонкий — щоб у майбутньому замінити тіло на
+    `recalc_analytics_task.delay()` (Celery) без зміни роуту і JS.
+    """
+    if not try_start_analytics_run(triggered_by):
+        return False
+
+    app = current_app._get_current_object()  # type: ignore[attr-defined]
+    threading.Thread(
+        target=_run_analytics_in_thread,
+        args=(app, triggered_by),
+        name="ct-analytics-recalc",
+        daemon=True,
+    ).start()
+    current_app.logger.info(
+        f"[analytics] started async recalculation (triggered_by={triggered_by})"
+    )
+    return True
+
+
+def get_analytics_status() -> dict:
+    """Повертає поточний стан перерахунку для polling з адмінки."""
+    engine = get_ct_engine()
+    with engine.begin() as conn:
+        _ensure_log_row(conn)
+        row = conn.execute(
+            text("""
+                SELECT status, started_at, last_calculated_at,
+                       last_count, error_message
+                  FROM calculation_log
+                 WHERE source_name = :src
+            """),
+            {"src": ANALYTICS_SOURCE},
+        ).first()
+
+    if row is None:
+        return {"status": "idle", "started_at": None, "last_calculated_at": None,
+                "last_count": None, "error_message": None}
+
+    return {
+        "status": row.status or "idle",
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "last_calculated_at": row.last_calculated_at.isoformat() if row.last_calculated_at else None,
+        "last_count": row.last_count,
+        "error_message": row.error_message,
+    }
+
+
+def recover_stuck_analytics() -> int:
+    """
+    Викликати при старті app. Якщо воркер був убитий під час 'running' —
+    переводить «застряглий» рядок (started_at старший за поріг) у 'failed',
+    щоб адмінка показала помилку, а наступний клік міг стартувати наново.
+    """
+    try:
+        engine = get_ct_engine()
+        cutoff = datetime.utcnow() - timedelta(minutes=ANALYTICS_STUCK_MINUTES)
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE calculation_log
+                       SET status = 'failed',
+                           error_message = COALESCE(error_message,
+                               'Сервер перезапущено під час перерахунку; запустіть знову')
+                     WHERE source_name = :src
+                       AND status = 'running'
+                       AND (started_at IS NULL OR started_at < :cutoff)
+                """),
+                {"src": ANALYTICS_SOURCE, "cutoff": cutoff},
+            )
+            n = result.rowcount or 0
+            if n:
+                current_app.logger.warning(
+                    "[analytics] recovered stuck 'running' calculation_log row"
+                )
+            return n
+    except Exception as e:
+        try:
+            current_app.logger.error(f"[analytics] recover_stuck_analytics failed: {e}")
+        except Exception:
+            pass
+        return 0
+    finally:
+        close_ct_session()
+
 
 if __name__ == '__main__':
     # Цей блок дозволяє запускати цей файл напряму з командного рядка для тестування

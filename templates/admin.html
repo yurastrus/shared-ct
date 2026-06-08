@@ -127,10 +127,11 @@
                 <div class="admin-action__info">
                     <p class="admin-action__title">{{ _('Перерахувати аналітику') }}</p>
                     <p class="admin-action__desc">{{ _('Перерахунок усіх агрегатних таблиць для графіків і мапи. Може зайняти кілька хвилин.') }}</p>
+                    <p class="admin-action__desc" id="analytics-status-line" style="margin-top:.35rem;"></p>
                 </div>
-                <form action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post">
+                <form id="analytics-form" action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                    <button type="submit" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
+                    <button type="submit" id="analytics-run-btn" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
                         {{ _('Запустити') }}
                     </button>
                 </form>
@@ -440,6 +441,97 @@
     });
 
     $$('#cleanup-close-btn').addEventListener('click', closeModal);
+})();
+
+// ── Перерахунок аналітики: AJAX-старт + polling статусу ─────────────────────
+(function() {
+    const LANG = '{{ g.lang_code }}';
+    const csrfToken = '{{ csrf_token() }}';
+    const statusUrl = `/${LANG}/camera-traps/admin/analytics/status`;
+    const form = document.getElementById('analytics-form');
+    const btn = document.getElementById('analytics-run-btn');
+    const line = document.getElementById('analytics-status-line');
+    if (!form || !btn || !line) return;
+
+    const runUrl = form.getAttribute('action');
+    let pollTimer = null;
+
+    function fmtTime(iso) {
+        if (!iso) return null;
+        const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+        return isNaN(d.getTime()) ? null : d.toLocaleString();
+    }
+
+    function render(data) {
+        const st = (data && data.status) || 'idle';
+        const last = fmtTime(data && data.last_calculated_at);
+        const running = st === 'running';
+        btn.disabled = running;
+        btn.textContent = running ? '{{ _("Виконується…") }}' : '{{ _("Запустити") }}';
+
+        if (running) {
+            line.textContent = '⏳ {{ _("Перерахунок виконується у фоні…") }}';
+            line.style.color = '#0c5460';
+        } else if (st === 'failed') {
+            line.textContent = '⚠️ {{ _("Останній перерахунок завершився помилкою.") }}'
+                + (data.error_message ? ' (' + data.error_message + ')' : '');
+            line.style.color = '#dc3545';
+        } else {
+            line.textContent = last
+                ? '✓ {{ _("Останній успішний перерахунок:") }} ' + last
+                : '{{ _("Перерахунок ще не виконувався.") }}';
+            line.style.color = '#6c757d';
+        }
+    }
+
+    async function fetchStatus() {
+        try {
+            const r = await fetch(statusUrl, { credentials: 'same-origin' });
+            const data = await r.json().catch(() => ({}));
+            render(data);
+            if (data.status === 'running') startPolling();
+            else stopPolling();
+        } catch (e) { /* мовчки — статус не критичний */ }
+    }
+
+    function startPolling() {
+        if (pollTimer) return;
+        pollTimer = setInterval(fetchStatus, 3000);
+    }
+    function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    form.addEventListener('submit', async function(ev) {
+        // onclick кнопки вже показав confirm(); якщо дійшли сюди — підтверджено.
+        ev.preventDefault();
+        btn.disabled = true;
+        line.textContent = '{{ _("Запуск…") }}';
+        line.style.color = '#0c5460';
+        try {
+            const r = await fetch(runUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: '{}',
+                credentials: 'same-origin'
+            });
+            // 202 — стартовано; 409 — вже виконується. В обох випадках — polling.
+            await r.json().catch(() => ({}));
+            startPolling();
+            fetchStatus();
+        } catch (e) {
+            line.textContent = '⚠️ {{ _("Не вдалося запустити перерахунок.") }}';
+            line.style.color = '#dc3545';
+            btn.disabled = false;
+        }
+    });
+
+    fetchStatus();  // початковий стан при відкритті сторінки
 })();
 </script>
 {% endblock %}

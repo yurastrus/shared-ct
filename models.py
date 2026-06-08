@@ -405,14 +405,26 @@ class CalculationLog(CTBase):
     Сервісна таблиця для відстеження стану даних та необхідності перерахунку.
     """
     __tablename__ = 'calculation_log'
-    
+
     id = Column(Integer, primary_key=True)
     source_name = Column(String(100), unique=True, nullable=False) # Напр. 'completed_observations'
     last_count = Column(Integer, nullable=False, default=0)
     last_calculated_at = Column(DateTime, nullable=True)
 
+    # Стан асинхронного перерахунку (analytics_calculator.start_async_analytics):
+    #   'idle'      — перерахунку немає; last_calculated_at — час останнього успіху
+    #   'running'   — фоновий потік виконує update_analytics_tables
+    #   'completed' — останній запуск завершився успішно
+    #   'failed'    — останній запуск впав (деталі в error_message)
+    # NB: на проді колонки додаються через scripts/init_analytics_status.py
+    # (create_all не додає колонки в існуючу таблицю). Декларація тут —
+    # для нових/dev-інсталяцій.
+    status = Column(String(20), nullable=False, default='idle')
+    started_at = Column(DateTime, nullable=True)       # коли стартував поточний/останній run
+    error_message = Column(Text, nullable=True)        # текст помилки останнього failed-run
+
     def __repr__(self):
-        return f'<Log: {self.source_name}, Count: {self.last_count}>'
+        return f'<Log: {self.source_name}, Count: {self.last_count}, Status: {self.status}>'
     
 class BatteryType(CTBase):
     """Довідкова таблиця: Типи елементів живлення."""

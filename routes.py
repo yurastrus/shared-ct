@@ -14,7 +14,6 @@ from functools import lru_cache
 from . import camera_traps_bp
 from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
-from .analytics_calculator import update_analytics_tables
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
@@ -4182,20 +4181,60 @@ def manual_delete_originals(lang_code):
 @login_required
 @role_required('admin')
 def manual_run_analytics(lang_code):
-    """Маршрут для ручного запуску повного перерахунку аналітики."""
+    """
+    Стартує ПОВНИЙ перерахунок аналітики у фоні й повертається миттєво.
+
+    Раніше перерахунок (~3 хв) виконувався синхронно в запиті й перевищував
+    gunicorn --timeout → воркер убивався → 500. Тепер start_async_analytics
+    запускає threading-потік, а клієнт опитує /admin/analytics/status.
+
+    Відповідає двома способами:
+      • AJAX (Accept: application/json) → 202/409 JSON (для polling-UI);
+      • звичайна форма → flash + redirect (graceful fallback без JS).
+    """
+    from .analytics_calculator import start_async_analytics
+
+    wants_json = request.accept_mimetypes.best == 'application/json' \
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     try:
-        current_app.logger.info(f"Manual analytics recalculation triggered by admin: {current_user.username}")
-        
-        # Викликаємо нашу функцію з прапором force_run=True
-        update_analytics_tables(force_run=True)
-        
-        flash(_('Процес перерахунку аналітики успішно завершено.'), 'success')
-        
+        current_app.logger.info(
+            f"Manual analytics recalculation triggered by admin: {current_user.username}"
+        )
+        started = start_async_analytics(triggered_by=current_user.id)
+
+        if started:
+            if wants_json:
+                return jsonify({'success': True, 'status': 'running',
+                                'message': _('Перерахунок аналітики запущено у фоні.')}), 202
+            flash(_('Перерахунок аналітики запущено у фоні. Це може зайняти кілька '
+                    'хвилин — статус оновиться на цій сторінці.'), 'info')
+        else:
+            if wants_json:
+                return jsonify({'success': False, 'status': 'running',
+                                'message': _('Перерахунок аналітики вже виконується.')}), 409
+            flash(_('Перерахунок аналітики вже виконується. Зачекайте завершення.'), 'warning')
+
     except Exception as e:
-        current_app.logger.error(f"Manual analytics recalculation failed: {e}", exc_info=True)
-        flash(_('Під час перерахунку аналітики сталася помилка. Перевірте логи.'), 'danger')
+        current_app.logger.error(f"Manual analytics recalculation failed to start: {e}", exc_info=True)
+        if wants_json:
+            return jsonify({'error': _('Не вдалося запустити перерахунок аналітики.')}), 500
+        flash(_('Не вдалося запустити перерахунок аналітики. Перевірте логи.'), 'danger')
 
     return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
+
+
+@camera_traps_bp.route('/admin/analytics/status', methods=['GET'])
+@login_required
+@role_required('admin')
+def analytics_status(lang_code):
+    """Polling: повертає поточний стан фонового перерахунку аналітики."""
+    from .analytics_calculator import get_analytics_status
+    try:
+        return jsonify(get_analytics_status()), 200
+    except Exception as e:
+        current_app.logger.exception(f"analytics_status failed: {e}")
+        return jsonify({'error': _('Помилка отримання статусу')}), 500
 
 # --- СЕКЦІЯ ЕКСПОРТУ ДАНИХ (додати в кінець файлу routes.py) ---
 
