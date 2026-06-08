@@ -304,7 +304,8 @@ class Identification(CTBase):
     photo_id = Column(Integer, ForeignKey('photos.id'), nullable=False)
     user_id = Column(Integer, nullable=False)  # ID користувача з основної БД
     species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # None для "Інший вид"
-    confidence_level = Column(Integer, CheckConstraint('confidence_level >= 1 AND confidence_level <= 5'))
+    # confidence_level видалено (#46): колонка була порожня (форма не писала) —
+    # архітектурний залишок. DROP COLUMN застосовано на проді.
     quantity = Column(Integer, default=1)
     comment = Column(Text)
     created_at = Column(DateTime, default=func.now())
