@@ -357,7 +357,8 @@ def dashboard(lang_code):
         institutions_list = get_accessible_institutions(is_admin)
         ecoregions = build_ecoregions(institutions_list, g.lang_code)
         selected_scope, selected_inst_ids = resolve_scope(
-            request.args.get('scope', ''), institutions_list)
+            request.args.get('scope', ''), institutions_list,
+            current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
 
         # Передаємо table_alias='locations' (без ніяких .replace)
         inst_condition, inst_params = get_institution_filter(
@@ -523,7 +524,7 @@ def build_ecoregions(institutions, lang):
     return ecoregions
 
 
-def resolve_scope(scope_arg, accessible_institutions):
+def resolve_scope(scope_arg, accessible_institutions, default_scope=''):
     """
     Розбирає комбінований фільтр `scope` ('institution:<id>' | 'ecoregion:<key>'
     | 'global:') у набір установ для get_institution_filter().
@@ -533,8 +534,24 @@ def resolve_scope(scope_arg, accessible_institutions):
       - institution:id → [id];
       - ecoregion:key  → список установ цього екорегіону (в межах доступу),
                          або [-1] якщо жодної (гарантовано порожній результат).
+
+    default_scope (#49): scope, що застосовується, коли scope_arg порожній
+    (значення з CAMERA_TRAP_CONFIG['CT_DEFAULT_SCOPE']). Екорегіон-дефолт
+    ігнорується, якщо він недоступний користувачу (тихий відкат на global).
+    Явний scope_arg завжди має пріоритет над default_scope.
     """
     scope_arg = (scope_arg or '').strip()
+    # #49: коли в URL немає scope — застосувати дефолт із конфіга (CT_DEFAULT_SCOPE).
+    # Дефолт-екорегіон беремо лише якщо він доступний користувачу, інакше тихо
+    # відкочуємось на «усі» (global), щоб не показати порожню сторінку.
+    if not scope_arg and default_scope:
+        ds = (default_scope or '').strip()
+        if ds.startswith('ecoregion:'):
+            key = ds.split(':', 1)[1]
+            if any(i.ecoregion_uk == key for i in accessible_institutions):
+                scope_arg = ds
+        elif ds:
+            scope_arg = ds
     if ':' in scope_arg:
         scope_type, scope_id = scope_arg.split(':', 1)
     else:
@@ -629,7 +646,8 @@ def contributors(lang_code):
         ecoregions = build_ecoregions(accessible_institutions, g.lang_code)
 
         selected_scope, selected_inst_ids = resolve_scope(
-            request.args.get('scope', ''), accessible_institutions)
+            request.args.get('scope', ''), accessible_institutions,
+            current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
 
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'

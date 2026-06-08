@@ -30,6 +30,8 @@
                 <select id="scope-select" class="form-control">
                     {% if is_admin %}
                     <option value="global:">{{ _('Всі дані') }}</option>
+                    {% else %}
+                    <option value="global:">{{ _('Всі доступні мені') }}</option>
                     {% endif %}
                     {% if institutions %}
                     <optgroup label="{{ _('Установи') }}">
