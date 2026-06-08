@@ -136,6 +136,13 @@
                                 </div>
                             {% endfor %}
                         </div>
+
+                        <!-- Коментар (#47) — під тегами, зліва, на всю ширину -->
+                        <div class="comment-panel" style="margin-top: 10px;">
+                            {{ form.comment.label(class="form-label") }}
+                            {{ form.comment(class="form-control", rows="2", style="width:100%; box-sizing:border-box;", placeholder=_('Короткий коментар, до 200 символів')) }}
+                            <small class="form-text text-muted" style="display:block; text-align:right;"><span id="comment-counter">0</span>/200</small>
+                        </div>
                     </div>
                 </div>
 
@@ -162,13 +169,6 @@
                             {{ form.is_favorite.label(class="form-label") }}
                             {{ form.is_favorite(class="form-check-input") }}
                         </div>
-                    </div>
-
-                    <!-- Коментар до ідентифікації (#47, ≤200 символів) -->
-                    <div class="comment-panel">
-                        {{ form.comment.label(class="form-label") }}
-                        {{ form.comment(class="form-control", rows="2", placeholder=_('Короткий коментар, до 200 символів')) }}
-                        <small class="form-text text-muted" style="display:block; text-align:right;"><span id="comment-counter">0</span>/200</small>
                     </div>
 
                     <!-- Окремий контейнер для списку видів -->
