@@ -380,14 +380,29 @@ def try_start_analytics_run(triggered_by: Optional[int] = None) -> bool:
 
 
 def _finish_analytics_run(status: str, error_message: Optional[str] = None) -> None:
-    """Проставляє фінальний статус ('completed' / 'failed') після фонового run."""
+    """
+    Проставляє фінальний статус ('completed' / 'failed') після фонового run.
+
+    При 'completed' тут же оновлюємо last_calculated_at = NOW() через raw SQL.
+    Чому не покладаємось на ORM-оновлення в update_analytics_tables: там
+    log_entry читається ДО виклику _calculate_* функцій, кожна з яких у своєму
+    finally робить close_ct_session() → scoped_session.remove(). Після цього
+    log_entry detached, і ORM-commit лічильника тихо не зберігається (той самий
+    lifecycle-баг, що описаний у CLAUDE.md). Raw UPDATE тут надійний і потрібен,
+    щоб бейдж «Останній успішний перерахунок» у адмінці показував правдивий час.
+    last_count не чіпаємо — це окрема (передіснуюча) логіка change-detection.
+    """
     engine = get_ct_engine()
     with engine.begin() as conn:
         conn.execute(
             text("""
                 UPDATE calculation_log
                    SET status = :st,
-                       error_message = :err
+                       error_message = :err,
+                       last_calculated_at = CASE
+                           WHEN :st = 'completed' THEN NOW()
+                           ELSE last_calculated_at
+                       END
                  WHERE source_name = :src
             """),
             {"src": ANALYTICS_SOURCE, "st": status,
