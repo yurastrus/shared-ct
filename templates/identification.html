@@ -164,6 +164,13 @@
                         </div>
                     </div>
 
+                    <!-- Коментар до ідентифікації (#47, ≤200 символів) -->
+                    <div class="comment-panel">
+                        {{ form.comment.label(class="form-label") }}
+                        {{ form.comment(class="form-control", rows="2", placeholder=_('Короткий коментар, до 200 символів')) }}
+                        <small class="form-text text-muted" style="display:block; text-align:right;"><span id="comment-counter">0</span>/200</small>
+                    </div>
+
                     <!-- Окремий контейнер для списку видів -->
                     <div class="species-selection-panel">
 
@@ -499,6 +506,7 @@ $(document).ready(function() {
             return;
         }
 
+        const esc = (s) => $('<div>').text(s == null ? '' : s).html();  // #47: захист від XSS
         let html = '';
         identifications.forEach(function(ident) {
             html += `
@@ -508,6 +516,7 @@ $(document).ready(function() {
                     <div class="identification-meta">
                         Кількість: ${ident.quantity} | ${ident.created_at}
                     </div>
+                    ${ident.comment ? `<div class="identification-comment">💬 ${esc(ident.comment)}</div>` : ''}
                 </div>
             `;
         });
@@ -619,6 +628,7 @@ $(document).ready(function() {
                 wrapper.show();
                 noPhotosMessage.hide();
                 form[0].reset();
+                $('#comment-counter').text('0');  // #47: скинути лічильник коментаря
 
                 // AI-прогноз: pre-fill species + показуємо бейдж
                 applyAIPrediction(data.ai_prediction);
@@ -720,6 +730,7 @@ $(document).ready(function() {
             is_favorite: $('#{{ form.is_favorite.id }}').is(':checked'),
             current_photo_index: currentPhotoIndex, // індекс поточного фото
             behaviors: selectedBehaviors,
+            comment: $('#{{ form.comment.id }}').val(),  // #47
             csrf_token: $('input[name="csrf_token"]').val()
         };
 
@@ -753,6 +764,11 @@ $(document).ready(function() {
         .catch(error => {
             alert(translations.saveError + " " + (error.error || error.message));
         });
+    });
+
+    // #47: живий лічильник символів коментаря
+    $('#{{ form.comment.id }}').on('input', function() {
+        $('#comment-counter').text((this.value || '').length);
     });
 
     loadNextObservation();

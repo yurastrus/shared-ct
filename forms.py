@@ -2,7 +2,7 @@
 
 from flask_wtf import FlaskForm
 # ВИПРАВЛЕННЯ 1: Додано HiddenField, IntegerField, BooleanField до імпортів
-from wtforms import StringField, DecimalField, SelectField, SubmitField, HiddenField, IntegerField, BooleanField, RadioField, SelectMultipleField, widgets
+from wtforms import StringField, DecimalField, SelectField, SubmitField, HiddenField, IntegerField, BooleanField, RadioField, SelectMultipleField, TextAreaField, widgets
 from wtforms.validators import DataRequired, NumberRange, Optional, Length
 from flask_babel import lazy_gettext as _l # <-- Імпортуємо lazy_gettext
 
@@ -51,3 +51,10 @@ class IdentificationForm(FlaskForm):
     )
     
     is_favorite = BooleanField(_l('У вибране'))
+
+    # #47: необов'язковий вільний коментар до ідентифікації, ≤200 символів.
+    comment = TextAreaField(
+        _l('Коментар'),
+        validators=[Optional(), Length(max=200)],
+        render_kw={'maxlength': 200, 'rows': 2}
+    )

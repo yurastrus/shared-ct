@@ -2412,6 +2412,8 @@ def submit_identification(lang_code):
             is_favorite = bool(data.get('is_favorite', False))
             current_photo_index = int(data.get('current_photo_index', 0))  # ← ДОДАНО
             behavior_ids = data.get('behaviors', [])
+            # #47: необов'язковий коментар; бек-захист — обрізаємо до 200 символів
+            comment = (data.get('comment') or '').strip()[:200] or None
         except (ValueError, TypeError, KeyError):
             return jsonify({'success': False, 'error': _('Неправильний формат даних.')}), 400
 
@@ -2440,10 +2442,11 @@ def submit_identification(lang_code):
             existing_id = ct_session.query(Identification).filter_by(user_id=current_user.id, photo_id=photo.id).first()
             if not existing_id:
                 new_id = Identification(
-                    photo_id=photo.id, 
-                    user_id=current_user.id, 
+                    photo_id=photo.id,
+                    user_id=current_user.id,
                     species_id=species_id,
-                    quantity=quantity
+                    quantity=quantity,
+                    comment=comment
                 )
                 if selected_behaviors:
                     new_id.behaviors.extend(selected_behaviors)
@@ -2708,6 +2711,7 @@ def next_observation_for_identification(lang_code):
                             'username': user.username if user else f"User {ident.user_id}",
                             'species_name': species_name,
                             'quantity': ident.quantity,
+                            'comment': ident.comment or '',
                             'created_at': ident.created_at.strftime('%d.%m.%Y %H:%M')
                         }
             
