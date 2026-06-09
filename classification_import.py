@@ -1,27 +1,28 @@
-"""Імпорт результатів зовнішньої класифікації DeepFaune (CSV) у ct_db.
+"""Import external DeepFaune classification results (CSV) into ct_db.
 
-Призначення
------------
-Локально (на CUDA, точнішим детектором MDR — MegaDetector Redwood) користувач
-проганяє DeepFaune і отримує CSV. Сервер biomon класифікує слабшим ensemble
-DF+MDS. Цей модуль дозволяє накласти кращі локальні результати на ВЖЕ
-завантажені у biomon фото — по одній локації за раз.
+Purpose
+-------
+The user runs DeepFaune locally (on CUDA, with the more accurate MDR detector —
+MegaDetector Redwood) and obtains a CSV. The biomon server classifies with the
+weaker ensemble DF+MDS. This module lets better local results be overlaid onto
+photos ALREADY uploaded to biomon — one location at a time.
 
-Ключові рішення (узгоджені з користувачем)
+Key design decisions (agreed with the user)
 ------------------------------------------
-* Окрема модель `DeepFaune 1.4.1 @ MDR` (is_active=False) — не чіпає
-  серверні прогнози DF+MDS; обидва набори співіснують (розрізняються
+* A separate model `DeepFaune 1.4.1 @ MDR` (is_active=False) — does not touch
+  server predictions DF+MDS; both sets coexist (distinguished by
   `ai_models.level_id`).
-* Матчинг per-фото: `basename(filename)` + `captured_at` (до секунди) у межах
-  обраної локації. `captured_at` у БД без субсекунд, колізій нема — ключ точний.
-* У `ai_predictions` пишемо per-фото `base_label/base_score` (+ top1, counts) —
-  серій-незалежне джерело істини.
-* Серієвий `prediction_*` НЕ беремо з CSV (там серії по 10с), а рахуємо
-  самостійно по поточних `observations` у БД (правило: тварина > людина >
-  empty; серед тварин — максимальний base_score). Перезапускний при зміні
-  групування.
-* Мапінг label→species — з довідника `ai_label_map` (єдине джерело правди,
-  спільне з worker).
+* Per-photo matching: `basename(filename)` + `captured_at` (to the second)
+  within the chosen location. `captured_at` in the DB has no sub-seconds,
+  no collisions — the key is precise.
+* In `ai_predictions` we write per-photo `base_label/base_score` (+ top1,
+  counts) — a series-independent source of truth.
+* Series-level `prediction_*` is NOT taken from the CSV (its series are 10 s),
+  but recomputed from the current `observations` in the DB (rule: animal >
+  human > empty; among animals — the highest base_score). Re-runnable when
+  grouping changes.
+* Label→species mapping comes from the `ai_label_map` reference table (single
+  source of truth, shared with the worker).
 """
 
 import csv
@@ -36,21 +37,22 @@ from .models import AIModel, AIModelLevel, AIPrediction
 
 IMPORT_MODEL_NAME = 'DeepFaune'
 IMPORT_MODEL_VERSION = '1.4.1'
-# Рівень детектора користувач обирає на сторінці (обов'язково) — раніше був
-# жорстко зашитий MDR. CSV рівень не містить, тож визначити його автоматично
-# неможливо.
+# The detector level is chosen by the user on the page (required) — it used to
+# be hard-coded as MDR. The CSV does not contain the level, so it cannot be
+# determined automatically.
 
-# Спецкласи, що НЕ є твариною (для агрегації серії).
+# Special classes that are NOT animals (for series aggregation).
 NON_ANIMAL_LABELS = {'empty', 'human', 'vehicle'}
 
 CSV_DATE_FMT = '%Y:%m:%d %H:%M:%S'
-# Лише справді необхідні колонки. Решта (top1, count, humancount) — опційні:
-# різні експорти/версії DeepFaune дають різний набір (напр. без `count`).
+# Only the truly required columns. The rest (top1, count, humancount) are
+# optional: different DeepFaune exports/versions include different sets
+# (e.g. without `count`).
 REQUIRED_COLUMNS = {'filename', 'date', 'predictionbase', 'scorebase'}
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Парсинг CSV
+# CSV parsing
 # ──────────────────────────────────────────────────────────────────────────
 def _to_float(v):
     try:
@@ -67,16 +69,16 @@ def _to_int(v):
 
 
 def parse_deepfaune_csv(file_obj):
-    """Парсить CSV-файл DeepFaune.
+    """Parse a DeepFaune CSV file.
 
     Args:
-        file_obj: file-like (binary або text) або bytes/str.
+        file_obj: file-like (binary or text), or bytes/str.
 
     Returns:
-        (rows, errors): rows — список dict з нормалізованими полями:
-            original_filename (basename), captured_at (datetime до секунди),
+        (rows, errors): rows — list of dicts with normalised fields:
+            original_filename (basename), captured_at (datetime to the second),
             base_label, base_score, top1_label, animal_count, human_count.
-        errors — список рядків-повідомлень про проблемні рядки.
+        errors — list of string messages about problematic rows.
     """
     if isinstance(file_obj, bytes):
         text_stream = io.StringIO(file_obj.decode('utf-8-sig'))
@@ -96,7 +98,7 @@ def parse_deepfaune_csv(file_obj):
         return [], [f'Бракує колонок: {", ".join(sorted(missing))}']
 
     rows, errors = [], []
-    for i, raw in enumerate(reader, start=2):  # рядок 1 — заголовок
+    for i, raw in enumerate(reader, start=2):  # row 1 is the header
         fn = (raw.get('filename') or '').strip()
         if not fn:
             continue
@@ -120,14 +122,14 @@ def parse_deepfaune_csv(file_obj):
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Допоміжне
+# Helpers
 # ──────────────────────────────────────────────────────────────────────────
 def get_import_levels(session):
-    """Рівні, доступні для ІМПОРТУ — усі з ai_model_levels, КРІМ тих, які вже
-    використовує активна (серверна) модель. Так імпорт ніколи не пише у
-    серверний набір (напр. DF+MDS), а пропонує лише DF / MDS / MDR.
+    """Return levels available for IMPORT — all from ai_model_levels EXCEPT those
+    already used by the active (server) model. This ensures that import never
+    writes into the server set (e.g. DF+MDS) and only offers DF / MDS / MDR.
 
-    Повертає список AIModelLevel за зростанням accuracy_rank."""
+    Returns a list of AIModelLevel ordered by ascending accuracy_rank."""
     active_level_ids = [
         lid for (lid,) in session.query(AIModel.level_id).filter(AIModel.is_active.is_(True)).all()
         if lid is not None
@@ -139,11 +141,11 @@ def get_import_levels(session):
 
 
 def get_or_create_import_model(session, level_id):
-    """Повертає (створюючи за потреби) рядок AIModel для обраного рівня.
+    """Return (creating if needed) an AIModel row for the chosen level.
 
-    Рівень обов'язковий. Модель розрізняється за (name, version, level_id),
-    тож для кожного рівня — свій рядок ai_models, усі is_active=False
-    (щоб не чіпати worker / серверну активну модель)."""
+    The level is required. Models are distinguished by (name, version, level_id),
+    so each level gets its own ai_models row, all with is_active=False
+    (to avoid touching the worker / active server model)."""
     if not level_id:
         raise ValueError('Не вказано рівень моделі')
     level = session.query(AIModelLevel).get(level_id)
@@ -154,7 +156,7 @@ def get_or_create_import_model(session, level_id):
              .filter_by(name=IMPORT_MODEL_NAME, version=IMPORT_MODEL_VERSION, level_id=level.id)
              .one_or_none())
     if model is not None and model.is_active:
-        # Запобіжник: ніколи не писати в активну (серверну) модель.
+        # Safety guard: never write into the active (server) model.
         raise ValueError('Цей рівень належить активній серверній моделі — імпорт заборонено')
     if model is None:
         model = AIModel(
@@ -170,7 +172,7 @@ def get_or_create_import_model(session, level_id):
 
 
 def load_label_map(session):
-    """{label(lower) -> species_id|None} із довідника ai_label_map."""
+    """{label(lower) -> species_id|None} from the ai_label_map reference table."""
     rows = session.execute(text("SELECT label, species_id FROM ai_label_map")).fetchall()
     return {(lbl or '').strip().lower(): sid for lbl, sid in rows}
 
@@ -178,8 +180,8 @@ def load_label_map(session):
 def _load_location_photo_index(session, location_id):
     """{(filename_lower, captured_naive_sec) -> (photo_id, observation_id)}.
 
-    Лише згруповані фото (observation_id NOT NULL), бо ai_predictions
-    вимагає observation_id.
+    Only grouped photos (observation_id NOT NULL), because ai_predictions
+    requires observation_id.
     """
     rows = session.execute(text("""
         SELECT p.id, p.original_filename, p.captured_at, p.observation_id
@@ -197,7 +199,7 @@ def _load_location_photo_index(session, location_id):
 
 
 def _match(rows, photo_index):
-    """Повертає (matched, csv_unmatched, db_keys_without_csv)."""
+    """Return (matched, csv_unmatched, db_keys_without_csv)."""
     matched, csv_unmatched = [], []
     seen = set()
     for r in rows:
@@ -213,12 +215,13 @@ def _match(rows, photo_index):
 
 
 def _dedupe_matched(matched):
-    """Прибирає повтори за photo_id (можливі, якщо в CSV є кілька рядків з тим
-    самим (filename, captured_at) — напр. burst із однаковою EXIF-секундою:
-    у БД лишилось одне фото, бо дублікати відхиляються при завантаженні).
+    """Remove duplicate photo_ids (possible when the CSV has multiple rows with the
+    same (filename, captured_at) — e.g. a burst with the same EXIF second:
+    only one photo remained in the DB because duplicates are rejected on upload).
 
-    Без цього один INSERT...ON CONFLICT впав би з «cannot affect row a second
-    time». Перемагає ОСТАННІЙ рядок. Повертає (unique_list, n_duplicates)."""
+    Without this, a single INSERT...ON CONFLICT would fail with
+    'cannot affect row a second time'. The LAST row wins.
+    Returns (unique_list, n_duplicates)."""
     by_pid = {}
     for item in matched:
         by_pid[item[1]] = item          # item[1] == photo_id
@@ -226,14 +229,14 @@ def _dedupe_matched(matched):
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Прев'ю (dry-run)
+# Preview (dry-run)
 # ──────────────────────────────────────────────────────────────────────────
 def preview_import(session, location_id, rows):
     index = _load_location_photo_index(session, location_id)
     matched, csv_unmatched, db_without = _match(rows, index)
     unique_matched, n_dup = _dedupe_matched(matched)
-    # Placeholder-фото (без EXIF-часу): captured_at = 1900-01-01 + offset.
-    # Такі НІКОЛИ не зматчаться з CSV — попереджаємо, якщо вони є на локації.
+    # Placeholder photos (no EXIF timestamp): captured_at = 1900-01-01 + offset.
+    # These will NEVER match the CSV — warn if any are present for this location.
     placeholder_photos = sum(1 for _fn, dt in index if dt.year == 1900)
     return {
         'csv_rows': len(rows),
@@ -252,13 +255,13 @@ def preview_import(session, location_id, rows):
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Імпорт
+# Import
 # ──────────────────────────────────────────────────────────────────────────
 def run_import(session, location_id, rows, level_id, user_id=None, chunk_size=5000):
-    """Записує per-фото base-прогнози і перераховує серієвий prediction.
+    """Write per-photo base predictions and recompute the series-level prediction.
 
-    level_id — обов'язковий рівень детектора (обирає користувач на сторінці).
-    Викликати В МЕЖАХ транзакції; commit робить викликач (route).
+    level_id — required detector level (chosen by the user on the page).
+    Must be called WITHIN a transaction; the caller (route) issues the commit.
     """
     model = get_or_create_import_model(session, level_id)
     index = _load_location_photo_index(session, location_id)
@@ -272,7 +275,7 @@ def run_import(session, location_id, rows, level_id, user_id=None, chunk_size=50
         'base_label': r['base_label'],
         'base_score': r['base_score'],
         'top1_label': r['top1_label'],
-        'top1_score': None,           # CSV не містить окремого top1-score
+        'top1_score': None,           # CSV does not include a separate top1_score
         'animal_count': r['animal_count'],
         'human_count': r['human_count'],
     } for (r, pid, obs_id) in matched]
@@ -294,14 +297,14 @@ def run_import(session, location_id, rows, level_id, user_id=None, chunk_size=50
                 'human_count': stmt.excluded.human_count,
                 'processed_at': text('now()'),
             },
-            # Не знижувати впевненість: при тому самому рівні (model_id)
-            # перезаписуємо лише коли новий base_score ВИЩИЙ (або наявного
-            # ще нема). Інакше рядок-конфлікт пропускається (ідемпотентно:
-            # повторний залив того ж/гіршого CSV нічого не псує).
+            # Do not lower confidence: for the same level (model_id) we
+            # overwrite only when the new base_score is HIGHER (or the existing
+            # one is absent). Otherwise the conflicting row is skipped
+            # (idempotent: re-uploading the same/worse CSV changes nothing).
             where=(tbl.c.base_score.is_(None)) | (stmt.excluded.base_score > tbl.c.base_score),
         ).returning(literal_column('(xmax = 0)').label('inserted'))
-        # RETURNING повертає лише реально вставлені/оновлені рядки; пропущені
-        # (WHERE=false) не повертаються. xmax=0 → щойно вставлений.
+        # RETURNING only returns actually inserted/updated rows; skipped rows
+        # (WHERE=false) are not returned. xmax=0 → freshly inserted.
         res = session.execute(stmt).fetchall()
         chunk_added = sum(1 for r in res if r.inserted)
         added += chunk_added
@@ -324,10 +327,10 @@ def run_import(session, location_id, rows, level_id, user_id=None, chunk_size=50
 
 
 def _aggregate_series(pairs):
-    """Правило агрегації серії: тварина > людина > empty.
+    """Series aggregation rule: animal > human > empty.
 
-    pairs — список (base_label, base_score) для observation.
-    Повертає (label, score).
+    pairs — list of (base_label, base_score) for an observation.
+    Returns (label, score).
     """
     animals = [(l, s if s is not None else 0.0) for l, s in pairs if l and l not in NON_ANIMAL_LABELS]
     if animals:
@@ -341,14 +344,14 @@ def _aggregate_series(pairs):
 
 
 def recompute_observation_predictions(session, model_id, observation_ids=None):
-    """Перераховує серієвий prediction_* по поточних observations у БД.
+    """Recompute the series-level prediction_* from the current observations in the DB.
 
-    Читає per-фото base_label/base_score (джерело істини), агрегує за правилом
-    тварина>людина>empty, мапить label→species_id через ai_label_map і пише
-    однаковий prediction_* на всі рядки ai_predictions цієї серії.
+    Reads per-photo base_label/base_score (source of truth), aggregates using
+    the animal>human>empty rule, maps label→species_id via ai_label_map, and
+    writes the same prediction_* to all ai_predictions rows of that series.
 
-    observation_ids=None → перерахувати ВСІ серії цієї моделі.
-    Повертає к-сть оброблених observations.
+    observation_ids=None → recompute ALL series for this model.
+    Returns the number of processed observations.
     """
     label_map = load_label_map(session)
 

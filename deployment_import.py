@@ -1,18 +1,20 @@
 """
-Імпорт деплойментів з ARD-Екселю (CT_LocationARD_Dataset.xlsx) у таблицю deployments.
+Import deployments from an ARD Excel file (CT_LocationARD_Dataset.xlsx) into the
+deployments table.
 
-Особливості:
-  • Ідемпотентний — ключ дедуплікації = deployment_id (колонка name). Повторний
-    запуск оновлює наявні рядки, не плодить дублікати. Можна доімпортовувати
-    після поповнення Екселю.
-  • Імпортує ТІЛЬКИ для локацій, координати яких (округлені до 5 знаків) уже є
-    в таблиці locations. Решта — у звіт як 'skipped_no_location'.
-  • Терпимий до «брудних» даних: різні назви колонок між листами, інверсна
-    семантика (data_usable ↔ qc_data_not_usable), помилкові типи. Усе, що не
-    вдалось привести до типу — лишається NULL і потрапляє у діагностичний звіт.
+Features:
+  • Idempotent — the deduplication key is deployment_id (the name column). A
+    re-run updates existing rows and does not create duplicates. New rows can be
+    appended after extending the Excel file.
+  • Only imports deployments whose coordinates (rounded to 5 decimal places)
+    already exist in the locations table. The rest are reported as
+    'skipped_no_location'.
+  • Tolerant of "dirty" data: different column names across sheets, inverted
+    semantics (data_usable ↔ qc_data_not_usable), wrong types. Anything that
+    could not be coerced stays NULL and appears in the diagnostic report.
 
-Публічне API:
-    import_deployments(session, xlsx_path, sheets=None, dry_run=False) -> dict (звіт)
+Public API:
+    import_deployments(session, xlsx_path, sheets=None, dry_run=False) -> dict (report)
     format_report(report) -> str
 """
 import os
@@ -24,13 +26,13 @@ import pandas as pd
 from .models import Deployment, Location
 
 
-# Листи з даними деплойментів (решта — ReadMe/Progress/Template/lookup — ігноруємо).
+# Sheets with deployment data (the rest — ReadMe/Progress/Template/lookup — are ignored).
 DATA_SHEETS = [
     'SMM_2023', 'Data 2023-2024', 'WLCM_2023-24', 'SMM_2024',
     'WLCM_2024-2025', 'SMM_2025', 'WLCM_2025-26',
 ]
 
-# Колонки, які свідомо НЕ імпортуємо (є в інших таблицях БД через location).
+# Columns intentionally NOT imported (present in other DB tables via location).
 IGNORED_COLS = {
     'study_area_id', 'study_area_name_en', 'region_name_en',
 }
@@ -51,7 +53,7 @@ BOOL_FIELDS = {
     'qc_used_brf',
 }
 
-# Нормалізована назва колонки Екселю -> атрибут моделі.
+# Normalized Excel column name -> model attribute.
 ALIAS_MAP = {
     'study_year': 'study_year', 'study_season': 'study_season', 'study_design': 'study_design',
     'deployment_id': 'name', 'camera_id': 'camera_id', 'camera_model': 'camera_model',
@@ -60,7 +62,7 @@ ALIAS_MAP = {
     'end_date': 'end_date', 'end_time': 'end_time',
     'n_days_working': 'n_days_working', 'n_photos': 'n_photos',
     'latitude': '__lat', 'longitude': '__lon',
-    # QC прямі + варіанти назв зі старих листів
+    # QC direct names + name variants from older sheets
     'qc_non_functional': 'qc_non_functional',
     'qc_stolen': 'qc_stolen', 'qc_camera_stolen': 'qc_stolen',
     'qc_hardware_issue': 'qc_hardware_issue',
@@ -100,7 +102,7 @@ ALIAS_MAP = {
     'qc_comment': 'qc_comment', 'comment': 'qc_comment', 'problem_comment': 'qc_comment',
 }
 
-# Джерела з інверсною семантикою: TRUE означає «все добре» -> зберігаємо як NOT.
+# Sources with inverted semantics: TRUE means "all good" -> stored as NOT.
 INVERT_SOURCES = {
     'camera_functioning': 'qc_non_functional',
     'qc_functional': 'qc_non_functional',
@@ -126,7 +128,7 @@ def _is_na(v):
     except (TypeError, ValueError):
         if v is None:
             return True
-    # Порожні рядки та нерозривні пробіли (\xa0) трактуємо як відсутнє значення
+    # Empty strings and non-breaking spaces (\xa0) are treated as missing values.
     if isinstance(v, str) and v.replace('\xa0', '').strip() == '':
         return True
     return False
@@ -163,7 +165,7 @@ def coerce_int(v):
 
 
 def coerce_year(v):
-    """Рік. 'YYYY-YYYY' (зимова кампанія через 2 роки) -> стартовий рік."""
+    """Year. 'YYYY-YYYY' (winter campaign spanning two years) -> the starting year."""
     if _is_na(v):
         return None
     if isinstance(v, str):
@@ -195,7 +197,7 @@ def coerce_time(v):
 
 
 def coerce_camera_id(v):
-    """Текст; короткі чисті цифри доповнюємо нулями до 4 (NNNN). 5-знач. валідні. Обрізаємо до 10."""
+    """Text; short all-digit values are zero-padded to 4 (NNNN). 5-digit values are valid. Truncated to 10."""
     if _is_na(v):
         return None
     if isinstance(v, float) and v.is_integer():
@@ -217,13 +219,13 @@ def coerce_str(v, maxlen=None):
 
 def _round5(x):
     v = round(float(x), 5)
-    if not math.isfinite(v):  # NaN/inf (порожній GPS у Екселі) -> трактуємо як биті координати
+    if not math.isfinite(v):  # NaN/inf (empty GPS in Excel) -> treat as corrupt coordinates
         raise ValueError('non-finite coordinate')
     return v
 
 
 def build_location_index(session):
-    """{(round5(lat), round5(lon)): location_id}. Дублі координат -> перший + прапор."""
+    """{(round5(lat), round5(lon)): location_id}. Duplicate coordinates -> first entry + flag."""
     index = {}
     ambiguous = set()
     for loc in session.query(Location.id, Location.latitude, Location.longitude).all():
@@ -240,12 +242,12 @@ def build_location_index(session):
 
 def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                        create_missing_locations=False, park_institution_map=None):
-    """Імпорт/оновлення деплойментів з Екселю. Повертає звіт (dict).
+    """Import/update deployments from an Excel file. Returns a report (dict).
 
-    create_missing_locations: якщо True — для рядків без наявної локації
-        створюється нова локація (name=deployment_id, координати з рядка) і,
-        якщо park_institution_map дає установу за назвою парку, додається
-        зв'язок location_institutions.
+    create_missing_locations: if True — for rows without a matching location,
+        a new location is created (name=deployment_id, coordinates from the row)
+        and, if park_institution_map provides an institution for the park name,
+        the location_institutions link is added.
     park_institution_map: {normalize_header(study_area_name_EN): institution_id}.
     """
     from .models import Location, location_institutions
@@ -277,7 +279,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
         'sheets_missing': [],
     }
 
-    # name -> Deployment (кеш у межах запуску, щоб дублі deployment_id між листами оновлювали один рядок)
+    # name -> Deployment (run-scoped cache so duplicate deployment_ids across sheets update one row)
     seen = {}
 
     for sheet in sheets:
@@ -286,7 +288,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
             continue
         df = pd.read_excel(xl, sheet_name=sheet)
 
-        # Карта: оригінальна колонка -> (атрибут моделі, invert?)
+        # Map: original column -> (model attribute, invert?).
         colmap = {}
         unmapped = []
         for col in df.columns:
@@ -307,11 +309,11 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
         park_col = norm_cols.get('study_area_name_en')
 
         for idx, row in df.iterrows():
-            excel_row = idx + 2  # +1 заголовок, +1 1-індекс
+            excel_row = idx + 2  # +1 header row, +1 for 1-based indexing
             ps = report['per_sheet'][sheet]
             ps['rows'] += 1
 
-            # координати -> локація. NaN/відсутні -> деплоймент без локації (для QC-аналізу).
+            # coordinates -> location. NaN/missing -> deployment without location (for QC analysis).
             lat = row.get('latitude'); lon = row.get('longitude')
             coords_finite = False
             key = None
@@ -322,13 +324,13 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                         coords_finite = True
                         key = (round(lat_f, 5), round(lon_f, 5))
                 except (TypeError, ValueError):
-                    # Реально нечитані координати (текст) -> bad_coords
+                    # Truly unreadable coordinates (text) -> bad_coords
                     report['skipped_bad_coords'] += 1
                     ps['skipped_bad_coords'] += 1
                     continue
 
             if not coords_finite:
-                # Деплоймент без GPS — імпортуємо без локації; це qc_no_gps_coordinates у R-аналізі.
+                # Deployment without GPS — import without a location; appears as qc_no_gps_coordinates in R analysis.
                 location_id = None
                 report['no_coords_deployments'] = report.get('no_coords_deployments', 0) + 1
                 ps['no_coords'] = ps.get('no_coords', 0) + 1
@@ -343,7 +345,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                         report['skipped_no_location'] += 1
                         ps['skipped_no_location'] += 1
                         continue
-                    # Створюємо нову локацію (name = deployment_id) + прив'язка установи
+                    # Create a new location (name = deployment_id) + institution link.
                     dep_name = coerce_str(row.get(name_col), 200) if name_col else None
                     if not dep_name:
                         report['skipped_no_name'] += 1
@@ -368,7 +370,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                     else:
                         report['locations_without_institution'] += 1
 
-            # збір значень полів
+            # Collect field values.
             values = {'location_id': location_id}
             comment_parts = []
             for col, (attr, invert) in colmap.items():
@@ -416,7 +418,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                 ps['skipped_no_name'] += 1
                 continue
 
-            # upsert за name (deployment_id)
+            # Upsert by name (deployment_id).
             dep = seen.get(name)
             if dep is None:
                 dep = session.query(Deployment).filter_by(name=name).first()

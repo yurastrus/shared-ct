@@ -1,29 +1,27 @@
-# myproject/app/camera_traps/cleanup.py
-"""
-Очистка сиріт і невдалих batchʼів — заміна старої cleanup_stale_batches.
+"""Orphan and failed-batch cleanup — replacement for the old cleanup_stale_batches.
 
-Процес із трьох категорій:
-  A. Stale batches — застряглі/невдалі завантаження
+Three-category process:
+  A. Stale batches — stuck/failed uploads
      (status IN uploading/processing/ready_to_group/grouping/failed)
-  B. Stranded photos — фото зі status='uploaded' AND observation_id IS NULL,
-     що не повʼязані з активним batchʼем
-  C. Orphan files — файли в raw/ + thumbnails/, для яких немає Photo-рядка
+  B. Stranded photos — photos with status='uploaded' AND observation_id IS NULL
+     that are not linked to an active batch
+  C. Orphan files — files in raw/ + thumbnails/ with no corresponding Photo row
 
-Архітектура:
-  • Двофазний запуск: analyze (dry-run) → execute (видалення).
-  • Захист активних batchʼів через probe (10с спостереження за
-    processed_files). Виключає з обох фаз.
-  • Жорстко зашиті захисти:
-      photo.is_favorite=TRUE         → НІКОЛИ не видаляється
-      photo.observation_id IS NOT NULL → НІКОЛИ не видаляється
-      photo.status != 'uploaded'     → НІКОЛИ не видаляється (вже в роботі)
-      file.mtime > NOW() - 5 хв      → НІКОЛИ не видаляється (race-захист)
-  • Виконання — у фоновому потоці (threading.Thread), як group_batch.
+Architecture:
+  • Two-phase run: analyze (dry-run) → execute (deletion).
+  • Active batch protection via probe (10 s observation of
+    processed_files). Excludes from both phases.
+  • Hard-coded safety rules:
+      photo.is_favorite=TRUE          → NEVER deleted
+      photo.observation_id IS NOT NULL → NEVER deleted
+      photo.status != 'uploaded'      → NEVER deleted (already in use)
+      file.mtime > NOW() - 5 min      → NEVER deleted (race-condition guard)
+  • Execution — in a background thread (threading.Thread), like group_batch.
 
-НЕ конфліктує з `background_tasks.cleanup_old_photos`:
-  той працює на множині (observation_id NOT NULL, status='archived') —
-  ця функція працює на множині (observation_id IS NULL, status='uploaded').
-  Перетин — порожній.
+Does NOT conflict with `background_tasks.cleanup_old_photos`:
+  that operates on (observation_id NOT NULL, status='archived') —
+  this function operates on (observation_id IS NULL, status='uploaded').
+  The intersection is empty.
 """
 
 from __future__ import annotations
@@ -43,28 +41,28 @@ from .database import get_ct_engine, get_ct_session, close_ct_session
 from .models import CleanupLog
 
 
-# ─── Константи безпеки (захардкожено, без можливості перевизначення) ────
+# ─── Safety constants (hard-coded, not overridable) ────────────────────
 ACTIVE_BATCH_STATES = ('uploading', 'processing', 'ready_to_group', 'grouping')
-CLEANUP_BATCH_STATES = ACTIVE_BATCH_STATES + ('failed',)  # без 'completed'!
-DISK_MTIME_SAFETY_SECONDS = 300        # 5 хв — race-захист file.save → commit
-TRANSIENT_STATE_MAX_AGE_MIN = 60       # ready_to_group/grouping старші — stale
-REPORT_TTL_SECONDS = 600               # звіт analyze живий 10 хв
-EXECUTE_STUCK_HOURS = 1                # 'executing' старший — вважаємо crashed
-DELETE_CHUNK_SIZE = 500                # пакетне видалення (photos / files)
+CLEANUP_BATCH_STATES = ACTIVE_BATCH_STATES + ('failed',)  # without 'completed'!
+DISK_MTIME_SAFETY_SECONDS = 300        # 5 min — race guard: file.save → commit
+TRANSIENT_STATE_MAX_AGE_MIN = 60       # ready_to_group/grouping older than this → stale
+REPORT_TTL_SECONDS = 600               # analyze report lives for 10 min
+EXECUTE_STUCK_HOURS = 1                # 'executing' older than this → treat as crashed
+DELETE_CHUNK_SIZE = 500                # batch size for photo / file deletion
 
 
 # ════════════════════════════════════════════════════════════════════════
-# Probe: виявляємо активні batch без зміни схеми
+# Probe: detect active batches without schema changes
 # ════════════════════════════════════════════════════════════════════════
 
 def _probe_active_batches(probe_seconds: int) -> set:
-    """
-    Знімає два снапшоти upload_batches.processed_files з заданим інтервалом.
-    Повертає множину id-в, чий processed_files змінився → активні.
+    """Take two snapshots of upload_batches.processed_files with a given interval.
 
-    Також додає до активних усі ready_to_group/grouping молодші за
-    TRANSIENT_STATE_MAX_AGE_MIN (короткі стани, які можуть швидко
-    переходити, тож probe може не зловити їх).
+    Returns the set of ids whose processed_files changed → those are active.
+
+    Also adds to the active set any ready_to_group/grouping batches younger
+    than TRANSIENT_STATE_MAX_AGE_MIN (short-lived states that may transition
+    quickly, so the probe might not catch them).
     """
     engine = get_ct_engine()
 
@@ -85,14 +83,14 @@ def _probe_active_batches(probe_seconds: int) -> set:
     snap2 = _snapshot()
 
     active = set()
-    # 1) processed_files змінився → точно активний
+    # 1) processed_files changed → definitely active.
     for bid, (pf1, _, _) in snap1.items():
         pf2 = snap2.get(bid, (None,))[0]
         if pf2 is not None and pf2 != pf1:
             active.add(bid)
 
-    # 2) ready_to_group/grouping молодший за поріг — захист на випадок
-    # короткої фази, що probe пропустив
+    # 2) ready_to_group/grouping younger than the threshold — guard against
+    # a short-lived phase that the probe missed.
     cutoff = datetime.utcnow() - timedelta(minutes=TRANSIENT_STATE_MAX_AGE_MIN)
     for bid, (_, status, created_at) in snap2.items():
         if status in ('ready_to_group', 'grouping') and created_at and created_at > cutoff:
@@ -102,16 +100,16 @@ def _probe_active_batches(probe_seconds: int) -> set:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# ANALYZE: dry-run з повним звітом
+# ANALYZE: dry-run with a full report
 # ════════════════════════════════════════════════════════════════════════
 
 def analyze_cleanup(triggered_by: int, threshold_hours: int = 0,
                     probe_seconds: int = 10) -> str:
-    """
-    Стартує асинхронний analyze. Повертає report_id для polling.
+    """Start an async analyze. Returns report_id for polling.
 
-    Створює CleanupLog зі status='analyzing' одразу (видно у polling),
-    далі фоновий потік збирає звіт і переводить у 'analyzed'.
+    Creates a CleanupLog row with status='analyzing' immediately (visible in
+    polling), then a background thread collects the report and sets it to
+    'analyzed'.
     """
     report_id = str(uuid.uuid4())
     engine = get_ct_engine()
@@ -123,7 +121,7 @@ def analyze_cleanup(triggered_by: int, threshold_hours: int = 0,
                 (:id, 'analysis', 'analyzing', :uid, NOW(), :th)
         """), {"id": report_id, "uid": triggered_by, "th": threshold_hours})
 
-    # Purge старих логів (retention) — fire-and-forget
+    # Purge old logs (retention) — fire-and-forget.
     try:
         purge_old_logs()
     except Exception as e:
@@ -160,7 +158,7 @@ def _run_analyze_in_thread(app, report_id: str, threshold_hours: int,
 
 
 def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
-    """Серце dry-run-у. Повертає JSON-серіалізовний dict."""
+    """Core of the dry-run. Returns a JSON-serialisable dict."""
     config = current_app.config['CAMERA_TRAP_CONFIG']
     upload_path = config['UPLOAD_PATH']
     raw_dir = os.path.join(upload_path, 'pending_photos', 'raw')
@@ -168,12 +166,12 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
 
     engine = get_ct_engine()
 
-    # 1) Probe активних batchʼів
+    # 1) Probe active batches.
     active_ids = _probe_active_batches(probe_seconds)
 
     threshold_cutoff = datetime.utcnow() - timedelta(hours=threshold_hours)
 
-    # 2) Stale batches (категорія A) — кандидати на маркування 'failed'
+    # 2) Stale batches (category A) — candidates to be marked 'failed'.
     with engine.connect() as conn:
         stale_rows = conn.execute(text("""
             SELECT id, status, created_at, processed_files, total_files
@@ -196,11 +194,11 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
     ]
     stale_batch_ids = [b["id"] for b in stale_batches]
 
-    # 3) Stranded photos (категорії A + B обʼєднано) — однією вибіркою.
-    # Критерій SAFE-deletion:
+    # 3) Stranded photos (categories A + B combined) — one query.
+    # SAFE-deletion criterion:
     #   status='uploaded' AND observation_id IS NULL AND is_favorite=FALSE
-    # І batch або у списку stale, або None, або 'completed'/'failed'.
-    # Тобто фото-сирота без активного звʼязку.
+    # AND the batch is either in the stale list, or None, or 'completed'/'failed'.
+    # i.e. an orphan photo with no active connection.
     with engine.connect() as conn:
         photos_rows = conn.execute(text("""
             SELECT p.id, p.system_filename, p.upload_batch_id
@@ -230,7 +228,7 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
     stranded_filenames = {p["system_filename"] for p in stranded_photos
                           if p["system_filename"]}
 
-    # 4) Orphan files на диску (категорія C)
+    # 4) Orphan files on disk (category C).
     with engine.connect() as conn:
         all_known = {row[0] for row in conn.execute(
             text("SELECT system_filename FROM photos")
@@ -251,7 +249,7 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
             except OSError:
                 continue
             if now - st.st_mtime < DISK_MTIME_SAFETY_SECONDS:
-                continue  # race-захист
+                continue  # race-condition guard
             orphan_files.append({
                 "path": entry.path,
                 "name": entry.name,
@@ -259,7 +257,7 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
                 "mtime": st.st_mtime,
             })
 
-    # 5) Файли stranded-photos для видалення — теж рахуємо як disk-кандидати
+    # 5) Files for stranded photos — also counted as disk candidates.
     stranded_file_paths = []
     stranded_files_bytes = 0
     for fn in stranded_filenames:
@@ -296,14 +294,15 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# EXECUTE: реальне видалення
+# EXECUTE: actual deletion
 # ════════════════════════════════════════════════════════════════════════
 
 def start_execute(report_id: str, probe_seconds: int = 10) -> None:
-    """
-    Стартує фонове виконання для готового analyze-звіту.
-    Перевіряє: status='analyzed', report < REPORT_TTL_SECONDS.
-    Робить ПОВТОРНИЙ probe — захист від нових uploadʼів між analyze й execute.
+    """Start background execution for a ready analyze report.
+
+    Checks: status='analyzed', report age < REPORT_TTL_SECONDS.
+    Performs a FRESH probe — guards against new uploads between analyze and
+    execute.
     """
     engine = get_ct_engine()
     with engine.begin() as conn:
@@ -319,7 +318,7 @@ def start_execute(report_id: str, probe_seconds: int = 10) -> None:
         age = (datetime.utcnow() - row.started_at).total_seconds()
         if age > REPORT_TTL_SECONDS:
             raise ValueError(f"Report expired ({int(age)}s > {REPORT_TTL_SECONDS}s)")
-        # Lock-in: переходимо в executing — другий клік побачить це і отримає 409
+        # Lock-in: move to executing — a second click will see this and get 409.
         conn.execute(text("""
             UPDATE cleanup_log SET status='executing', finished_at=NULL
              WHERE id = :id
@@ -354,7 +353,7 @@ def _run_execute_in_thread(app, report_id: str, probe_seconds: int) -> None:
 
 
 def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
-    """Виконує видалення на основі звіту. Перевіряє безпеку на кожному кроці."""
+    """Perform deletion based on the report. Re-validates safety at each step."""
     engine = get_ct_engine()
     with engine.connect() as conn:
         row = conn.execute(text(
@@ -364,12 +363,12 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
         raise ValueError("Report data missing")
     report = row.report_json if isinstance(row.report_json, dict) else json.loads(row.report_json)
 
-    # ── ПОВТОРНИЙ PROBE — критичний захист ─────────────────────────────
+    # ── FRESH PROBE — critical safety guard ────────────────────────────
     active_now = _probe_active_batches(probe_seconds)
 
     stats = {"be": 0, "bmf": 0, "pd": 0, "fd": 0, "bf": 0}
 
-    # 1) Маркування batchʼів 'failed' (тих, що пройшли свіжий probe)
+    # 1) Mark batches 'failed' (those that passed the fresh probe).
     stale_ids = [b["id"] for b in report.get("stale_batches", [])
                  if b["id"] not in active_now]
     stats["be"] = len(report.get("stale_batches", []))
@@ -386,11 +385,11 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
             """), {"ids": stale_ids, "rid": report_id})
             stats["bmf"] = r.rowcount or 0
 
-    # 2) Видалення stranded-photos (БД + файли) пакетами по DELETE_CHUNK_SIZE.
-    # ПЕРЕВІРКА: ще раз фільтруємо інваріантами (захист на випадок зміни стану).
+    # 2) Delete stranded photos (DB + files) in DELETE_CHUNK_SIZE batches.
+    # SAFETY CHECK: re-filter with invariants (guard against state changes).
     stranded_ids_all = [p["id"] for p in report.get("stranded_photos_sample", [])]
-    # Звіт містив лише sample (100). Беремо повний поточний набір за тими ж
-    # критеріями + виключаємо active.
+    # The report contained only a sample (100). Fetch the full current set using
+    # the same criteria + exclude active batches.
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT p.id, p.system_filename
@@ -411,7 +410,7 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
     safe_photo_ids = [r.id for r in rows]
     safe_filenames = [r.system_filename for r in rows if r.system_filename]
 
-    # Видалення файлів stranded-photos
+    # Delete stranded photo files.
     config = current_app.config['CAMERA_TRAP_CONFIG']
     upload_path = config['UPLOAD_PATH']
     raw_dir = os.path.join(upload_path, 'pending_photos', 'raw')
@@ -428,7 +427,7 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
                 except OSError as e:
                     current_app.logger.warning(f"[cleanup] failed to rm {p}: {e}")
 
-    # Видалення photo-рядків пакетами
+    # Delete photo rows in batches.
     for i in range(0, len(safe_photo_ids), DELETE_CHUNK_SIZE):
         chunk = safe_photo_ids[i:i + DELETE_CHUNK_SIZE]
         with engine.begin() as conn:
@@ -441,8 +440,8 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
             """), {"ids": chunk})
             stats["pd"] += r.rowcount or 0
 
-    # 3) Orphan files на диску — звіряємо знов перед видаленням.
-    # Звіт містив sample, але паралельно мають бути всі. Повторно скануємо.
+    # 3) Orphan files on disk — re-scan before deleting.
+    # The report contained only a sample; re-scan for the full set.
     with engine.connect() as conn:
         all_known = {row[0] for row in conn.execute(
             text("SELECT system_filename FROM photos")
@@ -477,7 +476,7 @@ def _execute_cleanup(report_id: str, probe_seconds: int) -> dict:
 # ════════════════════════════════════════════════════════════════════════
 
 def recover_stuck_cleanup() -> int:
-    """Викликати при старті app. Перекидає executing > 1 год у failed."""
+    """Call at app startup. Moves executing rows older than 1 hour to failed."""
     try:
         engine = get_ct_engine()
         cutoff = datetime.utcnow() - timedelta(hours=EXECUTE_STUCK_HOURS)
@@ -508,7 +507,7 @@ def recover_stuck_cleanup() -> int:
 
 
 def purge_old_logs() -> int:
-    """Видаляє рядки старші CLEANUP_LOG_RETENTION_DAYS. Викликається при analyze."""
+    """Delete rows older than CLEANUP_LOG_RETENTION_DAYS. Called at analyze time."""
     config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
     days = int(config.get('CLEANUP_LOG_RETENTION_DAYS', 90))
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -535,7 +534,7 @@ def _set_log_status(report_id: str, status: str,
 
 
 def get_log(report_id: str) -> Optional[dict]:
-    """Повертає поточний стан cleanup_log для polling."""
+    """Return the current cleanup_log state for polling."""
     engine = get_ct_engine()
     with engine.connect() as conn:
         row = conn.execute(text("""

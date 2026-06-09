@@ -1,5 +1,3 @@
-# myproject/app/camera_traps/analytics_calculator.py
-
 import logging
 import random
 import threading
@@ -11,8 +9,7 @@ from sqlalchemy import func, extract, select, distinct, text
 
 from flask import current_app
 
-# Важливо: Імпортуємо моделі та функції для роботи з сесією
-# з існуючих файлів вашого проєкту.
+# Import models and session helpers from the project's existing files.
 from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import (
     Observation, Photo, Identification, Species, Location,
@@ -20,24 +17,24 @@ from .models import (
     location_institutions
 )
 
-# Налаштовуємо логування, щоб бачити, що відбувається під час виконання
+# Configure logging so progress is visible during execution.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def _calculate_monthly_activity():
-    """
-    Виконує основний розрахунок і заповнює таблицю location_monthly_activity.
-    Ця версія правильно обробляє нульові детекції.
+    """Perform the main calculation and populate the location_monthly_activity table.
+
+    This version correctly handles zero-detection entries.
     """
     session = get_ct_session()
     try:
         logging.info("Starting calculation of monthly activity...")
 
-        # Крок 1: Очищення таблиці
+        # Step 1: Truncate the table.
         logging.info("Truncating LocationMonthlyActivity table...")
         session.query(LocationMonthlyActivity).delete()
         session.commit()
-        
-        # Крок 2: РОЗРАХУНОК ПАСТКОДНІВ (TRAP DAYS) для всіх активних локацій
+
+        # Step 2: Calculate TRAP DAYS for all active locations.
         logging.info("Calculating trap days for ALL active locations per month...")
         trap_days_query = session.query(
             Observation.location_id,
@@ -49,14 +46,14 @@ def _calculate_monthly_activity():
         .group_by(Observation.location_id, 'year', 'month')\
         .all()
 
-        # Створюємо словник: {(loc, year, month): trap_days}
+        # Build a dict: {(loc, year, month): trap_days}.
         trap_days_map = {
-            (r.location_id, r.year, r.month): r.trap_days 
+            (r.location_id, r.year, r.month): r.trap_days
             for r in trap_days_query
         }
         logging.info(f"Calculated trap days for {len(trap_days_map)} unique location-months.")
 
-        # Крок 3: РОЗРАХУНОК ДНІВ ДЕТЕКЦІЇ (DETECTION COUNT)
+        # Step 3: Calculate DETECTION COUNTS.
         logging.info("Calculating detection counts where species were present...")
         detection_query = session.query(
             Identification.species_id,
@@ -73,24 +70,24 @@ def _calculate_monthly_activity():
         )\
         .group_by(Identification.species_id, Observation.location_id, 'year', 'month')\
         .all()
-        
-        # Створюємо словник: {(species, loc, year, month): detection_count}
+
+        # Build a dict: {(species, loc, year, month): detection_count}.
         detection_map = {
             (r.species_id, r.location_id, r.year, r.month): r.detection_count
             for r in detection_query
         }
         logging.info(f"Found {len(detection_map)} non-zero detection records.")
 
-        # Крок 4: ФОРМУВАННЯ РЕЗУЛЬТАТІВ, включаючи нульові
+        # Step 4: Assemble final records, including zero-detection entries.
         logging.info("Assembling final records, including zero-detection entries...")
         all_species_ids = [row[0] for row in session.query(Species.id).filter(Species.id > 0).all()]
         new_activity_records = []
 
-        # Ітеруємо по всіх комбінаціях (активна локація/місяць) * (всі види)
+        # Iterate over all (active location/month) × (all species) combinations.
         for (location_id, year, month), trap_days in trap_days_map.items():
             for species_id in all_species_ids:
                 key = (species_id, location_id, year, month)
-                detection_count = detection_map.get(key, 0) # Беремо к-ть детекцій, або 0, якщо їх не було
+                detection_count = detection_map.get(key, 0)  # Use 0 if no detections.
 
                 record = LocationMonthlyActivity(
                     species_id=species_id,
@@ -102,7 +99,7 @@ def _calculate_monthly_activity():
                 )
                 new_activity_records.append(record)
 
-        # Крок 5: Збереження в БД
+        # Step 5: Save to DB.
         if new_activity_records:
             logging.info(f"Adding {len(new_activity_records)} records to the database (this may take a moment)...")
             session.bulk_save_objects(new_activity_records)
@@ -110,7 +107,7 @@ def _calculate_monthly_activity():
             logging.info("Successfully saved all monthly activity records.")
         else:
             logging.info("No activity records to save.")
-            
+
         return True
 
     except Exception as e:
@@ -121,9 +118,9 @@ def _calculate_monthly_activity():
         close_ct_session()
 
 def _run_bootstrap(species_id, location_data, scope_locations, all_years, scope_type, scope_id, N_ITERATIONS):
-    """
-    Bootstrap для одного виду і одного скоупу локацій.
-    Повертає список об'єктів SpeciesYearlyTrend.
+    """Run bootstrap for one species and one location scope.
+
+    Returns a list of SpeciesYearlyTrend objects.
     """
     if not scope_locations or not all_years:
         return []
@@ -155,11 +152,10 @@ def _run_bootstrap(species_id, location_data, scope_locations, all_years, scope_
 
 
 def _calculate_yearly_trends_with_bootstrap():
-    """
-    Розраховує річні тренди з bootstrap для трьох скоупів:
-      - global (всі локації)
-      - institution (окремо для кожної установи)
-      - ecoregion (для кожного екорегіону)
+    """Calculate yearly trends with bootstrap for three scopes:
+      - global (all locations)
+      - institution (separately for each institution)
+      - ecoregion (for each ecoregion)
     """
     session = get_ct_session()
     N_ITERATIONS = 10000
@@ -170,7 +166,7 @@ def _calculate_yearly_trends_with_bootstrap():
         session.query(SpeciesYearlyTrend).delete()
         session.commit()
 
-        # Завантажуємо mapping локація → установа з ct_db
+        # Load the location → institution mapping from ct_db.
         loc_inst_rows = session.execute(
             select(location_institutions.c.location_id, location_institutions.c.institution_id)
         ).fetchall()
@@ -180,14 +176,14 @@ def _calculate_yearly_trends_with_bootstrap():
         for loc_id, inst_id in loc_inst_rows:
             inst_locations[inst_id].add(loc_id)
 
-        # Завантажуємо екорегіони установ з головної БД
+        # Load institution ecoregions from the main DB.
         from app.models import Institution
         institutions = Institution.query.filter(Institution.ecoregion_uk.isnot(None)).all()
         eco_locations = _dd(set)    # {ecoregion_uk: {location_id, ...}}
         for inst in institutions:
             eco_locations[inst.ecoregion_uk].update(inst_locations.get(inst.id, set()))
 
-        # Всі види
+        # All species.
         species_ids = [s[0] for s in session.query(LocationMonthlyActivity.species_id).distinct().all()]
         logging.info(f"Found {len(species_ids)} species, "
                      f"{len(inst_locations)} institutions, "
@@ -252,15 +248,15 @@ def _calculate_yearly_trends_with_bootstrap():
         close_ct_session()
 
 def update_analytics_tables(force_run=False):
-    """
-    Головна функція. Перевіряє, чи потрібен перерахунок, і запускає обидва етапи.
+    """Main entry point. Check whether a recalculation is needed and run both stages.
 
-    Повертає:
-        True  — перерахунок завершено успішно (або пропущено: змін немає);
-        False — один з етапів впав або сталася помилка.
-    Раніше функція повертала None і «ковтала» всі помилки, тож виклик
-    /admin/run-analytics завжди рапортував успіх. Тепер результат явний —
-    і HTTP-роут, і фоновий потік можуть коректно проставити статус.
+    Returns:
+        True  — recalculation completed successfully (or skipped: no changes);
+        False — one of the stages failed or an error occurred.
+    Previously the function returned None and swallowed all errors, so the
+    /admin/run-analytics call always reported success. The return value is now
+    explicit — both the HTTP route and the background thread can set the status
+    correctly.
     """
     session = get_ct_session()
     try:
@@ -278,19 +274,19 @@ def update_analytics_tables(force_run=False):
 
         logging.info("Changes detected or force_run=True. Starting analytics calculation...")
 
-        # Етап 1: Розрахунок щомісячної активності
+        # Stage 1: Monthly activity calculation.
         success_monthly = _calculate_monthly_activity()
         if not success_monthly:
             logging.error("Monthly activity calculation failed. Aborting further calculations.")
             return False
 
-        # Етап 2: Розрахунок річних трендів
+        # Stage 2: Yearly trend calculation.
         success_yearly = _calculate_yearly_trends_with_bootstrap()
         if not success_yearly:
             logging.error("Yearly trend calculation failed. Log will not be updated.")
             return False
 
-        # Етап 3: Якщо все успішно, оновлюємо лог
+        # Stage 3: If everything succeeded, update the log.
         logging.info("All calculations successful. Updating log.")
         if log_entry:
             log_entry.last_count = current_count
@@ -315,23 +311,24 @@ def update_analytics_tables(force_run=False):
         close_ct_session()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# АСИНХРОННИЙ ЗАПУСК (threading; точка заміни на Celery надалі)
+# ASYNC LAUNCH (threading; Celery replacement point in the future)
 #
-# Проблема, яку це вирішує: update_analytics_tables() триває ~3 хв на бойових
-# даних. Виклик синхронно з HTTP-запиту перевищував gunicorn --timeout → воркер
-# убивався → 500. Тепер роут стартує фоновий потік і миттєво повертається, а
-# клієнт опитує статус. Дзеркалить патерн cleanup.py / fast_upload.py.
+# Problem solved: update_analytics_tables() takes ~3 min on production data.
+# Calling it synchronously from an HTTP request exceeded gunicorn --timeout →
+# the worker was killed → 500. Now the route starts a background thread and
+# returns immediately; the client polls for status. Mirrors the pattern used
+# in cleanup.py / fast_upload.py.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Джерело, за яким ведеться облік у calculation_log (єдиний рядок аналітики).
+# Source name tracked in calculation_log (single analytics row).
 ANALYTICS_SOURCE = 'completed_observations'
-# 'running' старший за цей поріг вважаємо «застряглим» (воркер убитий) —
-# його можна перезапустити / прибрати recover_stuck_analytics().
+# A 'running' row older than this threshold is considered "stuck" (worker killed) —
+# it can be restarted / cleared by recover_stuck_analytics().
 ANALYTICS_STUCK_MINUTES = 30
 
 
 def _ensure_log_row(conn) -> None:
-    """Гарантує існування рядка calculation_log для ANALYTICS_SOURCE."""
+    """Ensure the calculation_log row for ANALYTICS_SOURCE exists."""
     conn.execute(
         text("""
             INSERT INTO calculation_log (source_name, last_count, status)
@@ -343,17 +340,16 @@ def _ensure_log_row(conn) -> None:
 
 
 def try_start_analytics_run(triggered_by: Optional[int] = None) -> bool:
-    """
-    Атомарний compare-and-set «захопити» право на перерахунок.
+    """Atomically compare-and-set to "claim" the right to run a recalculation.
 
-    Один UPSERT через ON CONFLICT ... WHERE: переводить рядок у 'running'
-    ЛИШЕ якщо він зараз НЕ 'running' (або 'running', але застряг — started_at
-    старший за ANALYTICS_STUCK_MINUTES). Працює крос-воркерно (3 gunicorn-
-    воркери) без advisory-lock: гонка двох кліків «Запустити» вирішується на
-    рівні БД — лише один отримає rowcount==1.
+    A single UPSERT via ON CONFLICT ... WHERE: moves the row to 'running'
+    ONLY if it is currently NOT 'running' (or is 'running' but stuck —
+    started_at is older than ANALYTICS_STUCK_MINUTES). Works across workers
+    (3 gunicorn workers) without an advisory lock: two simultaneous "Run"
+    clicks are resolved at the DB level — only one gets rowcount==1.
 
-    Повертає True, якщо саме цей виклик захопив запуск; False — якщо
-    перерахунок уже триває.
+    Returns True if this call claimed the run; False if a recalculation is
+    already in progress.
     """
     engine = get_ct_engine()
     stuck_cutoff = datetime.utcnow() - timedelta(minutes=ANALYTICS_STUCK_MINUTES)
@@ -374,23 +370,24 @@ def try_start_analytics_run(triggered_by: Optional[int] = None) -> bool:
             """),
             {"src": ANALYTICS_SOURCE, "cutoff": stuck_cutoff},
         )
-        # rowcount==1 → або свіжий INSERT, або DO UPDATE спрацював (WHERE true).
-        # rowcount==0 → конфлікт був, але WHERE false → вже 'running'.
+        # rowcount==1 → either a fresh INSERT or DO UPDATE fired (WHERE true).
+        # rowcount==0 → conflict existed but WHERE was false → already 'running'.
         return (result.rowcount or 0) == 1
 
 
 def _finish_analytics_run(status: str, error_message: Optional[str] = None) -> None:
-    """
-    Проставляє фінальний статус ('completed' / 'failed') після фонового run.
+    """Set the final status ('completed' / 'failed') after a background run.
 
-    При 'completed' тут же оновлюємо last_calculated_at = NOW() через raw SQL.
-    Чому не покладаємось на ORM-оновлення в update_analytics_tables: там
-    log_entry читається ДО виклику _calculate_* функцій, кожна з яких у своєму
-    finally робить close_ct_session() → scoped_session.remove(). Після цього
-    log_entry detached, і ORM-commit лічильника тихо не зберігається (той самий
-    lifecycle-баг, що описаний у CLAUDE.md). Raw UPDATE тут надійний і потрібен,
-    щоб бейдж «Останній успішний перерахунок» у адмінці показував правдивий час.
-    last_count не чіпаємо — це окрема (передіснуюча) логіка change-detection.
+    On 'completed', also update last_calculated_at = NOW() via raw SQL.
+    Why not rely on the ORM update in update_analytics_tables: there,
+    log_entry is read BEFORE the _calculate_* calls, each of which in its
+    own finally calls close_ct_session() → scoped_session.remove(). After
+    that log_entry is detached, and the ORM counter commit silently does
+    nothing (the same lifecycle bug described in CLAUDE.md). A raw UPDATE
+    here is reliable and needed so that the "Last successful recalculation"
+    badge in the admin panel shows the correct time.
+    last_count is not touched — that is separate (pre-existing) change-detection
+    logic.
     """
     engine = get_ct_engine()
     with engine.begin() as conn:
@@ -411,7 +408,7 @@ def _finish_analytics_run(status: str, error_message: Optional[str] = None) -> N
 
 
 def _run_analytics_in_thread(app, triggered_by: Optional[int]) -> None:
-    """Тіло фонового потоку. Виконується поза HTTP-контекстом."""
+    """Background thread body. Runs outside the HTTP context."""
     with app.app_context():
         try:
             ok = update_analytics_tables(force_run=True)
@@ -431,15 +428,15 @@ def _run_analytics_in_thread(app, triggered_by: Optional[int]) -> None:
 
 
 def start_async_analytics(triggered_by: Optional[int] = None) -> bool:
-    """
-    Стартує фоновий перерахунок аналітики. Повертається МИТТЄВО.
+    """Start a background analytics recalculation. Returns IMMEDIATELY.
 
-    Повертає:
-        True  — запуск стартував у фоні (потік створено);
-        False — перерахунок уже виконується, новий не стартував.
+    Returns:
+        True  — run started in the background (thread created);
+        False — a recalculation is already running, no new one started.
 
-    NB: шар спеціально тонкий — щоб у майбутньому замінити тіло на
-    `recalc_analytics_task.delay()` (Celery) без зміни роуту і JS.
+    NB: this layer is intentionally thin — so that in the future the body
+    can be replaced with `recalc_analytics_task.delay()` (Celery) without
+    changing the route or JS.
     """
     if not try_start_analytics_run(triggered_by):
         return False
@@ -458,7 +455,7 @@ def start_async_analytics(triggered_by: Optional[int] = None) -> bool:
 
 
 def get_analytics_status() -> dict:
-    """Повертає поточний стан перерахунку для polling з адмінки."""
+    """Return the current recalculation state for admin-page polling."""
     engine = get_ct_engine()
     with engine.begin() as conn:
         _ensure_log_row(conn)
@@ -486,10 +483,9 @@ def get_analytics_status() -> dict:
 
 
 def recover_stuck_analytics() -> int:
-    """
-    Викликати при старті app. Якщо воркер був убитий під час 'running' —
-    переводить «застряглий» рядок (started_at старший за поріг) у 'failed',
-    щоб адмінка показала помилку, а наступний клік міг стартувати наново.
+    """Call at app startup. If the worker was killed during 'running' — move the
+    stuck row (started_at older than the threshold) to 'failed' so that the
+    admin panel shows an error and the next click can start a fresh run.
     """
     try:
         engine = get_ct_engine()
@@ -524,12 +520,12 @@ def recover_stuck_analytics() -> int:
 
 
 if __name__ == '__main__':
-    # Цей блок дозволяє запускати цей файл напряму з командного рядка для тестування
-    # Потрібно, щоб ваше середовище Flask було правильно налаштоване для доступу до БД
-    
-    # Спершу треба створити Flask app context, щоб SQLAlchemy знав, до якої БД підключатись
+    # This block allows running the file directly from the command line for testing.
+    # The Flask app context must be properly configured for DB access.
+
+    # Create a Flask app context first so SQLAlchemy knows which DB to connect to.
     from app import create_app
     app = create_app()
     with app.app_context():
-        # Запускаємо оновлення з параметром force_run=True для першого разу
+        # Run the update with force_run=True for the first time.
         update_analytics_tables(force_run=True)

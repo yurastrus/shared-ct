@@ -1,26 +1,25 @@
-# myproject/app/camera_traps/fast_upload.py
-"""
-Швидкий шлях завантаження великих наборів фото (10k–100k+).
+"""Fast upload path for large photo sets (10k–100k+).
 
-Існує паралельно зі старим `utils.group_batch_into_series` —
-жодних змін у старому шляху, спільний лише `process_single_photo`.
+Runs in parallel with the old `utils.group_batch_into_series` —
+nothing in the old path is changed; only `process_single_photo` is shared.
 
-Архітектура:
+Architecture:
     /upload-fast (HTML)
-        ├── /api/create-batch           (старий, переюзаний)
-        ├── /upload/process-single      (старий, переюзаний)   ← N паралельних
+        ├── /api/create-batch           (old, reused)
+        ├── /upload/process-single      (old, reused)   ← N parallel workers
         ├── /api/finalize-batch-async   (202 → start_async_grouping)
-        ├── /api/batch-status           (старий, переюзаний для polling)
+        ├── /api/batch-status           (old, reused for polling)
         └── /api/batch/<id>/uploaded-files (resumable)
 
-Інваріант:
-    Групування викликається лише після того, як усі фото batchʼа
-    зафіксовані у БД зі status='uploaded'. CTE-запит робить single-pass
-    LAG над повним набором, тож межі серій будуються глобально.
+Invariant:
+    Grouping is called only AFTER all photos of the batch have been
+    committed to the DB with status='uploaded'. The CTE query does a
+    single-pass LAG over the full set, so series boundaries are built
+    globally.
 
-Заміна threading на Celery надалі — точкова: підмінити тіло
-`start_async_grouping` на `finalize_batch_task.delay(batch_id)`,
-решта роутів/JS не змінюється.
+Replacing threading with Celery later — a one-liner: swap the body of
+`start_async_grouping` for `finalize_batch_task.delay(batch_id)`;
+routes and JS stay unchanged.
 """
 
 from __future__ import annotations
@@ -38,39 +37,38 @@ from .models import UploadBatch
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. ГРУПУВАННЯ ОДНИМ SQL-ЗАПИТОМ (single-pass над усім batchʼем)
+# 1. GROUPING IN A SINGLE SQL QUERY (single-pass over the entire batch)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def group_batch_into_series_sql(batch_id: str) -> int:
-    """
-    Групує всі фото batchʼа у серії одним CTE-запитом.
+    """Group all photos of a batch into series in one CTE query.
 
-    Повертає кількість фото, які отримали observation_id.
+    Returns the number of photos that received an observation_id.
 
-    Алгоритм:
-        1. WITH ordered: сортуємо photos batchʼа за (captured_at, id),
-           обчислюємо LAG(captured_at) — час попереднього фото.
-        2. WITH marked: фіксуємо межу серії там, де
+    Algorithm:
+        1. WITH ordered: sort the batch's photos by (captured_at, id),
+           compute LAG(captured_at) — the timestamp of the previous photo.
+        2. WITH marked: flag a series boundary where
            captured_at - prev_captured > SERIES_TIME_WINDOW
-           (або де prev IS NULL — перше фото). Кумулятивний SUM(flag)
-           дає series_idx — номер серії в межах batchʼа.
-        3. INSERT INTO observations по одному рядку на кожен series_idx:
-           MIN/MAX(captured_at), COUNT(*). RETURNING id для маппінгу.
-        4. UPDATE photos: проставляємо observation_id, sequence_number
-           (ROW_NUMBER в межах серії), status='pending'.
-        5. Окремий короткий UPDATE locations.photo_count.
+           (or where prev IS NULL — the first photo). A cumulative SUM(flag)
+           gives series_idx — the series number within the batch.
+        3. INSERT INTO observations one row per series_idx:
+           MIN/MAX(captured_at), COUNT(*). RETURNING id for the mapping.
+        4. UPDATE photos: set observation_id, sequence_number
+           (ROW_NUMBER within the series), status='pending'.
+        5. A separate short UPDATE for locations.photo_count.
 
-    Ідемпотентність:
-        - Якщо batch уже 'completed' — return 0 без дій.
-        - Якщо є partial Observations від попередньої невдалої спроби
-          (батч у 'failed' / 'grouping') — спершу їх чистимо:
-          DELETE FROM observations WHERE id IN (...) — повʼязані photos
-          автоматично втрачають observation_id через nullable FK.
+    Idempotency:
+        - If the batch is already 'completed' — return 0 with no action.
+        - If partial Observations exist from a previous failed attempt
+          (batch in 'failed' / 'grouping') — delete them first:
+          DELETE FROM observations WHERE id IN (...) — linked photos
+          automatically lose their observation_id via nullable FK.
 
-    Транзакційність:
-        Усе тіло — одна транзакція через engine.begin(). Жодних
-        per-photo flush, жодних ORM-обʼєктів у памʼять. На 50k фото
-        обчислюється секундами, не хвилинами.
+    Transactionality:
+        The entire body is one transaction via engine.begin(). No
+        per-photo flushes, no ORM objects in memory. For 50k photos
+        this runs in seconds, not minutes.
     """
     config = current_app.config['CAMERA_TRAP_CONFIG']
     series_window_seconds = int(config['SERIES_TIME_WINDOW'])
@@ -78,7 +76,7 @@ def group_batch_into_series_sql(batch_id: str) -> int:
     engine = get_ct_engine()
 
     with engine.begin() as conn:
-        # ─── 0. Перевірка стану batchʼа + читання context ────────────────
+        # ─── 0. Check batch state + read context ─────────────────────────
         row = conn.execute(
             text("""
                 SELECT location_id, uploaded_by_id, status
@@ -101,13 +99,13 @@ def group_batch_into_series_sql(batch_id: str) -> int:
         location_id = row.location_id
         uploaded_by_id = row.uploaded_by_id
 
-        # ─── 1. Чистка часткових результатів попередньої спроби ──────────
-        # ПОРЯДОК ВАЖЛИВИЙ: спершу занулюємо FK у photos цього batchʼа
-        # (щоб не порушити foreign-key constraint), потім видаляємо
-        # observations, які тепер лишилися без жодного photo.
+        # ─── 1. Clean up partial results from a previous attempt ─────────
+        # ORDER MATTERS: first null the FK in this batch's photos
+        # (to avoid violating the foreign-key constraint), then delete
+        # the observations that now have no photos.
 
-        # 1а. Зберігаємо у tmp ті observation_id, які раніше мали фото
-        # цього batchʼа — кандидати на видалення.
+        # 1a. Save to tmp the observation_ids that previously had photos
+        # from this batch — candidates for deletion.
         conn.execute(text("DROP TABLE IF EXISTS tmp_partial_obs"))
         conn.execute(
             text("""
@@ -120,8 +118,8 @@ def group_batch_into_series_sql(batch_id: str) -> int:
             {"b": batch_id},
         )
 
-        # 1б. Скидаємо стан photos цього batchʼа до 'uploaded' —
-        # FK observation_id зануляється, FK більше не блокує DELETE.
+        # 1b. Reset this batch's photos to 'uploaded' —
+        # the observation_id FK is nulled out, no longer blocking DELETE.
         conn.execute(
             text("""
                 UPDATE photos
@@ -133,9 +131,9 @@ def group_batch_into_series_sql(batch_id: str) -> int:
             {"b": batch_id},
         )
 
-        # 1в. Видаляємо ті кандидати, які тепер не мають жодного photo
-        # (тобто всі їхні фото належали саме цьому batchʼу — orphan
-        # observations попередньої невдалої спроби).
+        # 1c. Delete candidates that now have no photos
+        # (i.e. all their photos belonged to this batch — orphan
+        # observations from a previous failed attempt).
         conn.execute(
             text("""
                 DELETE FROM observations o
@@ -147,10 +145,10 @@ def group_batch_into_series_sql(batch_id: str) -> int:
             """),
         )
 
-        # ─── 2. Window-функцією рахуємо series_idx, агрегуємо у tmp ──────
-        # Створюємо тимчасову таблицю з series_idx для кожного фото —
-        # потрібно бо INSERT...RETURNING обʼєднати з UPDATE photos
-        # одним statement-ом важко без unique key.
+        # ─── 2. Compute series_idx with window functions, aggregate to tmp ──
+        # Create a temp table with series_idx for each photo —
+        # needed because combining INSERT...RETURNING with UPDATE photos
+        # in one statement without a unique key is awkward.
         conn.execute(text("DROP TABLE IF EXISTS tmp_batch_groups"))
         conn.execute(
             text("""
@@ -207,7 +205,7 @@ def group_batch_into_series_sql(batch_id: str) -> int:
             {"b": batch_id, "win": series_window_seconds},
         )
 
-        # Якщо tmp порожня — фото немає.
+        # If the temp table is empty — no photos found.
         photo_count = conn.execute(
             text("SELECT COUNT(*) FROM tmp_batch_groups")
         ).scalar() or 0
@@ -217,8 +215,8 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                 f"No 'uploaded' photos found in batch {batch_id}"
             )
 
-        # ─── 3. INSERT серій у observations + RETURNING для маппінгу ─────
-        # Створюємо ще одну tmp з мапою series_idx -> observation_id.
+        # ─── 3. INSERT series into observations + RETURNING for mapping ───
+        # Create another tmp table with series_idx -> observation_id mapping.
         conn.execute(text("DROP TABLE IF EXISTS tmp_series_obs"))
         conn.execute(
             text("""
@@ -272,10 +270,10 @@ def group_batch_into_series_sql(batch_id: str) -> int:
         )
         grouped_photos = result.rowcount or 0
 
-        # ─── 5. Перерахунок photo_count у локації одним short UPDATE ─────
-        # Набір статусів — біт-у-біт як у legacy group_batch_into_series
-        # (utils.py): 'pending', 'completed', 'needs_review'. Не додаємо
-        # 'grouped' — щоб результат у БД був ідентичний старому шляху.
+        # ─── 5. Recompute photo_count for the location in one short UPDATE ─
+        # Status set — bit-for-bit identical to the legacy group_batch_into_series
+        # (utils.py): 'pending', 'completed', 'needs_review'. 'grouped' is NOT
+        # included — to keep the DB result identical to the old path.
         conn.execute(
             text("""
                 UPDATE locations
@@ -298,18 +296,18 @@ def group_batch_into_series_sql(batch_id: str) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. АСИНХРОННИЙ ЗАПУСК (threading; точка заміни на Celery у майбутньому)
+# 2. ASYNC LAUNCH (threading; Celery replacement point in the future)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Стани UploadBatch.status, додані цим модулем:
-#   'ready_to_group' — клієнт надіслав finalize, таск ще не стартував
-#   'grouping'       — фоновий потік виконує group_batch_into_series_sql
-# Решта ('uploading' / 'completed' / 'failed') — як у старому шляху.
+# UploadBatch.status states added by this module:
+#   'ready_to_group' — client sent finalize, task not yet started
+#   'grouping'       — background thread is running group_batch_into_series_sql
+# The rest ('uploading' / 'completed' / 'failed') — same as the old path.
 
 
 def _set_batch_status(batch_id: str, status: str,
                       error_message: Optional[str] = None) -> None:
-    """Короткий окремий commit зі зміною статусу batchʼа."""
+    """Short separate commit that updates the batch status."""
     engine = get_ct_engine()
     with engine.begin() as conn:
         conn.execute(
@@ -329,14 +327,14 @@ def _set_batch_status(batch_id: str, status: str,
 
 
 def _run_grouping_in_thread(app, batch_id: str) -> None:
-    """Тіло фонового потоку. Виконується поза HTTP-контекстом."""
+    """Background thread body. Runs outside the HTTP context."""
     with app.app_context():
         try:
             _set_batch_status(batch_id, 'grouping')
             group_batch_into_series_sql(batch_id)
             _set_batch_status(batch_id, 'completed')
         except (OperationalError, DBAPIError) as e:
-            # Транзієнтні помилки БД — простий single retry
+            # Transient DB errors — simple single retry.
             current_app.logger.warning(
                 f"[fast-upload] Batch {batch_id} hit DB error, retry once: {e}"
             )
@@ -356,12 +354,12 @@ def _run_grouping_in_thread(app, batch_id: str) -> None:
 
 
 def start_async_grouping(batch_id: str) -> None:
-    """
-    Стартує фонове групування. Викликається з HTTP-роуту після
-    переведення batch у стан 'ready_to_group'. Повертається миттєво.
+    """Start background grouping. Called from the HTTP route after the batch
+    has been moved to 'ready_to_group'. Returns immediately.
 
-    NB: цей шар спеціально тонкий — щоб у майбутньому замінити на
-    `finalize_batch_task.delay(batch_id)` без зміни роутів і JS.
+    NB: this layer is intentionally thin — so that in the future it can be
+    replaced with `finalize_batch_task.delay(batch_id)` without touching
+    routes or JS.
     """
     app = current_app._get_current_object()  # type: ignore[attr-defined]
     thread = threading.Thread(
@@ -377,17 +375,16 @@ def start_async_grouping(batch_id: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. RECOVERY: при рестарті worker'а — підібрати «застряглі» батчі
+# 3. RECOVERY: on worker restart — pick up "stuck" batches
 # ─────────────────────────────────────────────────────────────────────────────
 
 def recover_stale_grouping_batches() -> int:
-    """
-    Викликається з app factory при старті. Якщо worker був убитий під
-    час 'grouping' — батч ніхто не перезапустить. Цей хелпер переводить
-    застряглі батчі у 'failed', щоб клієнт побачив помилку й міг
-    запустити повторно (group_batch_into_series_sql ідемпотентний).
+    """Called from the app factory on startup. If the worker was killed during
+    'grouping' — no one will restart the batch. This helper moves stale batches
+    to 'failed' so the client sees an error and can retry
+    (group_batch_into_series_sql is idempotent).
 
-    Поріг — 30 хвилин: реалістична верхня межа для 100k фото на SQL.
+    Threshold — 30 minutes: a realistic upper bound for 100k photos in SQL.
     """
     try:
         engine = get_ct_engine()
@@ -412,7 +409,7 @@ def recover_stale_grouping_batches() -> int:
                 )
             return n
     except Exception as e:
-        # На рестарті не валимо весь застосунок — лише лог.
+        # Do not crash the entire app on startup — log only.
         try:
             current_app.logger.error(
                 f"[fast-upload] recover_stale_grouping_batches failed: {e}"

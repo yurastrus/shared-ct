@@ -1,13 +1,13 @@
-"""Flask-side helpers для AI-runner'а.
+"""Flask-side helpers for the AI runner.
 
-Flask нічого з services/biomon_ai/ не імпортує — той живе в окремому venv.
-Тут — лише читання/запис в ai_* таблиці через основний CT-engine.
+Flask imports nothing from services/biomon_ai/ — that lives in a separate venv.
+This module only reads/writes the ai_* tables via the main CT engine.
 
-Призначення:
-    is_ai_available()      — feature flag для template (показ кнопки і фільтру)
-    request_run()          — створити запит у ai_run_queue (адмін-кнопка)
-    get_recent_requests()  — показати останні запити з статусами
-    get_active_model()     — який класифікатор зараз активний
+Exports:
+    is_ai_available()      — feature flag for the template (button and filter visibility)
+    request_run()          — create a request in ai_run_queue (admin button)
+    get_recent_requests()  — show recent requests with their statuses
+    get_active_model()     — which classifier is currently active
 """
 
 from typing import Optional
@@ -21,20 +21,20 @@ from .models import AIModel, AIModelLevel, AIRunQueue
 
 _AI_TABLES = ('ai_models', 'ai_predictions', 'ai_run_queue')
 
-# Кеш на час життя процесу — щоб не тягати information_schema на кожен запит
+# Process-lifetime cache — avoids querying information_schema on every request.
 _tables_checked: bool = False
 _tables_exist: bool = False
 
 
 def is_ai_available() -> bool:
-    """True якщо AI-runner налаштований і доступний з боку Flask.
+    """Return True if the AI runner is configured and reachable from Flask.
 
-    Перевіряє:
-      1. config AI_RUNNER.ENABLED (на dev-машині завжди False)
-      2. Усі 3 ai_* таблиці існують у ct_db (на серверах де модуль
-         фотопасток встановлений, але AI-схему не накатили — теж False)
+    Checks:
+      1. config AI_RUNNER.ENABLED (always False on a dev machine)
+      2. All 3 ai_* tables exist in ct_db (also False on servers where the
+         camera-traps module is installed but the AI schema has not been applied)
 
-    Перевірка таблиць кешується (виконується один раз на запуск процесу).
+    The table check is cached (runs once per process lifetime).
     """
     cfg = (current_app.config.get('CAMERA_TRAP_CONFIG') or {}).get('AI_RUNNER') or {}
     if not cfg.get('ENABLED', False):
@@ -62,18 +62,18 @@ def _ai_tables_exist() -> bool:
 
 
 def _reset_cache():
-    """Для тестів: примусово перевірити таблиці знову."""
+    """Force a re-check of the tables (for tests)."""
     global _tables_checked, _tables_exist
     _tables_checked = False
     _tables_exist = False
 
 
 def request_run(user_id: int, n_observations: int) -> AIRunQueue:
-    """Створює запис у ai_run_queue зі статусом 'pending'.
+    """Create a record in ai_run_queue with status 'pending'.
 
-    Worker (cron) підхопить його у наступному прогоні. Повертає створений
-    об'єкт (не від'єднаний від сесії — викликач має зробити commit АБО
-    використати окремий context manager).
+    The worker (cron) will pick it up on the next pass. Returns the created
+    object (not detached from the session — the caller must commit OR use a
+    separate context manager).
     """
     sess = get_ct_session()
     req = AIRunQueue(
@@ -88,7 +88,7 @@ def request_run(user_id: int, n_observations: int) -> AIRunQueue:
 
 
 def get_recent_requests(limit: int = 5) -> list:
-    """Останні запити для відображення статусу на адмін-сторінці."""
+    """Return the most recent requests for status display on the admin page."""
     sess = get_ct_session()
     return (
         sess.query(AIRunQueue)
@@ -99,24 +99,24 @@ def get_recent_requests(limit: int = 5) -> list:
 
 
 def get_active_model() -> Optional[AIModel]:
-    """Поточна активна AI-модель або None.
+    """Return the currently active AI model, or None.
 
-    Якщо None — worker ще не запускався або жодна модель не зареєстрована.
+    None means the worker has not run yet or no model has been registered.
     """
     sess = get_ct_session()
     return sess.query(AIModel).filter_by(is_active=True).first()
 
 
 def get_classification_stats() -> dict:
-    """Загальна статистика прогресу класифікації для адмін-сторінки.
+    """Return overall classification progress statistics for the admin page.
 
     Returns:
         {'classified': N, 'remaining': M}
-          classified — observation з прогнозами від активної моделі (будь-який статус)
-          remaining  — pending observation БЕЗ прогнозів, у яких є хоча б одне
-                       живе (не archived) фото — тобто реальні кандидати для AI.
+          classified — observations with predictions from the active model (any status)
+          remaining  — pending observations WITHOUT predictions that have at least
+                       one live (non-archived) photo — i.e. real AI candidates.
 
-    Якщо активної моделі ще нема → обидві цифри 0.
+    If no active model exists yet → both figures are 0.
     """
     from sqlalchemy import text
     sess = get_ct_session()
@@ -168,34 +168,34 @@ def get_species_with_ai_predictions(
     scope_institution_id: Optional[int] = None,
     scope_ecoregion: Optional[str] = None,
 ) -> list:
-    """Повертає [(species_id, display_name)] видів які мають **pending для
-    цього юзера** AI-прогнози від активної моделі. Тобто:
+    """Return [(species_id, display_name)] for species that have **pending for
+    this user** AI predictions from the active model. That is:
       - observation.status='pending'
-      - користувач ще не визначав жодного фото цієї серії
-      - локація доступна юзеру (admin — всі; інакше visibility_level=0
-        АБО локація належить інституціям юзера)
+      - the user has not yet identified any photo in this series
+      - the location is accessible to the user (admin — all; otherwise
+        visibility_level=0 OR the location belongs to the user's institutions)
 
-    display_name містить кількість таких серій у дужках, наприклад
+    display_name includes the pending series count in parentheses, e.g.
     "Козуля (Capreolus capreolus) (42)".
 
-    Якщо user_id=None — повертаємо всі види без фільтра по юзеру
-    (для тестів / debug).
+    If user_id=None — returns all species without a user filter
+    (for tests / debug).
 
-    Параметри `scope_institution_id` / `scope_ecoregion` додатково звужують
-    список лише до тих локацій, які належать вибраній установі або входять
-    у вибраний екорегіон (з-поміж установ юзера, якщо не admin). Параметри
-    взаємно виключні — якщо передано обидва, перевагу має institution.
+    The `scope_institution_id` / `scope_ecoregion` parameters further narrow
+    the list to locations belonging to the chosen institution or ecoregion
+    (among the user's institutions, unless admin). The parameters are mutually
+    exclusive — if both are passed, institution takes precedence.
     """
     from sqlalchemy import bindparam, text as sql_text
     sess = get_ct_session()
-    # Раніше фільтрували по активній моделі. Тепер на кожну observation беремо
-    # прогноз від моделі з НАЙВИЩИМ accuracy_rank (напр. імпортований MDR
-    # перемагає серверний DF+MDS там, де є обидва). Якщо жодної моделі —
-    # AI ще не налаштований.
+    # Previously filtered by the active model. Now we take the prediction from
+    # the model with the HIGHEST accuracy_rank per observation (e.g. an imported
+    # MDR beats the server DF+MDS where both exist). If no model exists —
+    # AI is not yet configured.
     if sess.query(AIModel.id).first() is None:
         return []
 
-    # Будуємо access-clause (та сама логіка що в next_observation_for_identification)
+    # Build the access clause (same logic as next_observation_for_identification).
     if is_admin:
         access_clause = ""
         access_params = {}
@@ -224,9 +224,9 @@ def get_species_with_ai_predictions(
         """
         user_params = {'uid': user_id}
 
-    # Scope-фільтр: підрізаємо до конкретної установи або екорегіону.
-    # Реалізуємо як підзапит на location_institutions/institutions —
-    # ті самі семантики, що в next_observation_for_identification.
+    # Scope filter: narrow down to a specific institution or ecoregion.
+    # Implemented as a subquery on location_institutions/institutions —
+    # same semantics as next_observation_for_identification.
     scope_clause = ""
     scope_params = {}
     if scope_institution_id is not None:
@@ -240,10 +240,10 @@ def get_species_with_ai_predictions(
             """
             scope_params = {'scope_inst_id': scope_institution_id}
         else:
-            # Юзер не має доступу до цієї установи — повертаємо порожньо.
+            # User has no access to this institution — return empty.
             return []
     elif scope_ecoregion:
-        # Інституції, які входять у вибраний екорегіон (за uk-ключем).
+        # Institutions that belong to the chosen ecoregion (by uk key).
         eco_q = sess.execute(sql_text("""
             SELECT id FROM institutions WHERE ecoregion_uk = :eco
         """), {'eco': scope_ecoregion}).fetchall()
@@ -263,9 +263,9 @@ def get_species_with_ai_predictions(
         """
         scope_params = {'scope_inst_ids': tuple(eco_inst_ids)}
 
-    # win — по одному рядку-переможцю на observation: прогноз від моделі з
-    # найвищим accuracy_rank (tie-break: новіший model.id). COALESCE(...,0) —
-    # моделі без рівня вважаємо найнижчими.
+    # win — one winning row per observation: prediction from the model with the
+    # highest accuracy_rank (tie-break: newer model.id). COALESCE(...,0) —
+    # models without a level are treated as the lowest rank.
     sql = sql_text(f"""
         WITH win AS (
             SELECT DISTINCT ON (ap.observation_id)
@@ -295,7 +295,7 @@ def get_species_with_ai_predictions(
         ORDER BY s.common_name_ua
     """)
 
-    # IN-clause з тимчасовим списком потребує expanding-bindparam.
+    # IN-clause with a dynamic list requires an expanding bindparam.
     expanding = []
     if 'inst_ids' in access_params:
         expanding.append(bindparam('inst_ids', expanding=True))
@@ -318,24 +318,25 @@ def get_species_with_ai_predictions(
             name = s.common_name_ua or s.common_name_en or s.scientific_name
         if s.id > 0 and s.scientific_name:
             name = f"{name} ({s.scientific_name})"
-        # Лічильник у дужках в кінці
+        # Append the pending count in parentheses.
         name = f"{name} ({s.pending_count})"
         result.append({'id': s.id, 'text': name})
     return result
 
 
 def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
-    """Повертає найкращий прогноз AI для observation або None.
+    """Return the best AI prediction for an observation, or None.
 
-    Якщо для серії є прогнози від кількох моделей (напр. серверний DF+MDS і
-    імпортований MDR), беремо від моделі з НАЙВИЩИМ accuracy_rank; у межах
-    моделі — рядок з найбільшим score. Якщо prediction_species_id IS NULL
-    (немає мапінга на наш Species) — повертаємо лише сирий label.
+    If there are predictions from multiple models for the series (e.g. server
+    DF+MDS and imported MDR), we pick the one from the model with the HIGHEST
+    accuracy_rank; within a model — the row with the highest score. If
+    prediction_species_id IS NULL (no mapping to our Species) — return only
+    the raw label.
 
-    Структура повернення:
+    Return structure:
         {
-            'species_id':       int або None,
-            'species_label':    str (DeepFaune raw label, напр. 'roe deer'),
+            'species_id':       int or None,
+            'species_label':    str (DeepFaune raw label, e.g. 'roe deer'),
             'score':            float (0..1),
             'animal_count':     int,
         }
@@ -359,10 +360,11 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
     if row is None:
         return None
 
-    # #35: кількість особин для серії = MAX(animal_count) у межах ПЕРЕМОЖНОЇ
-    # моделі (того ж model_id) по всіх фото серії. ai_predictions — пер-фото,
-    # тож дві особини можуть бути лише на одному кадрі; беремо максимум (NULL
-    # ігнорує SQL MAX). Якщо всі NULL → лишаємо поточну поведінку (row.animal_count).
+    # #35: individual count for the series = MAX(animal_count) within the WINNING
+    # model (same model_id) across all photos in the series. ai_predictions is
+    # per-photo, so two individuals could appear on only one frame; we take the
+    # maximum (NULL is ignored by SQL MAX). If all are NULL → fall back to
+    # row.animal_count.
     max_count = (
         sess.query(func.max(AIPrediction.animal_count))
         .filter(
@@ -381,14 +383,14 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
 
 
 def observations_subq_for_ai_species(ai_species_id: int):
-    """SQLAlchemy select(observation_id) для серій, де ПЕРЕМОЖНИЙ прогноз
-    (модель з найвищим accuracy_rank, tie-break — новіший model.id) визначив
-    вид ai_species_id.
+    """SQLAlchemy select(observation_id) for series where the WINNING prediction
+    (model with the highest accuracy_rank, tie-break — newer model.id) identified
+    species ai_species_id.
 
-    Узгоджено з get_species_with_ai_predictions / get_observation_ai_prediction:
-    якщо на серію є прогнози кількох моделей (DF+MDS + імпортований MDR),
-    «переможцем» вважаємо лише найточніший — щоб AI-фільтр на /identify давав
-    рівно ті серії, що показані в довіднику видів."""
+    Consistent with get_species_with_ai_predictions / get_observation_ai_prediction:
+    if a series has predictions from multiple models (DF+MDS + imported MDR),
+    only the most accurate one is considered the "winner" — so the AI filter on
+    /identify shows exactly the series listed in the species reference."""
     from sqlalchemy import select, func
     from .models import AIPrediction
 
