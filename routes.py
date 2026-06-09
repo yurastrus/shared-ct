@@ -2200,7 +2200,7 @@ def api_comparison(lang_code):
         if not left_loc_ids and not right_loc_ids:
             return jsonify({'error': 'No locations found for selected scopes'}), 404
 
-        # Фільтр біотопів по локаціях
+        # Filter biotopes by location
         if biotope_ids:
             bio_q = select(Location.id).join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
             bio_loc_ids = {r[0] for r in ct_session.execute(bio_q).fetchall()}
@@ -2249,7 +2249,7 @@ def api_comparison(lang_code):
         left_counts, left_trap_days, left_locs = get_scope_data(left_loc_ids)
         right_counts, right_trap_days, right_locs = get_scope_data(right_loc_ids)
 
-        # Сирі ідентифікації для Venn-аналізу (ловить рідкісні види, яких немає в pre-computed таблиці)
+        # Raw identifications for Venn analysis (catches rare species absent from the pre-computed table)
         def get_all_species_ids(loc_ids):
             if not loc_ids:
                 return set()
@@ -2269,7 +2269,7 @@ def api_comparison(lang_code):
         left_all_spp = get_all_species_ids(left_loc_ids)
         right_all_spp = get_all_species_ids(right_loc_ids)
 
-        # species_map для ВСІХ видів (pre-computed + сирі)
+        # species_map for ALL species (pre-computed + raw)
         all_ids_for_names = set(left_counts.keys()) | set(right_counts.keys()) | left_all_spp | right_all_spp
         species_map = {}
         if all_ids_for_names:
@@ -2306,18 +2306,18 @@ def api_comparison(lang_code):
                 'pielou': round(pielou, 3) if pielou is not None else None
             }
 
-        # Venn: за сирими ідентифікаціями (повніше, ніж pre-computed таблиця)
+        # Venn: based on raw identifications (more complete than the pre-computed table)
         left_only_spp = left_all_spp - right_all_spp
         right_only_spp = right_all_spp - left_all_spp
         shared_spp = left_all_spp & right_all_spp
         union_spp = left_all_spp | right_all_spp
 
-        # Jaccard і Sørensen — за присутністю/відсутністю (сирі дані)
+        # Jaccard and Sørensen — presence/absence based (raw data)
         jaccard = round(len(shared_spp) / len(union_spp), 3) if union_spp else 0
         sorensen_denom = len(left_all_spp) + len(right_all_spp)
         sorensen = round(2 * len(shared_spp) / sorensen_denom, 3) if sorensen_denom else 0
 
-        # Bray-Curtis і Morisita-Horn — за чисельністю (pre-computed RAI)
+        # Bray-Curtis and Morisita-Horn — abundance based (pre-computed RAI)
         rai_union = set(left_counts.keys()) | set(right_counts.keys())
         sum_min = sum(min(left_counts.get(s, 0), right_counts.get(s, 0)) for s in rai_union)
         sum_all = sum(left_counts.get(s, 0) for s in rai_union) + sum(right_counts.get(s, 0) for s in rai_union)
@@ -2331,7 +2331,7 @@ def api_comparison(lang_code):
         mh_den = (da + db) * n_a * n_b
         morisita_horn = round(mh_num / mh_den, 3) if mh_den else 0
 
-        # Барчарт: топ-30 за сумарним RAI
+        # Bar chart: top-30 by total RAI
         sorted_species = sorted(rai_union,
                                 key=lambda s: (left_rai.get(s, 0) + right_rai.get(s, 0)),
                                 reverse=True)
@@ -2388,7 +2388,7 @@ def api_comparison(lang_code):
     finally:
         close_ct_session()
 
-# --- API для ідентифікації та завантаження ---
+# --- IDENTIFICATION AND UPLOAD API ---
 @camera_traps_bp.route('/api/submit-identification', methods=['POST'])
 @login_required
 @role_required('ct_verifier')
@@ -2401,9 +2401,9 @@ def submit_identification(lang_code):
             species_id = int(data['species_id'])
             quantity = int(data.get('quantity', 1))
             is_favorite = bool(data.get('is_favorite', False))
-            current_photo_index = int(data.get('current_photo_index', 0))  # ← ДОДАНО
+            current_photo_index = int(data.get('current_photo_index', 0))
             behavior_ids = data.get('behaviors', [])
-            # #47: необов'язковий коментар; бек-захист — обрізаємо до 200 символів
+            # #47: optional comment field; back-end guard — truncate to 200 chars
             comment = (data.get('comment') or '').strip()[:200] or None
         except (ValueError, TypeError, KeyError):
             return jsonify({'success': False, 'error': _('Неправильний формат даних.')}), 400
@@ -2419,12 +2419,12 @@ def submit_identification(lang_code):
         selected_behaviors = ct_session.query(BehaviorType).filter(BehaviorType.id.in_(behavior_ids)).all() if behavior_ids else []
         
         photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
-        # Перевірка валідності індексу
+        # Validate the index
         if current_photo_index >= len(photos_sorted):
             current_photo_index = 0  # Fallback to first photo
                 
         for i, photo in enumerate(photos_sorted):
-            # Встановлюємо is_favorite тільки для поточного фото
+            # Set is_favorite only for the current photo
             if is_favorite and i == current_photo_index:
                 photo.is_favorite = True
             elif not is_favorite and i == current_photo_index:
@@ -2464,7 +2464,7 @@ def submit_identification(lang_code):
 @camera_traps_bp.route('/api/location/<int:location_id>')
 @login_required
 def get_location_details(lang_code, location_id):
-    """API для отримання деталей конкретної локації, включаючи її біотопи."""
+    """API for fetching details of a specific location, including its biotopes."""
     ct_session = get_ct_session()
     try:
         location = ct_session.query(Location).get(location_id)
@@ -2497,18 +2497,18 @@ def get_location_details(lang_code, location_id):
 @camera_traps_bp.route('/api/next-observation-for-identification', methods=['GET'])
 @login_required
 def next_observation_for_identification(lang_code):
-    """Знаходить наступну серію для ідентифікації."""
+    """Find the next series for identification."""
     ct_session = get_ct_session()
     try:
         review_mode = request.args.get('review', 'false').lower() == 'true'
         review_user_id = request.args.get('review_user_id', type=int)
         review_species_id = request.args.get('review_species_id', type=int)
-        sort_by = request.args.get('sort_by', 'random') # За замовчуванням 'random'
+        sort_by = request.args.get('sort_by', 'random') # Default: 'random'
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
         ai_species_id = request.args.get('ai_species_id', type=int)  # фільтр "AI: вид"
 
-        # Перевіряємо права доступу для review режиму
+        # Check access rights for review mode
         if review_mode and not current_user.has_role('manager'):
             return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
 
@@ -2529,7 +2529,7 @@ def next_observation_for_identification(lang_code):
             else:
                 location_filter = (Location.visibility_level == 0)
 
-        # Додатковий фільтр scope (вибрана установа або екорегіон)
+        # Additional scope filter (selected institution or ecoregion)
         scope_location_subq = None
         if scope_institution_id:
             if is_admin or scope_institution_id in user_inst_ids:
@@ -2545,9 +2545,9 @@ def next_observation_for_identification(lang_code):
                     location_institutions.c.institution_id.in_(eco_inst_ids)
                 )
 
-        # AI-фільтр: показуємо лише серії, де AI визначив вибраний вид
-        # (від ПЕРЕМОЖНОЇ моделі — найвищий accuracy_rank на серію). Працює
-        # тихо: якщо AI ще не використовувався — параметр ігнорується.
+        # AI filter: show only series where AI identified the selected species
+        # (from the WINNING model — highest accuracy_rank per series). Works
+        # silently: if AI has not been used yet, the parameter is ignored.
         ai_observation_subq = None
         if ai_species_id is not None:
             from .ai_runner import is_ai_available, observations_subq_for_ai_species
@@ -2555,7 +2555,7 @@ def next_observation_for_identification(lang_code):
                 ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
 
         if review_mode:
-            # В review режимі показуємо як pending так і completed з ідентифікаціями
+            # In review mode show both pending and completed with identifications
             query = ct_session.query(Observation).filter(
                 Observation.status.in_(['pending', 'completed']),
                 Observation.photos.any(Photo.identifications.any()),
@@ -2572,7 +2572,7 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
-            # Додаємо фільтр по користувачу
+            # Add user filter
             if review_user_id:
                 query = query.filter(
                     Observation.photos.any(
@@ -2580,7 +2580,7 @@ def next_observation_for_identification(lang_code):
                     )
                 )
 
-            # Додаємо фільтр по виду
+            # Add species filter
             if review_species_id:
                 query = query.filter(
                     Observation.photos.any(
@@ -2600,7 +2600,7 @@ def next_observation_for_identification(lang_code):
             observation = query.first()
 
         else:
-            # Звичайний режим - тільки pending
+            # Normal mode — pending only
             query = ct_session.query(Observation).filter(
                 Observation.status == 'pending',
                 ~Observation.photos.any(Photo.id.in_(user_identified_photos))
@@ -2616,9 +2616,9 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
-            # Пріоритет серіям, ближчим до консенсусу: спірні → з голосами → свіжі,
-            # всередині групи — випадково. Агрегат звужено до pending-серій,
-            # бо більшість identifications належить уже завершеним.
+            # Prioritise series closest to consensus: disputed → with votes → recent,
+            # within a group — random. Aggregate scoped to pending series,
+            # because most identifications belong to already-completed ones.
             pending_votes_subq = (
                 select(
                     Photo.observation_id.label('observation_id'),
@@ -2661,7 +2661,7 @@ def next_observation_for_identification(lang_code):
                 'debug_filename': photo.system_filename
             })   
 
-        # Debug логування
+        # Debug logging
         current_app.logger.info(f"Photos order for observation {observation.id}:")
         for i, photo_info in enumerate(photos_data):
             current_app.logger.info(f"  Index {i}: {photo_info['debug_filename']} - {photo_info['captured_at']}")   
@@ -2670,12 +2670,12 @@ def next_observation_for_identification(lang_code):
         if review_mode:
             user_identifications = {}
             
-            # Тепер перебираємо фото в хронологічному порядку
+            # Iterate photos in chronological order
             for photo in photos_sorted:
                 for ident in photo.identifications:
                     user_id = ident.user_id
                     if user_id not in user_identifications:
-                        # Тепер ми гарантовано беремо ідентифікацію з найранішого фото
+                        # We are guaranteed to take the identification from the earliest photo
                         user = User.query.get(ident.user_id)
                         species_name = "Невідомо"
                         if ident.species_id and ident.species_id > 0:
@@ -2714,8 +2714,8 @@ def next_observation_for_identification(lang_code):
             'photos': photos_data
         }
 
-        # AI-прогноз для цієї observation (якщо є): передаємо в фронтенд,
-        # щоб JS міг pre-fill species + показати бейдж впевненості.
+        # AI prediction for this observation (if present): pass to the front end
+        # so JS can pre-fill the species and show the confidence badge.
         try:
             from .ai_runner import is_ai_available, get_observation_ai_prediction
             if is_ai_available():
@@ -2787,7 +2787,7 @@ def create_location(lang_code):
 @login_required
 @role_required('ct_verifier')
 def process_upload(lang_code):
-    """Приймає файли та передає їх на обробку."""
+    """Accept uploaded files and pass them for processing."""
     location_id = request.form.get('location_id')
     uploaded_files = request.files.getlist('file')
     if not location_id or location_id in ['-1', '0']:
@@ -2807,7 +2807,7 @@ def process_upload(lang_code):
 @login_required
 @role_required('admin')
 def manual_cleanup(lang_code):
-    """Маршрут для ручного запуску процесу очищення старих фотографій."""
+    """Route for manually triggering the old-photo cleanup process."""
     try:
         current_app.logger.info(f"Manual cleanup task triggered by admin: {current_user.username}")
         result = cleanup_old_photos()
@@ -2841,30 +2841,30 @@ def serve_raw_photo(lang_code, filename):
     raw_dir = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'raw')
     thumb_dir = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'thumbnails')
 
-    # Спершу формуємо повний шлях до оригінального raw-файлу
+    # Build the full path to the original raw file
     full_raw_path = os.path.join(raw_dir, filename)
-    
-    # Перевіряємо, чи існує цей файл на диску
+
+    # Check whether this file exists on disk
     if os.path.exists(full_raw_path):
-        # Якщо він є, віддаємо його, як і раніше
+        # If it exists, serve it as before
         return send_from_directory(raw_dir, filename)
     else:
-        # Якщо raw-файлу немає, намагаємося віддати мініатюру як заміну.
-        # Функція send_from_directory автоматично поверне помилку 404, 
-        # якщо і мініатюри з таким іменем не існує.
+        # If the raw file is missing, try serving the thumbnail as a fallback.
+        # send_from_directory will automatically return 404 if the thumbnail
+        # with this filename does not exist either.
         return send_from_directory(thumb_dir, filename)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CLEANUP (новий, з 2026-05-25) — заміна старого manual_batch_cleanup.
-# Двофазний: POST /admin/cleanup/analyze → JS показує звіт → POST execute.
-# Polling /admin/cleanup/task/<id> для прогресу обох фаз.
+# CLEANUP (new, since 2026-05-25) — replaces the old manual_batch_cleanup.
+# Two-phase: POST /admin/cleanup/analyze → JS shows report → POST execute.
+# Polling /admin/cleanup/task/<id> for progress of both phases.
 # ═════════════════════════════════════════════════════════════════════════════
 
 @camera_traps_bp.route('/admin/cleanup/analyze', methods=['POST'])
 @login_required
 @role_required('admin')
 def cleanup_analyze(lang_code):
-    """Стартує асинхронний dry-run. Повертає report_id для polling."""
+    """Start an asynchronous dry-run. Returns report_id for polling."""
     try:
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
         threshold_hours = int(config.get('STALE_BATCH_HOURS', 0))
@@ -2889,7 +2889,7 @@ def cleanup_analyze(lang_code):
 @login_required
 @role_required('admin')
 def cleanup_execute(lang_code, report_id):
-    """Виконує очищення на основі готового звіту. Повторно перевіряє active."""
+    """Execute cleanup based on a completed report. Re-checks active batches."""
     try:
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
         probe_seconds = int(config.get('ACTIVE_PROBE_SECONDS', 10))
@@ -2917,7 +2917,7 @@ def cleanup_execute(lang_code, report_id):
 @login_required
 @role_required('admin')
 def cleanup_task_status(lang_code, report_id):
-    """Polling: повертає поточний стан analyze/execute."""
+    """Polling endpoint: return current state of an analyze/execute task."""
     try:
         from .cleanup import get_log
         data = get_log(report_id)
@@ -2932,7 +2932,7 @@ def cleanup_task_status(lang_code, report_id):
 @login_required
 @role_required('admin')
 def recalculate_consensus(lang_code):
-    """Перерахує консенсус для всіх pending спостережень згідно поточної конфігурації"""
+    """Recalculate consensus for all pending observations according to the current configuration."""
     try:
         current_app.logger.info(f"Consensus recalculation triggered by admin: {current_user.username}")
         from .utils import migrate_pending_observations_to_single_identification
@@ -2948,20 +2948,19 @@ def recalculate_consensus(lang_code):
 @login_required
 @role_required('manager')
 def get_review_filters(lang_code):
-    """Повертає список користувачів та видів для review фільтрів."""
+    """Return the list of users and species for review filters."""
     ct_session = get_ct_session()
     try:
-        # ВИПРАВЛЕННЯ: Користувачі з основної бази через Flask-SQLAlchemy
-        from app.models import User  # Основна база
-        
-        # Отримуємо user_id з CT бази, потім шукаємо користувачів в основній
+        from app.models import User  # Main database
+
+        # Fetch user_ids from CT DB, then look up users in the main DB
         user_ids_query = ct_session.query(Identification.user_id).distinct().all()
         user_ids = [uid[0] for uid in user_ids_query]
         
         users = User.query.filter(User.id.in_(user_ids)).order_by(User.username).all()
         users_data = [{'id': u.id, 'username': u.username} for u in users]
         
-        # Види з CT бази - це працює правильно
+        # Species from CT DB — this works correctly
         species_query = ct_session.query(Species)\
         .join(Identification, Species.id == Identification.species_id)\
         .distinct().order_by(Species.common_name_ua).all()
@@ -2985,19 +2984,19 @@ def get_review_filters(lang_code):
 
 @camera_traps_bp.route('/gallery')
 def gallery(lang_code):
-    """Галерея класифікованих фото з фільтрацією прав доступу."""
+    """Gallery of classified photos with access-rights filtering."""
     ct_session = get_ct_session()
     try:
-        # Визначаємо права користувача
+        # Determine user permissions
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        
-        # Отримуємо SQL-фільтр (таблиця locations має аліас 'l')
+
+        # Build SQL filter (locations table uses alias 'locations')
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
         can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
-        # Базовий запит для списку видів
+        # Base query for the species list
         species_query = ct_session.query(Species)\
             .join(Identification, Species.id == Identification.species_id)\
             .join(Photo, Identification.photo_id == Photo.id)\
@@ -3044,23 +3043,23 @@ def gallery(lang_code):
 
 @camera_traps_bp.route('/api/gallery/photos')
 def get_gallery_photos(lang_code):
-   """API для отримання фото галереї з врахуванням прав доступу."""
+   """API for fetching gallery photos respecting access rights."""
    ct_session = get_ct_session()
    try:
        species_id = request.args.get('species_id', type=int)
        if species_id is None:
            return jsonify({'error': 'Species ID is required'}), 400
 
-       # Права доступу
+       # Access rights
        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
        is_admin = current_user.is_authenticated and current_user.has_role('admin')
-       
-       # Генеруємо фільтр
+
+       # Build filter
        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
        can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
-       # Формуємо запит
+       # Build query
        query = ct_session.query(Photo)\
            .join(Identification, Photo.id == Identification.photo_id)\
            .join(Species, Identification.species_id == Species.id)\
@@ -3072,11 +3071,11 @@ def get_gallery_photos(lang_code):
                text(inst_condition)
            ).params(**inst_params)
 
-       # Фільтр по виду
+       # Filter by species
        if species_id > 0:
            query = query.filter(Species.id == species_id)
 
-       # Приховуємо спец-категорії (Пусто, Людина і т.д.) для звичайних користувачів
+       # Hide special categories (Empty, Human, etc.) for regular users
        if not can_manage_favorites:
            query = query.filter(Species.id > 0)
 
@@ -3087,20 +3086,20 @@ def get_gallery_photos(lang_code):
 
        photos_data = []
        for photo in photos:
-           # Отримуємо інформацію про того, хто додав у вибране
+           # Fetch info about who marked the photo as favourite
            first_identification = ct_session.query(Identification)\
                .filter(Identification.photo_id == photo.id)\
                .order_by(Identification.created_at)\
                .first()
            
-           # Показуємо ім'я тільки модераторам/адмінам
+           # Show the name only to managers/admins
            added_by_username = None
            if can_manage_favorites and first_identification:
                user = User.query.get(first_identification.user_id)
                if user:
                    added_by_username = user.username
 
-           # Отримуємо назву виду
+           # Build species display name
            species_name = "Невідомий вид"
            if first_identification and first_identification.species:
                species = first_identification.species
@@ -3128,7 +3127,7 @@ def get_gallery_photos(lang_code):
                'sequence_number': photo.sequence_number
            }
            
-           # Додаємо added_by тільки для модераторів
+           # Include added_by only for managers
            if added_by_username:
                photo_data['added_by'] = added_by_username
                
@@ -3150,7 +3149,7 @@ def get_gallery_photos(lang_code):
 @login_required
 @role_required('manager')
 def remove_from_favorites(lang_code):
-    """API для видалення фото з вибраного (тільки для модераторів)."""
+    """API for removing a photo from favourites (managers only)."""
     ct_session = get_ct_session()
     
     try:
@@ -3185,12 +3184,12 @@ def remove_from_favorites(lang_code):
 @login_required
 @role_required('manager')
 def ct_location_coverage(lang_code, location_id):
-    """Календар покриття фотопасткою по днях (#38).
+    """Camera-trap coverage calendar by day (#38).
 
-    Покриття = «камера працювала»: дні в межах deployment-інтервалів
-    (start..end) ∪ дні з фото із заповненням прогалин ≤ COVERAGE_MAX_GAP_DAYS
-    (фото тригерні, тож прогалини між ними не означають простій камери).
-    Інтенсивність (під градацію #43) — к-сть фото за день.
+    Coverage = "camera was operating": days within deployment intervals
+    (start..end) ∪ days with photos, with gaps ≤ COVERAGE_MAX_GAP_DAYS filled
+    (photos are trigger-based, so gaps between them don't imply camera downtime).
+    Intensity (for shading #43) — photo count per day.
     """
     ct_session = get_ct_session()
     try:
@@ -3199,7 +3198,7 @@ def ct_location_coverage(lang_code, location_id):
             flash(_('Локацію не знайдено.'), 'danger')
             return redirect(url_for('camera_traps.manage_locations', lang_code=g.lang_code))
 
-        # Доступ: admin бачить усе; інакше локація має належати установі юзера
+        # Access: admin sees everything; otherwise the location must belong to the user's institution
         if not current_user.has_role('admin'):
             user_inst_ids = [i.id for i in current_user.institutions]
             allowed = False
@@ -3218,7 +3217,7 @@ def ct_location_coverage(lang_code, location_id):
         max_gap = cfg.get('COVERAGE_MAX_GAP_DAYS', 10)
         good_photos = cfg.get('COVERAGE_GOOD_PHOTOS', 1)
 
-        # 1) Дні в межах deployment-інтервалів (камера фізично стояла)
+        # 1) Days within deployment intervals (camera was physically present)
         deps = ct_session.query(Deployment.start_date, Deployment.end_date).filter(
             Deployment.location_id == location_id,
             Deployment.start_date.isnot(None),
@@ -3230,7 +3229,7 @@ def ct_location_coverage(lang_code, location_id):
                 for k in range((e - s).days + 1):
                     deployment_days.add(s + timedelta(days=k))
 
-        # 2) Фото за день (виключаємо placeholder-дати 1900 від фото без EXIF)
+        # 2) Photos per day (exclude 1900 placeholder dates from photos without EXIF)
         photo_rows = ct_session.query(
             func.date(Photo.captured_at).label('day'),
             func.count(Photo.id).label('cnt'),
@@ -3242,7 +3241,7 @@ def ct_location_coverage(lang_code, location_id):
             d = r.day
             if isinstance(d, datetime):
                 d = d.date()
-            elif isinstance(d, str):  # SQLite повертає DATE() рядком
+            elif isinstance(d, str):  # SQLite returns DATE() as a string
                 d = datetime.strptime(d, '%Y-%m-%d').date()
             if d and d.year >= 2010:
                 photo_counts[d] = r.cnt
@@ -3271,13 +3270,13 @@ def ct_location_coverage(lang_code, location_id):
 @login_required
 @role_required('manager')
 def manage_locations(lang_code):
-    """Відображає об'єднану сторінку управління локаціями та журналу обслуговування."""
+    """Render the combined location management and maintenance log page."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions]
 
-        # Фільтрація локацій за установами, як в upload
+        # Filter locations by institution, same logic as in upload
         if is_admin:
             locations_objects = ct_session.query(Location).order_by(Location.name).all()
         elif user_inst_ids:
@@ -3294,7 +3293,7 @@ def manage_locations(lang_code):
         battery_types = ct_session.query(BatteryType).order_by(BatteryType.name_ua).all()
         visit_purposes = ct_session.query(VisitPurpose).order_by(VisitPurpose.name_ua).all()
 
-        # Підтягуємо зв'язки локацій з установами одним запитом
+        # Fetch location–institution links in a single query
         loc_ids = [loc.id for loc in locations_objects]
         if loc_ids:
             inst_rows = ct_session.execute(
@@ -4467,7 +4466,7 @@ def api_get_identification_stats(lang_code):
             else:
                 location_filter = (Location.visibility_level == 0)
 
-        # Додатковий фільтр scope (вибрана установа або екорегіон)
+        # Additional scope filter (selected institution or ecoregion)
         scope_location_subq = None
         if scope_institution_id:
             if is_admin or scope_institution_id in user_inst_ids:
