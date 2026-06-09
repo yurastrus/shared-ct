@@ -1099,21 +1099,21 @@ _species_ranking_cache = {
 }
 
 def get_species_ranking():
-    """Отримує рейтинг видів за частотою ідентифікацій з кешуванням."""
+    """Return a species ranking by identification frequency, with caching."""
     global _species_ranking_cache
     
     now = datetime.now()
     
-    # Перевіряємо, чи актуальний кеш
-    if (_species_ranking_cache['data'] is not None and 
+    # Check whether the cache is still valid
+    if (_species_ranking_cache['data'] is not None and
         _species_ranking_cache['timestamp'] is not None and
         (now - _species_ranking_cache['timestamp']).total_seconds() < _species_ranking_cache['ttl_hours'] * 3600):
         return _species_ranking_cache['data']
-    
-    # Оновлюємо кеш
+
+    # Refresh the cache
     ct_session = get_ct_session()
     try:
-        # Підраховуємо кількість ідентифікацій для кожного виду
+        # Count the number of identifications for each species
         species_counts = ct_session.query(
             Species.id,
             func.count(distinct(Observation.id)).label('observation_count')
@@ -1128,10 +1128,10 @@ def get_species_ranking():
          .group_by(Species.id)\
          .all()
         
-        # Створюємо словник для швидкого пошуку
+        # Build a lookup dict for fast access
         ranking = {species_id: count for species_id, count in species_counts}
-        
-        # Зберігаємо в кеш
+
+        # Store in cache
         _species_ranking_cache['data'] = ranking
         _species_ranking_cache['timestamp'] = now
         
@@ -1144,7 +1144,7 @@ def get_species_ranking():
     finally:
         close_ct_session()
 
-# Кеш для рейтингу поведінкових тегів (аналогічно рейтингу видів)
+# Cache for behaviour-tag ranking (same pattern as species ranking)
 _behavior_ranking_cache = {
     'data': None,
     'timestamp': None,
@@ -1152,21 +1152,21 @@ _behavior_ranking_cache = {
 }
 
 def get_behavior_ranking():
-    """Рейтинг поведінкових тегів за частотою використання (з кешуванням)."""
+    """Behaviour-tag ranking by usage frequency (with caching)."""
     global _behavior_ranking_cache
 
     now = datetime.now()
 
-    # Перевіряємо, чи актуальний кеш
+    # Check whether the cache is still valid
     if (_behavior_ranking_cache['data'] is not None and
         _behavior_ranking_cache['timestamp'] is not None and
         (now - _behavior_ranking_cache['timestamp']).total_seconds() < _behavior_ranking_cache['ttl_hours'] * 3600):
         return _behavior_ranking_cache['data']
 
-    # Оновлюємо кеш
+    # Refresh the cache
     ct_session = get_ct_session()
     try:
-        # Кількість серій (спостережень), у яких використано кожен тег
+        # Number of series (observations) in which each tag was used
         behavior_counts = ct_session.query(
             BehaviorType.id,
             func.count(distinct(Observation.id)).label('observation_count')
@@ -1205,7 +1205,7 @@ def identify(lang_code):
         can_review = current_user.has_role('manager')
         is_admin = current_user.has_role('admin')
 
-        # Установи та екорегіони для фільтру scope
+        # Institutions and ecoregions for the scope filter
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         else:
@@ -1217,23 +1217,23 @@ def identify(lang_code):
                 display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
                 ecoregions[inst.ecoregion_uk] = display
         
-        # --- ПОЧАТОК НОВОЇ, ДИНАМІЧНОЇ ЛОГІКИ ---
+        # --- START OF NEW DYNAMIC LOGIC ---
 
-        # 1. Отримуємо ОДНИМ ЗАПИТОМ всі активні опції з бази даних
+        # 1. Fetch all active options from the DB in a single query
         all_options = ct_session.query(Species).filter(Species.is_active==True).all()
         
-        # 2. Готуємо порожні списки, які будуть заповнені динамічно
+        # 2. Prepare empty lists to be populated dynamically
         grouped_species = {'mammals': [], 'birds': [], 'other': []}
         empty_choices = []
         other_special_choices = []
         
-        # 3. Розподіляємо кожну опцію з бази даних у відповідний список
+        # 3. Assign each option from the DB to the appropriate list
         for s in all_options:
-            # Формуємо назву для відображення
+            # Build the display name
             display_name = s.scientific_name
             if g.lang_code == 'uk' and s.common_name_ua:
-                # Для спеціальних опцій, де наукова назва може бути 'empty', 'vehicle' і т.д.
-                # ми не хочемо показувати її в дужках, якщо є українська назва.
+                # For special options whose scientific name can be 'empty', 'vehicle', etc.
+                # we don't want to show it in brackets if a Ukrainian name is available.
                 if s.id < 0:
                     display_name = s.common_name_ua
                 else:
@@ -1246,18 +1246,18 @@ def identify(lang_code):
 
             choice = (s.id, display_name)
 
-            # Логіка розподілу по списках
-            if s.id == -1: # Спеціальна обробка для "Пусто"
+            # Sorting logic
+            if s.id == -1: # Special handling for "Empty"
                 empty_choices.append(choice)
-            elif s.id < 0: # Всі інші спеціальні опції
+            elif s.id < 0: # All other special options
                 other_special_choices.append(choice)
-            elif s.category in grouped_species: # Реальні види тварин
+            elif s.category in grouped_species: # Real animal species
                 grouped_species[s.category].append(choice)
-            else: # Якщо у виду невідома категорія, додаємо його в 'other'
+            else: # Unknown category — add to 'other'
                 if 'other' in grouped_species:
                     grouped_species['other'].append(choice)
 
-        # 4. Сортуємо реальні види за популярністю (як і раніше)
+        # 4. Sort real species by popularity (as before)
         species_ranking = get_species_ranking()
         for category in grouped_species:
             grouped_species[category].sort(
@@ -1265,23 +1265,23 @@ def identify(lang_code):
                 reverse=True
             )
             
-        # 5. Сортуємо інші спеціальні опції за ID для стабільного порядку
+        # 5. Sort other special options by ID for stable ordering
         other_special_choices.sort(key=lambda x: x[0], reverse=True)
 
-        # --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
-        
-        # Заповнюємо вибір для поведінки — сортуємо за частотою використання
-        # (як і список видів: найчастіші теги першими, далі за спаданням;
-        #  однаково-часті лишаються за абеткою — стабільне сортування).
+        # --- END OF NEW LOGIC ---
+
+        # Populate behaviour choices — sort by usage frequency
+        # (like the species list: most-frequent tags first, then descending;
+        #  equally-frequent entries retain alphabetical order — stable sort).
         behavior_ranking = get_behavior_ranking()
         behavior_types = ct_session.query(BehaviorType).order_by(BehaviorType.name_ua).all()
         behavior_choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
         behavior_choices.sort(key=lambda c: behavior_ranking.get(c[0], 0), reverse=True)
         form.behaviors.choices = behavior_choices
 
-        # AI-фільтр: список видів з AI-прогнозами (тільки якщо AI доступний).
-        # Враховуємо доступ юзера до локацій і вже зроблені ним ідентифікації —
-        # лічильники в дужках («(42)») зменшуватимуться по мірі роботи.
+        # AI filter: list of species with AI predictions (only if AI is available).
+        # Takes into account the user's access to locations and already-made
+        # identifications — counts in brackets ("(42)") shrink as work progresses.
         from .ai_runner import is_ai_available, get_species_with_ai_predictions
         ai_available = is_ai_available()
         ai_species_list = []
@@ -1297,7 +1297,7 @@ def identify(lang_code):
             except Exception as e:
                 current_app.logger.warning(f"AI: cannot load species list: {e}")
 
-        # Передаємо в шаблон вже заповнені динамічно списки
+        # Pass the dynamically populated lists to the template
         return render_template('identification.html',
                              form=form,
                              grouped_species=grouped_species,
@@ -1315,19 +1315,19 @@ def identify(lang_code):
 @login_required
 @role_required('ct_verifier')
 def identify_ai_species_list(lang_code):
-    """JSON-список AI-видів з лічильниками, опційно звужений до scope.
+    """JSON list of AI species with counts, optionally narrowed to a scope.
 
-    Викликається фронтом при зміні `#scope-select` на /identify, щоб
-    каскадно оновити `#ai-species-select` (відображає лише ті види, які
-    мають pending AI-прогноз у локаціях вибраної установи/екорегіону,
-    з актуальними числами).
+    Called by the front end when `#scope-select` changes on /identify, to
+    cascade-update `#ai-species-select` (shows only species that have a
+    pending AI prediction in locations of the selected institution/ecoregion,
+    with up-to-date counts).
 
-    Query params (взаємно виключні):
-      - scope_institution_id: int — підрізає до однієї установи
-      - scope_ecoregion: str — підрізає до екорегіону (uk-ключ)
+    Query params (mutually exclusive):
+      - scope_institution_id: int — narrow to a single institution
+      - scope_ecoregion: str — narrow to an ecoregion (uk key)
 
-    Якщо жоден scope не передано — повертає повний список (з урахуванням
-    прав доступу юзера), еквівалентний тому, що рендериться на сторінці.
+    If neither scope is provided, returns the full list (respecting the
+    user's access rights), equivalent to what is rendered on the page.
     """
     ct_session = get_ct_session()
     try:
@@ -1337,7 +1337,7 @@ def identify_ai_species_list(lang_code):
         is_admin = current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions]
 
-        # Захист: non-admin не має тягнути списки чужих установ.
+        # Guard: non-admins must not access other institutions' species lists.
         if scope_institution_id is not None and not is_admin:
             if scope_institution_id not in user_inst_ids:
                 return jsonify({'ai_available': True, 'items': []}), 200
@@ -1376,31 +1376,31 @@ def upload(lang_code):
         user_inst_ids = [inst.id for inst in current_user.institutions]
         is_admin = current_user.has_role('admin')
 
-        # --- ПОЧАТОК НОВОЇ, БЕЗПЕЧНОЇ ЛОГІКИ ---
+        # --- START OF NEW SECURE LOGIC ---
         if is_admin:
-            # Адміністратор бачить абсолютно всі локації для завантаження
+            # Administrators see all locations for upload
             locations = ct_session.query(Location).order_by(Location.name).all()
         elif user_inst_ids:
-            # Модератор бачить ТІЛЬКИ ті локації, які належать його установам.
-            # Публічні локації (visibility_level=0) сюди не потраплять, якщо вони не прив'язані до установи.
+            # Managers see ONLY locations belonging to their institutions.
+            # Public locations (visibility_level=0) are excluded unless tied to an institution.
             locations = ct_session.query(Location)\
                 .join(location_institutions, Location.id == location_institutions.c.location_id)\
                 .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
                 .order_by(Location.name).distinct().all()
         else:
-            # Якщо користувач - модератор, але без жодної установи, він не бачить жодної локації
+            # Manager with no institution assigned sees no locations
             locations = []
-        # --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
+        # --- END OF NEW SECURE LOGIC ---
 
         form.location.choices = [(-1, _('-- Будь ласка, виберіть --'))] + [(loc.id, loc.name) for loc in locations] + [(0, _('*** СТВОРИТИ НОВЕ МІСЦЕ ***'))]
         
-        # Отримуємо установи поточного користувача (цей код вже правильний)
+        # Fetch institutions of the current user (this code is correct as-is)
         if is_admin:
             institutions_list = Institution.query.order_by(Institution.name_uk).all()
         else:
             institutions_list = current_user.institutions
 
-        # Цей блок залишається без змін, він потрібен для JavaScript-фільтрації
+        # This block is preserved as-is; it is used for JavaScript-side filtering
         all_loc_inst_records = ct_session.query(location_institutions).all()
         loc_to_inst = {}
         for record in all_loc_inst_records:
@@ -1432,7 +1432,7 @@ def upload(lang_code):
 @login_required
 @role_required('manager')
 def create_batch(lang_code):
-    """Створює новий batch для завантаження файлів."""
+    """Create a new batch for file upload."""
     try:
         data = request.json
         location_id = data.get('location_id')
@@ -1458,7 +1458,7 @@ def create_batch(lang_code):
 @login_required
 @role_required('manager')
 def process_single_upload(lang_code):
-    """Обробляє один файл у складі batch."""
+    """Process a single file as part of a batch."""
     try:
         location_id = request.form.get('location_id')
         batch_id = request.form.get('batch_id')
@@ -1496,7 +1496,7 @@ def process_single_upload(lang_code):
 @login_required
 @role_required('manager')
 def finalize_batch(lang_code):
-    """Завершує batch і групує фото в серії."""
+    """Finalise the batch and group photos into series."""
     try:
         data = request.json
         batch_id = data.get('batch_id')
@@ -1523,7 +1523,7 @@ def finalize_batch(lang_code):
 @login_required
 @role_required('manager')
 def get_batch_status_api(lang_code, batch_id):
-    """Повертає статус batch."""
+    """Return the batch status."""
     try:
         from .utils import get_batch_status
         status = get_batch_status(batch_id)
@@ -1538,20 +1538,20 @@ def get_batch_status_api(lang_code, batch_id):
         return jsonify({'error': _('Помилка отримання статусу batch')}), 500
 
 # ═════════════════════════════════════════════════════════════════════════════
-# /upload-fast — паралельний шлях для великих наборів фото (10k–100k+).
-# Існує разом зі старим /upload. Спільно використовує create-batch /
-# process-single / batch-status. Відрізняється:
-#   • окрема сторінка з паралельним JS-аплоадером і polling-фіналізацією
-#   • finalize-batch-async — повертає 202, групування у фоновому потоці
-#   • uploaded-files endpoint для resumable-відновлення
+# /upload-fast — parallel path for large photo sets (10k–100k+).
+# Co-exists with the legacy /upload. Shares create-batch /
+# process-single / batch-status. Differs in:
+#   • separate page with a parallel JS uploader and polling finalisation
+#   • finalize-batch-async — returns 202, grouping runs in a background thread
+#   • uploaded-files endpoint for resumable recovery
 # ═════════════════════════════════════════════════════════════════════════════
 
 @camera_traps_bp.route('/upload-fast', methods=['GET'])
 @login_required
 @role_required('manager')
 def upload_fast(lang_code):
-    """Нова сторінка завантаження (Beta). Логіка вибору локацій — та сама,
-    що в legacy `upload`, лише інший шаблон + інший фінал."""
+    """New upload page (Beta). Location-selection logic is identical to
+    legacy `upload`; only the template and finalisation step differ."""
     ct_session = get_ct_session()
     try:
         form = UploadForm()
@@ -1607,8 +1607,8 @@ def upload_fast(lang_code):
 @login_required
 @role_required('manager')
 def finalize_batch_async(lang_code):
-    """Переводить batch у 'ready_to_group' і стартує фонове групування.
-    Повертає 202 Accepted з batch_id; клієнт polling-ом тягне /api/batch-status."""
+    """Move the batch to 'ready_to_group' and start background grouping.
+    Returns 202 Accepted with batch_id; the client polls /api/batch-status."""
     try:
         data = request.json or {}
         batch_id = data.get('batch_id')
@@ -1622,7 +1622,7 @@ def finalize_batch_async(lang_code):
             if not batch:
                 return jsonify({'error': _('Batch не знайдено')}), 404
             if batch.status not in ('uploading', 'failed'):
-                # 'failed' дозволяємо як retry; 'completed' / 'grouping' / 'ready_to_group' — ні
+                # 'failed' is allowed as a retry; 'completed' / 'grouping' / 'ready_to_group' are not
                 return jsonify({
                     'error': _("Batch у стані '%(s)s', фіналізація неможлива",
                                s=batch.status)
@@ -1651,9 +1651,9 @@ def finalize_batch_async(lang_code):
 @login_required
 @role_required('manager')
 def batch_uploaded_files(lang_code, batch_id):
-    """Список (original_filename, captured_at) уже залитих файлів цього batchʼа.
-    Використовується upload_fast.html для resumable: при відновленні сесії
-    JS пропускає файли, які вже на сервері."""
+    """List of (original_filename, captured_at) for files already uploaded in this batch.
+    Used by upload_fast.html for resumable uploads: on session restore the JS
+    skips files that are already on the server."""
     ct_session = get_ct_session()
     try:
         rows = ct_session.query(Photo.original_filename, Photo.captured_at)\
@@ -1675,14 +1675,14 @@ def batch_uploaded_files(lang_code, batch_id):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ІМПОРТ ЗОВНІШНЬОЇ КЛАСИФІКАЦІЇ DeepFaune (CSV) — по одній локації.
-# Накладає кращі локальні результати (MDR) на ВЖЕ завантажені фото. Не чіпає
-# серверні прогнози DF+MDS (окрема модель ai_models за level_id). Логіка —
-# у classification_import.py. Двокроковий UX: preview (dry-run) → run (commit).
+# EXTERNAL DEEPFAUNE CLASSIFICATION IMPORT (CSV) — per location.
+# Overlays the best local results (MDR) onto ALREADY uploaded photos. Does not
+# touch server-side DF+MDS predictions (separate ai_models by level_id). Logic
+# lives in classification_import.py. Two-step UX: preview (dry-run) → run (commit).
 # ═════════════════════════════════════════════════════════════════════════════
 def _accessible_locations(ct_session):
-    """Локації, доступні поточному користувачу, + дані для JS-фільтра по
-    установах. Спільна логіка з upload/upload_fast."""
+    """Return locations accessible to the current user, plus JS-filter data
+    keyed by institution. Shared logic with upload/upload_fast."""
     user_inst_ids = [inst.id for inst in current_user.institutions]
     is_admin = current_user.has_role('admin')
     if is_admin:
@@ -1735,8 +1735,8 @@ def import_classification(lang_code):
 
 
 def _read_uploaded_csv():
-    """Парсить вкладений CSV із request.files['file'].
-    Повертає (rows, errors). rows=None — фатальна помилка (errors[0] — текст)."""
+    """Parse the uploaded CSV from request.files['file'].
+    Returns (rows, errors). rows=None means a fatal error (errors[0] contains the message)."""
     from .classification_import import parse_deepfaune_csv
     f = request.files.get('file')
     if not f or not f.filename:
@@ -1784,7 +1784,7 @@ def import_classification_run(lang_code):
         return jsonify({'error': errors[0]}), 400
     ct_session = get_ct_session()
     try:
-        # Валідація: рівень має бути серед дозволених для імпорту.
+        # Validate: the level must be among those allowed for import.
         allowed_level_ids = {lv.id for lv in get_import_levels(ct_session)}
         if level_id not in allowed_level_ids:
             return jsonify({'error': _('Недопустимий рівень моделі')}), 400
@@ -1809,7 +1809,7 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
     try:
         observation = None
         
-        # Крок 1: Визначаємо спостереження (Observation)
+        # Step 1: Identify the Observation
         if observation_id:
             observation = ct_session.query(Observation).get(observation_id)
         elif photo_id:
@@ -1821,42 +1821,42 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
             flash(_('Спостереження або фотографію не знайдено.'), 'danger')
             return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
 
-        # Крок 2: Отримуємо та гарантовано сортуємо список фото
+        # Step 2: Retrieve and sort the photo list
         photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
         
         if not photos_sorted:
              flash(_('У цьому спостереженні немає фотографій.'), 'warning')
              return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
 
-        # Крок 3: Визначаємо індекс поточного фото
+        # Step 3: Determine the current photo index
         current_photo_index = 0
         if photo_index is not None:
             if 0 <= photo_index < len(photos_sorted):
                 current_photo_index = photo_index
         elif photo_id:
-            # Шукаємо індекс фото з потрібним ID у відсортованому списку
+            # Find the index of the photo with the requested ID in the sorted list
             for i, p in enumerate(photos_sorted):
                 if p.id == photo_id:
                     current_photo_index = i
                     break
         
-        # Отримуємо фінальний, правильний об'єкт фото з відсортованого списку
+        # Retrieve the final, correct photo object from the sorted list
         photo = photos_sorted[current_photo_index]
 
-        # Крок 4: БЕЗПЕЧНО завантажуємо імена користувачів
+        # Step 4: Safely load user names
         if photo.identifications:
             user_ids = [ident.user_id for ident in photo.identifications]
             
-            # Робимо запит до основної бази даних
-            from app.models import User # Переконайтесь, що цей імпорт є на початку файлу
+            # Query the main database
+            from app.models import User # Ensure this import exists at the top of the file
             users = User.query.filter(User.id.in_(user_ids)).all()
-            user_map = {user.id: user for user in users} # Зберігаємо цілі об'єкти User
-            
-            # Додаємо об'єкт користувача як новий атрибут до кожної ідентифікації
+            user_map = {user.id: user for user in users} # Store full User objects
+
+            # Attach the user object as a new attribute on each identification
             for ident in photo.identifications:
                 ident.user = user_map.get(ident.user_id)
 
-        # Крок 5: Готуємо дані для навігації по серії
+        # Step 5: Prepare navigation data for the series
         series_photos = []
         for idx, p in enumerate(photos_sorted):
             series_photos.append({
@@ -1873,30 +1873,25 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
                              series_photos=series_photos,
                              current_photo_index=current_photo_index)
     except Exception as e:
-        current_app.logger.error(f"Error in view_photo: {e}", exc_info=True) # Додано exc_info для кращої діагностики
+        current_app.logger.error(f"Error in view_photo: {e}", exc_info=True) # exc_info added for better diagnostics
         flash(_('Помилка завантаження фотографії.'), 'danger')
         return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
     finally:
         close_ct_session()
 
-# --- API для дашборду ---
+# --- DASHBOARD API ---
 @camera_traps_bp.route('/api/stats/top-species')
 def stats_top_species(lang_code):
-    """
-    Повертає дані для діаграми на основі консенсусу по завершених спостереженнях.
-    (Фінальна версія: логіка фільтрів і дати за замовчуванням збережені).
-    """
+    """Return chart data based on consensus across completed observations."""
     session = None
     try:
         session = get_ct_session()
         conn = session.connection()
 
-        # --- Крок 1: ПОВЕРНУЛИ ВАШУ ЛОГІКУ ОБРОБКИ ДАТИ ---
-        # ВИПРАВЛЕНО: Повертаємо вашу дату за замовчуванням '2020-08-01'
         start_date_str = request.args.get('start_date', '2020-08-01')
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
-        # institution_id може приходити кількома значеннями (напр. екорегіон → набір
-        # установ) АБО рядком через кому. Збираємо все в список, як у stats_locations.
+        # institution_id may arrive as multiple values (e.g. ecoregion → set of institutions)
+        # OR as a comma-separated string. Collect into a list, as in stats_locations.
         raw_inst_ids = request.args.getlist('institution_id')
         if not raw_inst_ids:
             raw_inst_ids = request.args.get('institution_id', '').split(',')
@@ -1914,13 +1909,13 @@ def stats_top_species(lang_code):
 
         user_inst_ids =[inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        # Передаємо table_alias='l' для сирого SQL
+        # Pass table_alias='l' for raw SQL
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='l'
         )
         params.update(inst_params)
 
-        # --- Крок 2: Новий, коректний SQL-запит з логікою консенсусу ---
+        # --- Step 2: SQL query with consensus logic ---
         
         consensus_cte = """
             WITH ObservationConsensus AS (
@@ -1974,7 +1969,7 @@ def stats_top_species(lang_code):
         
         result = conn.execute(text(final_query), params).mappings().fetchall()
         
-        # --- Крок 3: Обробка результатів ---
+        # --- Step 3: Process results ---
         labels = []
         data = []
         for row in result:
@@ -2005,7 +2000,7 @@ def stats_locations(lang_code):
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         
-        # Отримуємо ID установ (це може бути список або рядок через кому)
+        # Fetch institution IDs (can arrive as a list or a comma-separated string)
         raw_inst_ids = request.args.getlist('institution_id')
         if not raw_inst_ids:
             raw_inst_ids = request.args.get('institution_id', '').split(',')
@@ -2014,7 +2009,7 @@ def stats_locations(lang_code):
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         
-        # Викликаємо фільтр, ОДРАЗУ вказуючи правильний аліас 'locations'
+        # Apply the filter, specifying the correct alias 'locations' upfront
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
         )
@@ -2022,7 +2017,7 @@ def stats_locations(lang_code):
         biotope_ids_str = request.args.get('biotopes', '')
         biotope_ids = [int(id) for id in biotope_ids_str.split(',') if id.isdigit()]
 
-        # Використовуємо inst_condition ЯК ВІН Є, без замін
+        # Use inst_condition as-is, without substitution
         query = ct_session.query(
             Location.id, Location.name, Location.latitude, Location.longitude,
             func.count(Photo.id).label('photo_count')
@@ -2043,10 +2038,10 @@ def stats_locations(lang_code):
     finally:
         close_ct_session()
 
-# --- API для сторінки детального аналізу ---
+# --- API FOR THE SPECIES DETAIL ANALYSIS PAGE ---
 @camera_traps_bp.route('/api/stats/species-dynamics')
 def api_species_dynamics(lang_code):
-    """API для отримання даних для графіків з попередньо розрахованих таблиць."""
+    """API for fetching chart data from pre-computed analytics tables."""
     ct_session = get_ct_session()
     try:
         species_id = request.args.get('species_id', type=int)
@@ -2061,7 +2056,7 @@ def api_species_dynamics(lang_code):
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
 
-        # Перевірка прав доступу до запитаного скоупу
+        # Check access rights for the requested scope
         if not is_admin:
             if scope_type == 'institution':
                 if not scope_id or int(scope_id) not in user_inst_ids:
@@ -2074,11 +2069,11 @@ def api_species_dynamics(lang_code):
                 if scope_id not in user_ecoregions:
                     return jsonify({'error': 'Access denied'}), 403
             elif scope_type == 'global' and user_inst_ids:
-                # Для не-адмінів global — фільтруємо сезонні дані по їх локаціях,
-                # але тренд беремо з global скоупу (найближче що є)
+                # For non-admins with global scope — filter seasonal data by their locations,
+                # but use the global scope for trends (best available approximation)
                 pass
 
-        # Фільтр локацій для сезонних даних
+        # Location filter for seasonal data
         loc_filter = None
         if scope_type == 'institution' and scope_id:
             loc_filter = select(location_institutions.c.location_id).where(
@@ -2092,7 +2087,7 @@ def api_species_dynamics(lang_code):
             loc_filter = select(location_institutions.c.location_id).where(
                 location_institutions.c.institution_id.in_(user_inst_ids))
 
-        # 1. Сезонна активність
+        # 1. Seasonal activity
         seasonal_q = ct_session.query(
             LocationMonthlyActivity.year,
             LocationMonthlyActivity.month,
@@ -2109,7 +2104,7 @@ def api_species_dynamics(lang_code):
         seasonal_data = [{'year': r.year, 'month': r.month, 'count': r.observation_count}
                          for r in seasonal_q]
 
-        # 2. Річна динаміка (попередньо розрахована для скоупу)
+        # 2. Annual trend (pre-computed for the scope)
         yearly_q = ct_session.query(SpeciesYearlyTrend).filter(
             SpeciesYearlyTrend.species_id == species_id,
             SpeciesYearlyTrend.year.between(start_year, end_year),
@@ -2131,10 +2126,10 @@ def api_species_dynamics(lang_code):
     finally:
         close_ct_session()
         
-# --- API для сторінки порівняння регіонів ---
+# --- API FOR THE REGION COMPARISON PAGE ---
 @camera_traps_bp.route('/api/stats/comparison')
 def api_comparison(lang_code):
-    """Повертає статистику, RAI видів та екологічні індекси для двох вибраних регіонів."""
+    """Return statistics, species RAI, and ecological indices for two selected regions."""
     import math
 
     ct_session = get_ct_session()
