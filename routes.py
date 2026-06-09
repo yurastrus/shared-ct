@@ -4391,7 +4391,7 @@ def api_ct_data_preview(lang_code):
 @login_required
 @role_required('analyst')
 def api_ct_data_download(lang_code):
-    """API для завантаження CSV-файлу з даними фотопасток."""
+    """Download camera-trap occurrence data as a CSV file."""
     try:
         filters = {
             'species_ids': [int(sid) for sid in request.args.get('species_ids', '').split(',') if sid],
@@ -4412,7 +4412,7 @@ def api_ct_data_download(lang_code):
         data = result['data']
 
         if not data:
-            # Повертаємо відповідь, яку може обробити JavaScript
+            # Return a response that JavaScript can handle.
             return "Дані за вибраними критеріями не знайдено.", 404
 
         output = io.StringIO()
@@ -4434,16 +4434,14 @@ def api_ct_data_download(lang_code):
 @login_required
 @role_required('ct_verifier')
 def api_get_identification_stats(lang_code):
-    """
-    Підраховує та повертає кількість серій, що залишились для ідентифікації поточним користувачем.
-    """
+    """Return the number of observation series still pending identification by the current user."""
     ct_session = get_ct_session()
     try:
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
         ai_species_id = request.args.get('ai_species_id', type=int)
 
-        # Отримуємо ID фотографій, вже ідентифікованих цим користувачем
+        # IDs of photos already identified by this user.
         user_identified_photos = ct_session.query(Identification.photo_id)\
                                              .filter_by(user_id=current_user.id)
 
@@ -4478,17 +4476,16 @@ def api_get_identification_stats(lang_code):
                     location_institutions.c.institution_id.in_(eco_inst_ids)
                 )
 
-        # AI-фільтр: рахуємо лише серії, де AI визначив вибраний вид
-        # (від ПЕРЕМОЖНОЇ моделі — найвищий accuracy_rank на серію).
-        # Тихо ігнорується, якщо AI ще не активний.
+        # AI filter: count only series where the winning model (highest accuracy_rank)
+        # identified the selected species. Silently ignored if AI is not yet active.
         ai_observation_subq = None
         if ai_species_id is not None:
             from .ai_runner import is_ai_available, observations_subq_for_ai_species
             if is_ai_available():
                 ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
 
-        # Рахуємо кількість спостережень, які в статусі 'pending' і
-        # НЕ містять жодного фото, яке користувач вже ідентифікував
+        # Count observations in 'pending' status that do NOT contain
+        # any photo already identified by this user.
         query = ct_session.query(Observation.id)\
                                     .filter(
                                         Observation.status == 'pending',
@@ -4515,15 +4512,13 @@ def api_get_identification_stats(lang_code):
     finally:
         close_ct_session()
 
-#
-# --- СТОРІНКА ЖУРНАЛУ ОБСЛУГОВУВАННЯ ---
-#
+# ── SERVICE LOG PAGE ─────────────────────────────────────────────────────────
 
 @camera_traps_bp.route('/service-log')
 @login_required
 @role_required('manager')
 def service_log(lang_code):
-    """Перенаправляє на об'єднану сторінку управління локаціями."""
+    """Redirect to the combined location-management page."""
     return redirect(url_for('camera_traps.manage_locations', lang_code=lang_code))
 
 @camera_traps_bp.route('/api/locations-with-status')
@@ -4531,9 +4526,9 @@ def service_log(lang_code):
 @role_required('manager')
 def api_get_locations_with_status(lang_code):
     """
-    API, що повертає список локацій з їхнім прогнозованим статусом.
-    ФІНАЛЬНА ВЕРСІЯ: Враховує неактивні камери та обирає "найгірший" прогноз.
-    Фільтрує за установами поточного користувача (адмін бачить все).
+    Return a list of locations with their predicted service status.
+    Accounts for inactive cameras and picks the worst-case forecast.
+    Filtered by the current user's institutions (admin sees all).
     """
     ct_session = get_ct_session()
     try:
@@ -4543,7 +4538,7 @@ def api_get_locations_with_status(lang_code):
         PHOTO_WARNING_COUNT = 5000
         PHOTO_CRITICAL_COUNT = 10000
 
-        # Створюємо словник для визначення "ваги" статусу
+        # Map status values to severity weights for worst-case comparison.
         status_severity = {'ok': 0, 'warning': 1, 'critical': 2}
 
         is_admin = current_user.has_role('admin')
@@ -4574,28 +4569,28 @@ def api_get_locations_with_status(lang_code):
             status_reason = _("Немає даних про обслуговування")
 
             if last_visit:
-                # Перевірка №1: Чи є камера активною?
+                # Check 1: is the camera still active?
                 if last_visit.visit_purpose_id in INACTIVE_PURPOSE_IDS:
                     status = 'inactive'
                     status_reason = last_visit.visit_purpose.get_name(g.lang_code)
                     days_since_visit = (datetime.now().date() - last_visit.visit_datetime.date()).days
                 
                 else:
-                    # Камера активна, продовжуємо з прогнозуванням
+                    # Camera is active — proceed with forecasting.
                     days_since_visit = (datetime.now().date() - last_visit.visit_datetime.date()).days
                     stats = loc.stats
                     
-                    # --- ПОЧАТОК НОВОЇ ЛОГІКИ "НАЙГІРШОГО СЦЕНАРІЮ" ---
+                    # Worst-case scenario: compute time-based and photo-based status, then pick the worse one.
 
-                    # 1. Розраховуємо статус на основі ЧАСУ
+                    # 1. Time-based status.
                     time_status = 'ok'
                     if days_since_visit >= TIME_CRITICAL_DAYS:
                         time_status = 'critical'
                     elif days_since_visit >= TIME_WARNING_DAYS:
                         time_status = 'warning'
 
-                    # 2. Розраховуємо статус на основі ФОТО (якщо можливо)
-                    photo_status = 'ok' # За замовчуванням
+                    # 2. Photo-count-based status (if data is available).
+                    photo_status = 'ok'  # Default.
                     if stats and stats.avg_photos_per_day > 0:
                         predicted_photos = int(days_since_visit * float(stats.avg_photos_per_day))
                         if predicted_photos >= PHOTO_CRITICAL_COUNT:
@@ -4603,17 +4598,15 @@ def api_get_locations_with_status(lang_code):
                         elif predicted_photos >= PHOTO_WARNING_COUNT:
                             photo_status = 'warning'
 
-                    # 3. Порівнюємо статуси і обираємо НАЙГІРШИЙ
+                    # 3. Pick the worst of the two statuses.
                     if status_severity[photo_status] > status_severity[time_status]:
-                        # Якщо статус по фото гірший, обираємо його
+                        # Photo-count status is worse — use it.
                         status = photo_status
                         status_reason = _("Прогноз за кількістю фото")
                     else:
-                        # В іншому випадку (статус по часу гірший або однаковий), обираємо час
+                        # Time status is worse or equal — use it.
                         status = time_status
                         status_reason = _("Прогноз за часом")
-                        
-                    # --- КІНЕЦЬ НОВОЇ ЛОГІКИ ---
 
             response_data.append({
                 'id': loc.id,
@@ -4639,10 +4632,10 @@ def api_get_locations_with_status(lang_code):
 @login_required
 @role_required('manager')
 def api_get_service_history(lang_code, location_id):
-    """API для отримання історії обслуговування для конкретної локації."""
+    """Return the service-visit history for a specific location."""
     ct_session = get_ct_session()
     try:
-        # Перевірка доступу: адмін бачить все, менеджер — тільки свої установи
+        # Access check: admin sees all; manager sees only their own institutions.
         if not current_user.has_role('admin'):
             user_inst_ids = [inst.id for inst in current_user.institutions]
             if not user_inst_ids:
@@ -4663,7 +4656,7 @@ def api_get_service_history(lang_code, location_id):
 
         history_data = []
         for v in visits:
-            # Отримуємо ім'я користувача з основної БД
+            # Resolve the username from the main database.
             user = User.query.get(v.user_id)
             username = user.username if user else f"User ID: {v.user_id}"
             
@@ -4695,12 +4688,12 @@ def api_get_service_history(lang_code, location_id):
 @login_required
 @role_required('manager')
 def api_create_service_visit(lang_code):
-    """API для створення нового запису в журналі обслуговування."""
+    """Create a new service-visit record."""
     ct_session = get_ct_session()
     try:
         data = request.json
 
-        # --- Валідація та отримання даних ---
+        # Validate and extract request data.
         location_id = data.get('location_id')
         visit_purpose_id = data.get('visit_purpose_id')
         visit_datetime_str = data.get('visit_datetime')
@@ -4708,7 +4701,7 @@ def api_create_service_visit(lang_code):
         if not all([location_id, visit_purpose_id, visit_datetime_str]):
             return jsonify({'success': False, 'error': _('Не всі обов\'язкові поля заповнені.')}), 400
 
-        # --- Перевірка доступу до локації за установою ---
+        # Location-by-institution access check.
         if not current_user.has_role('admin'):
             user_inst_ids = [inst.id for inst in current_user.institutions]
             if not user_inst_ids:
@@ -4722,17 +4715,17 @@ def api_create_service_visit(lang_code):
             if not access:
                 return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
 
-        # --- Перетворення типів даних ---
+        # Type conversion.
         visit_datetime = datetime.fromisoformat(visit_datetime_str)
         
-        # Необов'язкові поля
+        # Optional fields.
         battery_type_id = data.get('battery_type_id')
         battery_type_id = int(battery_type_id) if battery_type_id else None
         
         photos_on_card = data.get('photos_on_card')
         photos_on_card = int(photos_on_card) if photos_on_card else None
 
-        # Конвертація 'true'/'false'/'' в True/False/None
+        # Convert 'true'/'false'/''/None strings to Python booleans.
         is_operational_str = data.get('is_camera_operational')
         if is_operational_str == 'true':
             is_camera_operational = True
@@ -4741,7 +4734,7 @@ def api_create_service_visit(lang_code):
         else:
             is_camera_operational = None
 
-        # --- Створення об'єкта та збереження в БД ---
+        # Create the record and persist it.
         new_visit = ServiceVisit(
             location_id=int(location_id),
             user_id=current_user.id,
@@ -4779,7 +4772,7 @@ def api_create_service_visit(lang_code):
 @login_required
 @role_required('manager')
 def api_update_service_visit(lang_code, visit_id):
-    """API для редагування існуючого запису в журналі обслуговування."""
+    """Edit an existing service-visit record."""
     ct_session = get_ct_session()
     try:
         visit = ct_session.query(ServiceVisit).get(visit_id)
@@ -4789,7 +4782,7 @@ def api_update_service_visit(lang_code, visit_id):
         is_admin = current_user.has_role('admin')
 
         if not is_admin:
-            # Перевірка власності запису
+            # Ownership check.
             if visit.user_id != current_user.id:
                 return jsonify({'success': False, 'error': _('Недостатньо прав для редагування цього запису.')}), 403
             # Check access to the location by institution
@@ -4849,13 +4842,13 @@ def api_update_service_visit(lang_code, visit_id):
 
 @camera_traps_bp.route('/api/run-stats-calculation', methods=['POST'])
 @login_required
-@role_required('manager') # Доступ для модераторів та адмінів
+@role_required('manager')  # managers and admins
 def run_stats_calculation(lang_code):
-    """Запускає повний перерахунок статистики для локацій."""
+    """Trigger a full statistics recalculation for all locations."""
     try:
         from .service_analytics import update_all_location_stats
         
-        # Запускаємо в режимі --force, оскільки користувач сам ініціює дію
+        # Run with force=True since the user explicitly triggered this action.
         update_all_location_stats(force_run=True)
         
         return jsonify({'success': True, 'message': _('Перерахунок статистики успішно завершено! Карта буде оновлена.')})
@@ -4864,33 +4857,30 @@ def run_stats_calculation(lang_code):
         current_app.logger.error(f"Manual stats calculation failed: {e}", exc_info=True)
         return jsonify({'success': False, 'error': _('Під час перерахунку сталася помилка.')}), 500
     
-# Глобальна змінна для кешування списку видів
-# Структура: {'data': [...], 'timestamp': datetime object}
+# Global cache for the species list used in filter dropdowns.
+# Structure: {'data': [...], 'timestamp': datetime object}
 _species_list_cache = {
     'data': None,
     'timestamp': None
 }
 
 def get_cached_species_for_filter():
-    """
-    Повертає список видів для фільтру.
-    Кешує результат на 7 днів.
-    """
+    """Return the species list for filter dropdowns, cached for 7 days."""
     global _species_list_cache
     now = datetime.now()
     CACHE_TTL_DAYS = 7
 
-    # Перевіряємо, чи є кеш і чи він свіжий
+    # Check whether the cache exists and is still fresh.
     if (_species_list_cache['data'] is not None and 
         _species_list_cache['timestamp'] is not None and 
         (now - _species_list_cache['timestamp']).days < CACHE_TTL_DAYS):
         return _species_list_cache['data']
 
-    # Якщо кешу немає або він застарів - робимо запит до БД
+    # Cache is absent or stale — query the database.
     ct_session = get_ct_session()
     try:
-        # Вибираємо тільки види, які реально зустрічаються (id > 0)
-        # Сортуємо за українською назвою, якщо вона є, інакше за латиною
+        # Select only species that actually occur (id > 0),
+        # ordered by Ukrainian common name if available, otherwise by Latin name.
         species_query = ct_session.query(Species)\
             .filter(Species.id > 0)\
             .order_by(Species.common_name_ua, Species.scientific_name)\
@@ -4898,12 +4888,12 @@ def get_cached_species_for_filter():
 
         species_list = []
         for s in species_query:
-            # Формуємо назву залежно від наявності перекладів (логіка як у вас була)
+            # Build the display name from available translations.
             name_ua = s.common_name_ua if s.common_name_ua else s.scientific_name
             name_en = s.common_name_en if s.common_name_en else s.scientific_name
             scientific = s.scientific_name
             
-            # Зберігаємо всі варіанти, щоб шаблон міг вибрати потрібну мову
+            # Store all name variants so the template can pick the right language.
             species_list.append({
                 'id': s.id,
                 'name_ua': f"{name_ua} ({scientific})",
@@ -4911,7 +4901,7 @@ def get_cached_species_for_filter():
                 'scientific': scientific
             })
 
-        # Оновлюємо кеш
+        # Update the cache.
         _species_list_cache['data'] = species_list
         _species_list_cache['timestamp'] = now
         
@@ -4926,18 +4916,18 @@ def get_cached_species_for_filter():
 
 @camera_traps_bp.route('/analysis/species-detailed')
 def species_detailed(lang_code):
-    """Сторінка детального аналізу з фільтрацією доступних видів."""
+    """Species detailed analysis page with available-species filtering."""
     ct_session = get_ct_session()
     try:
-        # 1. Права доступу
+        # 1. Access rights.
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        
-        # Отримуємо фільтр для локацій (аліас 'l')
+
+        # Build the location filter (table alias 'locations').
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
-        # 2. Отримуємо тільки ті види, які є на доступних локаціях
-        # Використовуємо JOIN для перевірки наявності детекцій на дозволених місцях
+        # 2. Fetch only species present at accessible locations,
+        #    using a JOIN to filter by permitted locations.
         species_query = ct_session.query(Species)\
             .join(Identification, Species.id == Identification.species_id)\
             .join(Photo, Identification.photo_id == Photo.id)\
@@ -4946,7 +4936,7 @@ def species_detailed(lang_code):
             .filter(
                 Species.id > 0,
                 Observation.status.in_(['completed', 'archived']),
-                text(inst_condition) # Фільтр установ
+                text(inst_condition)  # institution filter
             ).params(**inst_params).distinct()
 
         species_objects = species_query.order_by(Species.common_name_ua, Species.scientific_name).all()
@@ -4961,7 +4951,7 @@ def species_detailed(lang_code):
                 'name_en': f"{name_en} ({s.scientific_name})"
             })
         
-        # Дати за замовчуванням
+        # Default date range.
         today = date.today()
         default_start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
         default_end = today.strftime('%Y-%m-%d')
@@ -4987,11 +4977,11 @@ def api_distribution_map(lang_code):
         if not all([species_id, start_date_str, end_date_str]):
             return jsonify({'error': 'Missing parameters'}), 400
             
-        # --- ПРАВА ДОСТУПУ ---
+        # Access control.
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         
-        # Важливо: використовуємо аліас 'l', бо він прописаний у SQL нижче
+        # Important: use alias 'l' because it is referenced in the SQL below.
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='l')
 
         params = {
@@ -4999,9 +4989,9 @@ def api_distribution_map(lang_code):
             'start_date': start_date_str,
             'end_date': end_date_str
         }
-        params.update(inst_params) # Додаємо параметри установ (:user_inst_ids)
+        params.update(inst_params)  # add institution parameters (:user_inst_ids)
 
-        # Консенсус CTE (без змін)
+        # Consensus CTE.
         consensus_cte = """
             WITH ObservationConsensus AS (
                 SELECT
@@ -5019,7 +5009,7 @@ def api_distribution_map(lang_code):
             )
         """
         
-        # Основний запит з доданим фільтром inst_condition
+        # Main query with the institution filter applied.
         query_sql = f"""
             SELECT
                 l.id, l.name, l.latitude, l.longitude,
@@ -5041,7 +5031,7 @@ def api_distribution_map(lang_code):
         if not detections_result:
             return jsonify({'summary': {'total_detections': 0, 'total_locations': 0, 'avg_rai': 0}, 'locations': []})
 
-        # Формування результатів (тут логіка залишається такою ж)
+        # Build the result set.
         locations_map = {}
         target_location_ids = []
         total_detections = 0
@@ -5057,8 +5047,8 @@ def api_distribution_map(lang_code):
             target_location_ids.append(loc_id)
             total_detections += count
 
-        # Розрахунок EFFORT (Трап-днів)
-        # Отримуємо дати активності тільки для локацій, де знайшли вид
+        # Effort calculation (trap-days).
+        # Fetch active dates only for locations where the species was detected.
         dates_query = session.query(
             Location.id,
             func.date(Photo.captured_at).label('cap_date')
@@ -5126,7 +5116,7 @@ def api_distribution_map(lang_code):
         current_app.logger.error(f"Error in distribution map API: {e}", exc_info=True)
         return jsonify({'error': 'Server error calculating map data'}), 500
     finally:
-        # Важливо закрити сесію, бо ми відкривали connection напряму
+        # Close the session since we opened a raw connection.
         close_ct_session()
 
 
@@ -5140,15 +5130,15 @@ def api_daily_activity(lang_code):
         scope_type = request.args.get('scope_type', 'global')
         scope_id = request.args.get('scope_id', '')
 
-        # Читаємо прапорець CI
+        # Read the CI flag.
         compute_ci_param = request.args.get('compute_ci', 'false').lower() == 'true'
 
-        # Перевірка прав: CI тільки для авторизованих
+        # CI is available only for authenticated users.
         compute_ci = compute_ci_param and current_user.is_authenticated
 
         try:
             bw_adjust = float(request.args.get('bw_adjust', 0.25))
-            if bw_adjust < 0: bw_adjust = 0 # Мінімум 0
+            if bw_adjust < 0: bw_adjust = 0  # minimum 0
             if bw_adjust > 1.0: bw_adjust = 1.0
         except ValueError:
             bw_adjust = 0.1
@@ -5162,11 +5152,11 @@ def api_daily_activity(lang_code):
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-        # ── Scope-фільтр (установа / екорегіон) ──
+        # ── Scope filter (institution / ecoregion) ───────────────────────────────
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
 
-        # Access control: non-admin може запитувати лише в межах своїх установ
+        # Access control: non-admins may only query within their own institutions.
         if not is_admin:
             if scope_type == 'institution':
                 if not scope_id or int(scope_id) not in user_inst_ids:
@@ -5179,7 +5169,7 @@ def api_daily_activity(lang_code):
                 if scope_id not in user_ecoregions:
                     return jsonify({'error': 'Access denied'}), 403
 
-        # Обчислюємо list location_ids; None означає "усі локації"
+        # Resolve location_ids list; None means "all locations".
         location_ids = None
         if scope_type == 'institution' and scope_id:
             loc_subq = ct_session.query(location_institutions.c.location_id).filter(
@@ -5194,13 +5184,13 @@ def api_daily_activity(lang_code):
                 ).distinct().all()
                 location_ids = [row[0] for row in loc_subq]
         elif scope_type == 'global' and not is_admin and user_inst_ids:
-            # Не-адмін у "global" режимі — обмежимось доступними йому локаціями
+            # Non-admin in "global" mode: restrict to their accessible locations.
             loc_subq = ct_session.query(location_institutions.c.location_id).filter(
                 location_institutions.c.institution_id.in_(user_inst_ids)
             ).distinct().all()
             location_ids = [row[0] for row in loc_subq]
 
-        # Якщо scope обраний, але жодної локації не знайшлося — повертаємо порожньо
+        # Scope was specified but no locations matched — return empty response.
         if location_ids is not None and not location_ids:
             return jsonify({
                 'total_effort': 0, 'species_data': {}, 'species_names': {},
@@ -5218,11 +5208,11 @@ def api_daily_activity(lang_code):
             sp_raw_data = raw_data.get(sp_id, {})
             total_points = sum(len(v) for v in sp_raw_data.values())
 
-            # Дозволяємо будувати навіть по 2 точках, якщо без CI (просто покаже піки)
+            # Allow curves with as few as 2 data points when CI is disabled (just shows peaks).
             min_points = 5 if compute_ci else 2
             if total_points < min_points: continue
 
-            # Передаємо compute_ci та bw_adjust
+            # Pass compute_ci and bw_adjust to the curve calculator.
             stats_rai = calculate_activity_curve(
                 sp_raw_data, total_effort, mode='rai',
                 n_boot=1000 if compute_ci else 0,
@@ -5240,7 +5230,7 @@ def api_daily_activity(lang_code):
             if stats_rai and stats_pct:
                 results[sp_id] = {'rai': stats_rai, 'percent': stats_pct}
 
-                # Назва виду
+                # Species display name.
                 species = ct_session.query(Species).get(sp_id)
                 name = species.scientific_name
                 if g.lang_code == 'uk' and species.common_name_ua:
@@ -5248,9 +5238,9 @@ def api_daily_activity(lang_code):
                 elif g.lang_code == 'en' and species.common_name_en:
                     name = species.common_name_en
                 species_info[sp_id] = name
-        # Рахуємо матрицю тільки якщо є дані для 2 і більше видів
+        # Compute the overlap matrix only when data for 2 or more species is available.
         if len(results) >= 2:
-            from .daily_analytics import calculate_overlap_matrix # Можна і тут імпортнути
+            from .daily_analytics import calculate_overlap_matrix  # lazy import
             overlap_matrix = calculate_overlap_matrix(results)
         
         for sp_id in results:
@@ -5276,8 +5266,8 @@ def api_daily_activity(lang_code):
 @login_required
 def api_daily_activity_download(lang_code):
     """
-    Генерує CSV файл.
-    Враховує bw_adjust (0 = сирі дані) та compute_ci (False = швидко, без інтервалів).
+    Generate a CSV export of the daily-activity data.
+    Respects bw_adjust (0 = raw data) and compute_ci (False = fast, no confidence intervals).
     """
     ct_session = get_ct_session()
     try:
@@ -5287,7 +5277,7 @@ def api_daily_activity_download(lang_code):
         scope_type = request.args.get('scope_type', 'global')
         scope_id = request.args.get('scope_id', '')
 
-        # 1. Зчитуємо параметри згладжування
+        # 1. Read smoothing parameters.
         try:
             bw_adjust = float(request.args.get('bw_adjust', 0.25))
             if bw_adjust < 0: bw_adjust = 0
@@ -5295,10 +5285,10 @@ def api_daily_activity_download(lang_code):
         except ValueError:
             bw_adjust = 0.1
 
-        # 2. Зчитуємо параметр CI (чи треба рахувати інтервали)
-        # За замовчуванням False, якщо користувач не передав явне 'true'
+        # 2. Read the CI parameter.
+        # Default False unless the client explicitly passed 'true'.
         compute_ci_param = request.args.get('compute_ci', 'false').lower() == 'true'
-        compute_ci = compute_ci_param # Оскільки це @login_required, додаткова перевірка не критична
+        compute_ci = compute_ci_param  # @login_required, so no further auth check needed
 
         if not all([start_date_str, end_date_str, species_ids_str]):
             return "Missing parameters", 400
@@ -5307,7 +5297,7 @@ def api_daily_activity_download(lang_code):
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-        # ── Scope-фільтр (та сама логіка що в api_daily_activity) ──
+        # ── Scope filter (same logic as api_daily_activity) ──────────────────────
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
         if not is_admin:
@@ -5339,10 +5329,10 @@ def api_daily_activity_download(lang_code):
             ).distinct().all()]
 
         if location_ids is not None and not location_ids:
-            # Скоуп є, але порожній — повертаємо порожній CSV з заголовком
+            # Scope specified but empty — return an empty CSV.
             return Response("", mimetype="text/csv")
 
-        # Отримуємо дані
+        # Fetch and process data.
         total_effort = calculate_total_effort(ct_session, start_date, end_date, location_ids=location_ids)
         raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids, location_ids=location_ids)
         
@@ -5351,13 +5341,13 @@ def api_daily_activity_download(lang_code):
         
         for sp_id in species_ids:
             sp_raw_data = raw_data.get(sp_id, {})
-            # Дозволяємо навіть малу кількість точок, якщо це експорт без CI
+            # Allow a low point count for exports without CI.
             min_points = 5 if compute_ci else 1
             if sum(len(v) for v in sp_raw_data.values()) < min_points: 
                 continue
             
-            # Викликаємо розрахунок
-            # Якщо compute_ci=False, то n_boot=0, і цикл бутстрепу пропускається -> ШВИДКО
+            # Run the curve calculation.
+            # When compute_ci=False, n_boot=0 and the bootstrap loop is skipped — fast path.
             stats_rai = calculate_activity_curve(
                 sp_raw_data, total_effort, mode='rai', 
                 n_boot=1000 if compute_ci else 0, 
@@ -5395,19 +5385,17 @@ def api_daily_activity_download(lang_code):
 
 @camera_traps_bp.route('/analysis/daily-activity')
 def daily_activity_page(lang_code):
-    """
-    Сторінка аналізу добової активності.
-    """
+    """Daily-activity analysis page."""
     try:
-        # Дати за замовчуванням: 1 січня поточного року - сьогодні
+        # Default dates: 1 January of the current year through today.
         today = date.today()
         default_start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
         default_end = today.strftime('%Y-%m-%d')
 
-        # Отримуємо список видів (використовуємо існуючу функцію кешування)
+        # Load the species list using the caching helper.
         species_list = get_cached_species_for_filter()
 
-        # Установи та екорегіони для scope-фільтру (та сама логіка що в species_dashboard)
+        # Build institutions and ecoregions for the scope filter (same logic as species_dashboard).
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
