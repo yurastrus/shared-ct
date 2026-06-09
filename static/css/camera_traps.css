@@ -1325,7 +1325,11 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    background-color: rgba(0, 0, 0, 0.5);
+    /* #34: прозорий фон у спокої — щоб не затуляти тварину біля краю фото;
+       символ читається завдяки text-shadow; темний фон лише на :hover. */
+    background-color: transparent;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.7);
+    transition: background-color .15s ease;
     color: white;
     border: none;
     font-size: 2rem;
