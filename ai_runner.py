@@ -359,11 +359,24 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
     if row is None:
         return None
 
+    # #35: кількість особин для серії = MAX(animal_count) у межах ПЕРЕМОЖНОЇ
+    # моделі (того ж model_id) по всіх фото серії. ai_predictions — пер-фото,
+    # тож дві особини можуть бути лише на одному кадрі; беремо максимум (NULL
+    # ігнорує SQL MAX). Якщо всі NULL → лишаємо поточну поведінку (row.animal_count).
+    max_count = (
+        sess.query(func.max(AIPrediction.animal_count))
+        .filter(
+            AIPrediction.observation_id == observation_id,
+            AIPrediction.model_id == row.model_id,
+        )
+        .scalar()
+    )
+
     return {
         'species_id':    row.prediction_species_id,
         'species_label': row.prediction_label,
         'score':         row.prediction_score,
-        'animal_count':  row.animal_count,
+        'animal_count':  max_count if max_count is not None else row.animal_count,
     }
 
 
