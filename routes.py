@@ -1,5 +1,3 @@
-# myproject/app/camera_traps/routes.py
-
 from flask import render_template, g, flash, redirect, url_for, jsonify, request, current_app, send_from_directory, abort, Response
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -25,7 +23,7 @@ from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 
 #
-# --- СТАТИЧНІ ФАЙЛИ МОДУЛЯ ---
+# --- MODULE STATIC FILES ---
 #
 @camera_traps_bp.route('/ct-static/<path:filename>')
 def serve_ct_static(lang_code, filename):
@@ -34,12 +32,12 @@ def serve_ct_static(lang_code, filename):
 
 
 #
-# --- СТАРТОВА СТОРІНКА МОДУЛЯ (картковий хаб) ---
+# --- MODULE START PAGE (card hub) ---
 #
 @camera_traps_bp.route('/')
 def overview(lang_code):
-    """Стартова сторінка модуля з картками-входами до всіх розділів."""
-    # Картки рендеряться залежно від ролі користувача
+    """Module start page with entry cards for all sections."""
+    # Cards are rendered based on the user's role
     if current_user.is_authenticated:
         can_identify = current_user.has_role('ct_verifier')
         can_upload   = current_user.has_role('manager')
@@ -60,13 +58,13 @@ def overview(lang_code):
 
 
 #
-# --- АДМІН-ПАНЕЛЬ (технічні дії) ---
+# --- ADMIN PANEL (technical actions) ---
 #
 @camera_traps_bp.route('/admin')
 @login_required
 @role_required('admin')
 def admin_panel(lang_code):
-    """Сторінка з адмін-діями: перерахунок аналітики, очищення фото тощо."""
+    """Admin panel page: recalculate analytics, clean photos, etc."""
     from .ai_runner import (
         is_ai_available, get_recent_requests, get_active_model,
         get_classification_stats,
@@ -92,9 +90,9 @@ def admin_panel(lang_code):
         finally:
             close_ct_session()
 
-    # Health-метрики сховища та батчів (обидві функції самі керують ct-сесією
-    # і закривають її у власному finally; get_cleanup_statistics може кинути
-    # виняток, get_batch_statistics повертає {} — ловимо обидва випадки).
+    # Storage and batch health metrics (both functions manage their own ct-session
+    # and close it in their own finally; get_cleanup_statistics may raise an
+    # exception, get_batch_statistics returns {} — catching both cases).
     storage_stats = {}
     batch_stats = {}
     try:
@@ -104,7 +102,7 @@ def admin_panel(lang_code):
     except Exception as e:
         current_app.logger.warning(f"CT admin: cannot load storage/batch stats: {e}")
 
-    # Лічильник серій, позначених на повторний розгляд (Idea 6) — badge.
+    # Counter of series flagged for re-review (Idea 6) — badge.
     flagged_count = 0
     ct_session = get_ct_session()
     try:
@@ -133,7 +131,7 @@ def admin_panel(lang_code):
 @login_required
 @role_required('ct_verifier')
 def flag_observation(lang_code, obs_id):
-    """Позначає серію на повторний розгляд (Idea 6). note — необов'язковий."""
+    """Flag a series for re-review (Idea 6). note is optional."""
     ct_session = get_ct_session()
     try:
         obs = ct_session.query(Observation).get(obs_id)
@@ -157,7 +155,7 @@ def flag_observation(lang_code, obs_id):
 @login_required
 @role_required('ct_verifier')
 def unflag_observation(lang_code, obs_id):
-    """Знімає позначку повторного розгляду (Idea 6)."""
+    """Remove the re-review flag (Idea 6)."""
     ct_session = get_ct_session()
     try:
         obs = ct_session.query(Observation).get(obs_id)
@@ -181,7 +179,7 @@ def unflag_observation(lang_code, obs_id):
 @login_required
 @role_required('admin')
 def admin_flagged_list(lang_code):
-    """Список серій, позначених на повторний розгляд (Idea 6, admin)."""
+    """List of series flagged for re-review (Idea 6, admin)."""
     ct_session = get_ct_session()
     try:
         flagged = (
@@ -214,11 +212,12 @@ def admin_flagged_list(lang_code):
 @login_required
 @role_required('admin')
 def ai_calibration(lang_code):
-    """Дашборд калібрування AI: точність по видах на верифікованих серіях.
+    """AI calibration dashboard: per-species accuracy on verified series.
 
-    Спирається на ai_predictions.was_correct (Idea 4), зафіксований у момент
-    консенсусу. ?min=N — мінімальний розмір вибірки на вид (дефолт 1, бо
-    верифікованих AI-серій поки мало; надійність видно з колонки «вибірка»).
+    Based on ai_predictions.was_correct (Idea 4), recorded at the time of
+    consensus. ?min=N — minimum sample size per species (default 1, because
+    verified AI series are still scarce; reliability is visible in the 'sample'
+    column).
     """
     from .database import get_ct_engine
 
@@ -277,14 +276,14 @@ def ai_calibration(lang_code):
 @login_required
 @role_required('admin')
 def admin_ai_run(lang_code):
-    """Створює запит у ai_run_queue. Worker (cron) підхопить за 2-3 хв."""
+    """Create a request in ai_run_queue. The worker (cron) will pick it up within 2–3 min."""
     from .ai_runner import is_ai_available, request_run
 
     if not is_ai_available():
         flash(_('AI-класифікатор не доступний.'), 'danger')
         return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
-    # Валідація N
+    # Validate N
     try:
         n = int(request.form.get('n_observations', 100))
     except (TypeError, ValueError):
@@ -296,7 +295,7 @@ def admin_ai_run(lang_code):
         .get('AI_RUNNER', {})
         .get('MAX_PER_RUN', 100)
     )
-    upper_bound = max_per_run * 5   # одноразово до 5× нічного ліміту
+    upper_bound = max_per_run * 5   # up to 5× the nightly limit for a single run
     if not (1 <= n <= upper_bound):
         flash(
             _('Кількість серій має бути від 1 до %(max)d.') % {'max': upper_bound},
@@ -321,15 +320,15 @@ def admin_ai_run(lang_code):
 
 
 #
-# --- АНАЛІТИЧНИЙ ДАШБОРД ---
+# --- ANALYTICS DASHBOARD ---
 #
 @camera_traps_bp.route('/dashboard')
 def dashboard(lang_code):
-    """Відображає дашборд з основною статистикою, ФІЛЬТРОВАНОЮ ЗА ДАТОЮ, ЛОКАЦІЯМИ ТА БІОТОПАМИ."""
+    """Render the dashboard with main statistics, FILTERED BY DATE, LOCATIONS AND BIOTOPES."""
     ct_session = get_ct_session()
     try:
 
-        # Дати
+        # Dates
         start_date_str = request.args.get('start_date', '2020-08-01')
         end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
         try:
@@ -339,33 +338,33 @@ def dashboard(lang_code):
             start_date_str, end_date_str = '2020-08-01', date.today().strftime('%Y-%m-%d')
             start_date, end_date = datetime.strptime(start_date_str, '%Y-%m-%d').date(), date.today()
         
-        # Локації та Біотопи
+        # Locations and Biotopes
         location_ids_str = request.args.get('locations', '')
         biotope_ids_str_list = request.args.getlist('biotopes')
-        # Перетворюємо список рядків у список чисел
+        # Convert lists of strings to lists of integers
         biotope_ids = [int(id) for id in biotope_ids_str_list if id.isdigit()]
         location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
         
-        # Отримуємо список біотопів для передачі в шаблон
+        # Fetch biotope list to pass to the template
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
 
-        # Комбінований фільтр «Установа / Екорегіон» (як на species-dashboard).
+        # Combined "Institution / Ecoregion" filter (same as on the species-dashboard).
         institutions_list = get_accessible_institutions(is_admin)
         ecoregions = build_ecoregions(institutions_list, g.lang_code)
         selected_scope, selected_inst_ids = resolve_scope(
             request.args.get('scope', ''), institutions_list,
             current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
 
-        # Передаємо table_alias='locations' (без ніяких .replace)
+        # Pass table_alias='locations' (no .replace needed)
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
         )
         inst_condition_orm = text(inst_condition)
 
-        # Резолвлені ID установ для map/chart API (JS передає їх як institution_id).
+        # Resolved institution IDs for the map/chart API (JS passes them as institution_id).
         effective_inst_ids = [i for i in (selected_inst_ids or []) if i > 0]
 
         # Total Photos
@@ -456,7 +455,7 @@ def dashboard(lang_code):
         
         top_contributors_raw = top_contributors_raw_query.group_by(Identification.user_id)\
             .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
-        # --- КІНЕЦЬ ЗАПИТІВ ДО БД ---
+        # --- END OF DB QUERIES ---
 
         top_contributors = []
         if top_contributors_raw:
@@ -502,10 +501,10 @@ def dashboard(lang_code):
 
 
 #
-# --- СПІЛЬНІ ХЕЛПЕРИ ФІЛЬТРУ «УСТАНОВА / ЕКОРЕГІОН» ---
+# --- SHARED "INSTITUTION / ECOREGION" FILTER HELPERS ---
 #
 def get_accessible_institutions(is_admin):
-    """Установи в межах доступу: admin — усі, залогінений — свої, анонім — жодної."""
+    """Institutions within access scope: admin — all; authenticated — own; anonymous — none."""
     if is_admin:
         return Institution.query.order_by(Institution.name_uk).all()
     if current_user.is_authenticated:
@@ -514,7 +513,7 @@ def get_accessible_institutions(is_admin):
 
 
 def build_ecoregions(institutions, lang):
-    """{ecoregion_uk: локалізована_назва} серед переданих установ."""
+    """{ecoregion_uk: localised_name} for the given institutions."""
     ecoregions = {}
     for inst in institutions:
         if inst.ecoregion_uk:
@@ -525,24 +524,24 @@ def build_ecoregions(institutions, lang):
 
 def resolve_scope(scope_arg, accessible_institutions, default_scope=''):
     """
-    Розбирає комбінований фільтр `scope` ('institution:<id>' | 'ecoregion:<key>'
-    | 'global:') у набір установ для get_institution_filter().
+    Parse the combined `scope` filter ('institution:<id>' | 'ecoregion:<key>'
+    | 'global:') into a set of institutions for get_institution_filter().
 
-    Повертає (normalized_scope, selected_inst_ids):
-      - global         → (None) — без додаткового звуження (усі доступні);
+    Returns (normalized_scope, selected_inst_ids):
+      - global         → (None) — no additional narrowing (all accessible);
       - institution:id → [id];
-      - ecoregion:key  → список установ цього екорегіону (в межах доступу),
-                         або [-1] якщо жодної (гарантовано порожній результат).
+      - ecoregion:key  → list of institutions in that ecoregion (within access),
+                         or [-1] if none (guaranteed empty result).
 
-    default_scope (#49): scope, що застосовується, коли scope_arg порожній
-    (значення з CAMERA_TRAP_CONFIG['CT_DEFAULT_SCOPE']). Екорегіон-дефолт
-    ігнорується, якщо він недоступний користувачу (тихий відкат на global).
-    Явний scope_arg завжди має пріоритет над default_scope.
+    default_scope (#49): scope applied when scope_arg is empty
+    (value from CAMERA_TRAP_CONFIG['CT_DEFAULT_SCOPE']). An ecoregion default
+    is ignored if it is not accessible to the user (silent fallback to global)
+    so an empty page is never shown. An explicit scope_arg always takes priority.
     """
     scope_arg = (scope_arg or '').strip()
-    # #49: коли в URL немає scope — застосувати дефолт із конфіга (CT_DEFAULT_SCOPE).
-    # Дефолт-екорегіон беремо лише якщо він доступний користувачу, інакше тихо
-    # відкочуємось на «усі» (global), щоб не показати порожню сторінку.
+    # #49: when the URL has no scope — apply the default from config (CT_DEFAULT_SCOPE).
+    # Use the ecoregion default only if it is accessible to the user; otherwise silently
+    # fall back to "all" (global) so an empty page is never shown.
     if not scope_arg and default_scope:
         ds = (default_scope or '').strip()
         if ds.startswith('ecoregion:'):
@@ -565,29 +564,29 @@ def resolve_scope(scope_arg, accessible_institutions, default_scope=''):
 
 
 #
-# --- ПОВНИЙ СПИСОК УЧАСНИКІВ ---
+# --- FULL CONTRIBUTORS LIST ---
 #
 def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
                             location_ids=None, biotope_ids=None):
     """
-    Повертає статистику внеску по кожному користувачу з ковзними вікнами,
-    прив'язаними до `today`. Метрика — кількість унікальних спостережень
-    (distinct observation_id), у які користувач зробив ідентифікацію.
+    Return contribution statistics per user with rolling windows anchored to
+    `today`. Metric — number of unique observations (distinct observation_id)
+    in which the user made an identification.
 
-    ВАЖЛИВО: вікна рахуються за ЧАСОМ ВИЗНАЧЕННЯ (`Identification.created_at`,
-    коли користувач опрацював серію), а НЕ за часом зйомки фото
-    (`Photo.captured_at`, коли камера зафіксувала тварину — це може бути давно).
+    IMPORTANT: windows are counted by IDENTIFICATION TIME (`Identification.created_at`,
+    when the user processed the series), NOT by photo capture time
+    (`Photo.captured_at`, when the camera recorded the animal — that may be long ago).
 
-    Вікна (ковзні від `today`):
-      - d_today : сьогодні
-      - d_week  : останні 7 днів
-      - d_month : останній календарний місяць
-      - d_year  : останній календарний рік
-      - total   : за весь час
+    Windows (rolling from `today`):
+      - d_today : today
+      - d_week  : last 7 days
+      - d_month : last calendar month
+      - d_year  : last calendar year
+      - total   : all time
 
-    Доступ фільтрується через `inst_condition_orm`/`inst_params`
-    (результат get_institution_filter), тож функція не вирішує питання прав сама.
-    Повертає список Row, відсортований за total desc.
+    Access is filtered via `inst_condition_orm`/`inst_params`
+    (result of get_institution_filter), so the function does not resolve
+    permissions itself. Returns a list of Rows sorted by total desc.
     """
     start_today = datetime.combine(today, datetime.min.time())
     start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
@@ -623,14 +622,14 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
 @camera_traps_bp.route('/contributors')
 def contributors(lang_code):
     """
-    Повний перелік учасників зі статистикою внеску за ковзні періоди
-    (сьогодні / тиждень / місяць / рік / усього).
+    Full list of contributors with contribution statistics for rolling periods
+    (today / week / month / year / all time).
 
-    Видимість:
-      - незалогінений / звичайний користувач — лише нікнейм + статистика;
-      - manager / admin — повне ім'я (User.full_name).
-    Комбінований фільтр `scope` ('institution:<id>' | 'ecoregion:<key>' | 'global:')
-    обмежений доступами користувача.
+    Visibility:
+      - anonymous / regular user — username + statistics only;
+      - manager / admin — full name (User.full_name).
+    Combined `scope` filter ('institution:<id>' | 'ecoregion:<key>' | 'global:')
+    is limited to the user's access.
     """
     ct_session = get_ct_session()
     try:
@@ -655,7 +654,7 @@ def contributors(lang_code):
 
         rows = query_contributor_stats(ct_session, today, inst_condition_orm, inst_params)
 
-        # --- Підтягуємо імена з головної БД ---
+        # --- Fetch names from the main database ---
         contributors = []
         if rows:
             user_ids = [r.user_id for r in rows]
@@ -696,20 +695,18 @@ def contributors(lang_code):
 
 
 #
-# --- СТОРІНКА ДЕТАЛЬНОГО АНАЛІЗУ ПО ВИДАХ ---
+# --- SPECIES DETAIL ANALYSIS PAGE ---
 #
-# ЗАМІНІТЬ ВАШУ ІСНУЮЧУ ФУНКЦІЮ species_dashboard НА ЦЮ
-
 @camera_traps_bp.route('/analysis/species-dashboard')
 def species_dashboard(lang_code):
-    """Сторінка детального аналізу трендів по видах з фільтрацією по установах."""
+    """Species trend detail analysis page with institution filtering."""
     ct_session = get_ct_session()
     try:
         MIN_OBSERVATIONS = 30
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
 
-        # Список видів з мінімальною кількістю спостережень
+        # Species list with a minimum number of observations
         species_q = ct_session.query(Identification.species_id)\
             .join(Photo, Identification.photo_id == Photo.id)\
             .join(Observation, Photo.observation_id == Observation.id)\
@@ -745,7 +742,7 @@ def species_dashboard(lang_code):
         start_year = available_years[0] if available_years else date.today().year - 5
         end_year = available_years[-1] if available_years else date.today().year
 
-        # Установи та екорегіони для фільтру
+        # Institutions and ecoregions for the filter
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
@@ -776,11 +773,11 @@ def species_dashboard(lang_code):
     finally:
         close_ct_session()
 #
-# --- СТОРІНКА ПОРІВНЯННЯ ДВОХ РЕГІОНІВ ---
+# --- TWO-REGION COMPARISON PAGE ---
 #
 @camera_traps_bp.route('/analysis/comparison')
 def comparison_dashboard(lang_code):
-    """Сторінка порівняння статистики двох регіонів/установ."""
+    """Statistics comparison page for two regions/institutions."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
@@ -816,11 +813,11 @@ def comparison_dashboard(lang_code):
         close_ct_session()
 
 #
-# --- СТОРІНКА АНАЛІЗУ ПОВЕДІНКИ ---
+# --- BEHAVIOURAL ANALYSIS PAGE ---
 #
 @camera_traps_bp.route('/analysis/behavior')
 def behavior_analysis(lang_code):
-    """Сторінка аналізу поведінкових тегів. Доступна всім."""
+    """Behaviour tag analysis page. Accessible to all."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
@@ -840,10 +837,10 @@ def behavior_analysis(lang_code):
 
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
-        # Менеджер = автентифікований користувач з хоча б однією установою
+        # Manager = authenticated user with at least one institution
         is_manager = current_user.is_authenticated and bool(current_user.institutions)
 
-        # Лише види з хоча б одним behavior-тегом
+        # Only species with at least one behaviour tag
         species_q = (
             ct_session.query(Species)
             .join(Identification, Identification.species_id == Species.id)
@@ -851,8 +848,8 @@ def behavior_analysis(lang_code):
                   identification_behaviors.c.identification_id == Identification.id)
             .filter(Species.is_active == True)
         )
-        # Для звичайних користувачів (не адмін, не менеджер) ховаємо
-        # "технічні" види (мотоцикл, авто, людина тощо) — їх id < 0
+        # For regular users (not admin, not manager) hide
+        # "technical" species (motorcycle, car, person, etc.) — their id < 0
         if not (is_admin or is_manager):
             species_q = species_q.filter(Species.id > 0)
 
@@ -886,7 +883,7 @@ def behavior_analysis(lang_code):
 
 @camera_traps_bp.route('/api/behavior/data')
 def api_behavior_data(lang_code):
-    """API: усі дані для трьох графіків поведінки одним запитом."""
+    """API: all data for the three behaviour charts in a single request."""
     ct_session = get_ct_session()
     try:
         species_id = request.args.get('species_id', type=int)
@@ -902,7 +899,7 @@ def api_behavior_data(lang_code):
             start_dt = date(2020, 8, 1)
             end_dt   = date.today()
 
-        # Фільтр установ
+        # Institution filter
         raw_inst = request.args.get('institution_id', '').split(',')
         selected_inst_ids = [int(i) for i in raw_inst if i.strip().isdigit()]
 
@@ -923,7 +920,7 @@ def api_behavior_data(lang_code):
         raw_biotope = request.args.get('biotope_id', '')
         biotope_ids = [int(raw_biotope)] if raw_biotope.isdigit() else []
 
-        # Базова вибірка ідентифікацій
+        # Base identification query
         base_q = (
             ct_session.query(Identification)
             .join(Photo, Photo.id == Identification.photo_id)
@@ -952,7 +949,7 @@ def api_behavior_data(lang_code):
 
         lang = g.lang_code
 
-        # Графік 1: розподіл поведінок
+        # Chart 1: behaviour distribution
         behavior_counts = (
             ct_session.query(
                 BehaviorType.id,
@@ -979,7 +976,7 @@ def api_behavior_data(lang_code):
             for row in behavior_counts
         ]
 
-        # Графік 2: сезонна структура (по місяцях)
+        # Chart 2: seasonal structure (by month)
         seasonal_rows = (
             ct_session.query(
                 extract('month', Photo.captured_at).label('month'),
@@ -1011,7 +1008,7 @@ def api_behavior_data(lang_code):
             for row in seasonal_rows
         ]
 
-        # Графік 3: гістограма кількості особин
+        # Chart 3: individual-count histogram
         from collections import Counter
         qty_rows = (
             ct_session.query(
@@ -1035,7 +1032,7 @@ def api_behavior_data(lang_code):
             for qty, freq in sorted(qty_counter.items())
         ]
 
-        # Кількість ідентифікацій без жодного поведінкового тегу
+        # Number of identifications with no behaviour tag
         tagged_count = (
             ct_session.query(
                 func.count(func.distinct(identification_behaviors.c.identification_id))
@@ -1061,7 +1058,7 @@ def api_behavior_data(lang_code):
 
 @camera_traps_bp.route('/api/behavior/species-with-behaviors')
 def api_behavior_species(lang_code):
-    """API: список видів з хоча б одним behavior-тегом."""
+    """API: list of species with at least one behaviour tag."""
     ct_session = get_ct_session()
     try:
         lang = g.lang_code
@@ -1091,10 +1088,10 @@ def api_behavior_species(lang_code):
         close_ct_session()
 
 #
-# --- СТОРІНКА ІДЕНТИФІКАЦІЇ ---
+# --- IDENTIFICATION PAGE ---
 #
 
-# Кеш для рейтингу видів
+# Cache for species ranking
 _species_ranking_cache = {
     'data': None,
     'timestamp': None,
