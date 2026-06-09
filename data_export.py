@@ -137,9 +137,10 @@ def get_ct_occurrence_data(filters, limit=None):
                 count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
 
             elif aggregation == 'location_timewindow':
-                # #36: «інтервал незалежності» — нова подія, коли проміжок між
-                # сусідніми серіями того ж виду+локації > вікно (стандарт фото-
-                # пасткової екології). Не ріже подію на межах сітки годинника.
+                # "Independence interval": a new event starts when the gap between
+                # consecutive series of the same species+location exceeds the window
+                # (a camera-trap ecology standard). Avoids splitting an event at
+                # clock-grid boundaries.
                 try:
                     agg_minutes = int(filters.get('aggregation_minutes', 5))
                 except (ValueError, TypeError):
