@@ -11,6 +11,58 @@
         <p>{{ _('Моніторинг диких тварин — серії фото з камер-пасток, ідентифікація та аналітика. Виберіть розділ для роботи.') }}</p>
     </div>
 
+    {# ── АНАЛІТИКА (доступна всім, частина — лише авторизованим) ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">{{ _('Аналітика') }}</h2>
+        <div class="hub-grid">
+
+            <a class="hub-card" href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📊</span>
+                <span class="hub-card__title">{{ _('Дашборд') }}</span>
+                <span class="hub-card__desc">{{ _('Загальна статистика, мапа локацій і топ-види.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">📈</span>
+                <span class="hub-card__title">{{ _('Тренди') }}</span>
+                <span class="hub-card__desc">{{ _('Динаміка чисельності видів за роками.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🌙</span>
+                <span class="hub-card__title">{{ _('Добова активність') }}</span>
+                <span class="hub-card__desc">{{ _('Хронограма активності видів протягом доби.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🗺️</span>
+                <span class="hub-card__title">{{ _('Мапа') }}</span>
+                <span class="hub-card__desc">{{ _('Поширення видів на мапі локацій.') }}</span>
+            </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🖼️</span>
+                <span class="hub-card__title">{{ _('Галерея') }}</span>
+                <span class="hub-card__desc">{{ _('Перегляд відібраних фото з пасток.') }}</span>
+            </a>
+
+            {% if current_user.is_authenticated %}
+            <a class="hub-card" href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">⚖️</span>
+                <span class="hub-card__title">{{ _('Порівняння') }}</span>
+                <span class="hub-card__desc">{{ _('Порівняння двох регіонів або установ за показниками.') }}</span>
+            </a>
+            {% endif %}
+
+            <a class="hub-card" href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🐾</span>
+                <span class="hub-card__title">{{ _('Поведінка') }}</span>
+                <span class="hub-card__desc">{{ _('Аналіз поведінкових тегів окремого виду.') }}</span>
+            </a>
+
+        </div>
+    </section>
+
     {# ── РОБОТА (тільки для авторизованих з відповідними ролями) ── #}
     {% if can_identify or can_upload or can_manage or can_export %}
     <section class="hub-section">
@@ -68,58 +120,6 @@
         </div>
     </section>
     {% endif %}
-
-    {# ── АНАЛІТИКА (доступна всім, частина — лише авторизованим) ── #}
-    <section class="hub-section">
-        <h2 class="hub-section-title">{{ _('Аналітика') }}</h2>
-        <div class="hub-grid">
-
-            <a class="hub-card" href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">📊</span>
-                <span class="hub-card__title">{{ _('Дашборд') }}</span>
-                <span class="hub-card__desc">{{ _('Загальна статистика, мапа локацій і топ-види.') }}</span>
-            </a>
-
-            <a class="hub-card" href="{{ url_for('camera_traps.species_dashboard', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">📈</span>
-                <span class="hub-card__title">{{ _('Тренди') }}</span>
-                <span class="hub-card__desc">{{ _('Динаміка чисельності видів за роками.') }}</span>
-            </a>
-
-            <a class="hub-card" href="{{ url_for('camera_traps.daily_activity_page', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🌙</span>
-                <span class="hub-card__title">{{ _('Добова активність') }}</span>
-                <span class="hub-card__desc">{{ _('Хронограма активності видів протягом доби.') }}</span>
-            </a>
-
-            <a class="hub-card" href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🗺️</span>
-                <span class="hub-card__title">{{ _('Мапа') }}</span>
-                <span class="hub-card__desc">{{ _('Поширення видів на мапі локацій.') }}</span>
-            </a>
-
-            <a class="hub-card" href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🖼️</span>
-                <span class="hub-card__title">{{ _('Галерея') }}</span>
-                <span class="hub-card__desc">{{ _('Перегляд відібраних фото з пасток.') }}</span>
-            </a>
-
-            {% if current_user.is_authenticated %}
-            <a class="hub-card" href="{{ url_for('camera_traps.comparison_dashboard', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">⚖️</span>
-                <span class="hub-card__title">{{ _('Порівняння') }}</span>
-                <span class="hub-card__desc">{{ _('Порівняння двох регіонів або установ за показниками.') }}</span>
-            </a>
-            {% endif %}
-
-            <a class="hub-card" href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🐾</span>
-                <span class="hub-card__title">{{ _('Поведінка') }}</span>
-                <span class="hub-card__desc">{{ _('Аналіз поведінкових тегів окремого виду.') }}</span>
-            </a>
-
-        </div>
-    </section>
 
     {# ── АДМІНІСТРУВАННЯ (тільки для admin) ── #}
     {% if is_admin %}
