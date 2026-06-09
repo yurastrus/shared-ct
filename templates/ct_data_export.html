@@ -34,7 +34,8 @@
             <div class="filter-group"><label for="start-date-select">{{ _('Дата початку:') }}</label><input type="date" id="start-date-select" class="form-control"></div>
             <div class="filter-group"><label for="end-date-select">{{ _('Дата завершення:') }}</label><input type="date" id="end-date-select" class="form-control"></div>
             <div class="filter-group"><label for="filter-type-select">{{ _('Тип даних для експорту:') }}</label><select id="filter-type-select" class="form-control"><option value="species_only" selected>{{ _('Тільки тварини') }}</option><option value="all">{{ _('Всі записи') }}</option></select></div>
-            <div class="filter-group"><label for="aggregation-level">{{ _('Рівень агрегації:') }}</label><select id="aggregation-level" class="form-control"><option value="none" selected>{{ _('Без агрегації') }}</option><option value="location_day">{{ _('Агрегувати до дня і локації') }}</option></select></div>
+            <div class="filter-group"><label for="aggregation-level">{{ _('Рівень агрегації:') }}</label><select id="aggregation-level" class="form-control"><option value="none" selected>{{ _('Без агрегації') }}</option><option value="location_day">{{ _('Агрегувати до дня і локації') }}</option><option value="location_timewindow">{{ _('Локація + інтервал незалежності') }}</option></select></div>
+            <div class="filter-group" id="timewindow-group" style="display: none;"><label for="aggregation-minutes">{{ _('Інтервал незалежності (хв):') }}</label><input type="number" id="aggregation-minutes" class="form-control" min="1" max="60" value="5"></div>
             <div class="filter-group"><label for="institution-code">{{ _('Код інституції (для DwC):') }}</label><input type="text" id="institution-code" class="form-control" value="RSNR" placeholder="{{ _('За замовчуванням: RSNR') }}"></div>
 
             <div class="filter-group full-width" style="flex-direction: row; justify-content: center;">
@@ -187,6 +188,8 @@
             $('#end-date-select').val(formatLocalDate(today));
 
             $('#aggregation-level').val('none');
+            $('#aggregation-minutes').val(5);
+            $('#timewindow-group').hide();
             $('#institution-code').val('RSNR');
             $('#filter-type-select').val('species_only');
             $('#results-area').hide();
@@ -194,6 +197,11 @@
         
         $('#reset-btn').on('click', resetToDefaults);
         resetToDefaults();
+
+        // #36: показувати поле «інтервал незалежності» лише для timewindow-режиму
+        $('#aggregation-level').on('change', function() {
+            $('#timewindow-group').toggle($(this).val() === 'location_timewindow');
+        });
         
         function getApiParams() {
             const params = new URLSearchParams();
@@ -216,6 +224,9 @@
             if ($('#start-date-select').val()) params.append('start_date', $('#start-date-select').val());
             if ($('#end-date-select').val()) params.append('end_date', $('#end-date-select').val());
             params.append('aggregation', $('#aggregation-level').val());
+            if ($('#aggregation-level').val() === 'location_timewindow') {
+                params.append('aggregation_minutes', $('#aggregation-minutes').val() || 5);
+            }
             params.append('institution_code', $('#institution-code').val() || 'RSNR');
             params.append('filter_type', $('#filter-type-select').val());
 

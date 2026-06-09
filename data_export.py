@@ -135,6 +135,58 @@ def get_ct_occurrence_data(filters, limit=None):
                 sql_query = f"{final_query_base} ORDER BY series_start_time"
                 count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
 
+            elif aggregation == 'location_timewindow':
+                # #36: «інтервал незалежності» — нова подія, коли проміжок між
+                # сусідніми серіями того ж виду+локації > вікно (стандарт фото-
+                # пасткової екології). Не ріже подію на межах сітки годинника.
+                try:
+                    agg_minutes = int(filters.get('aggregation_minutes', 5))
+                except (ValueError, TypeError):
+                    agg_minutes = 5
+                max_win = current_app.config['CAMERA_TRAP_CONFIG'].get('EXPORT_MAX_AGG_MINUTES', 60)
+                agg_minutes = max(1, min(agg_minutes, max_win))
+                params['agg_seconds'] = agg_minutes * 60
+                aggregation_cte = """
+                    , EventTagged AS (
+                        SELECT observation_id, scientific_name, location_name,
+                               series_start_time, max_quantity,
+                               CASE
+                                 WHEN LAG(series_start_time) OVER w IS NULL THEN 1
+                                 WHEN EXTRACT(EPOCH FROM (series_start_time
+                                      - LAG(series_start_time) OVER w)) > :agg_seconds THEN 1
+                                 ELSE 0
+                               END AS is_new_event
+                        FROM BaseData
+                        WINDOW w AS (PARTITION BY scientific_name, location_name
+                                     ORDER BY series_start_time)
+                    ),
+                    EventGrouped AS (
+                        SELECT observation_id, scientific_name, location_name,
+                               series_start_time, max_quantity,
+                               SUM(is_new_event) OVER (
+                                   PARTITION BY scientific_name, location_name
+                                   ORDER BY series_start_time
+                                   ROWS UNBOUNDED PRECEDING
+                               ) AS event_id
+                        FROM EventTagged
+                    ),
+                    RankedAggregatedData AS (
+                        SELECT observation_id,
+                               ROW_NUMBER() OVER(
+                                   PARTITION BY scientific_name, location_name, event_id
+                                   ORDER BY max_quantity DESC, series_start_time ASC
+                               ) as agg_rn
+                        FROM EventGrouped
+                    )
+                    SELECT bd.*
+                    FROM BaseData bd
+                    JOIN RankedAggregatedData rad ON bd.observation_id = rad.observation_id
+                    WHERE rad.agg_rn = 1
+                """
+                final_query_base = f"{base_query_cte} {aggregation_cte}"
+                sql_query = f"{final_query_base} ORDER BY series_start_time"
+                count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
+
             else: # 'none' - Простий режим
                 final_query_base = "SELECT * FROM BaseData"
                 sql_query = f"{base_query_cte} {final_query_base} ORDER BY series_start_time"
