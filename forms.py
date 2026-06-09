@@ -1,13 +1,12 @@
-# myproject/app/camera_traps/forms.py
+"""WTForms form definitions for the camera-traps module."""
 
 from flask_wtf import FlaskForm
-# ВИПРАВЛЕННЯ 1: Додано HiddenField, IntegerField, BooleanField до імпортів
 from wtforms import StringField, DecimalField, SelectField, SubmitField, HiddenField, IntegerField, BooleanField, RadioField, SelectMultipleField, TextAreaField, widgets
 from wtforms.validators import DataRequired, NumberRange, Optional, Length
-from flask_babel import lazy_gettext as _l # <-- Імпортуємо lazy_gettext
+from flask_babel import lazy_gettext as _l
 
 class UploadForm(FlaskForm):
-    # Всі текстові мітки обгортаємо в _l()
+    """Photo-upload form; also supports creating a new location inline."""
     location = SelectField(_l('Виберіть місце'), coerce=int, validators=[Optional()])
 
     new_location_name = StringField(
@@ -33,11 +32,11 @@ class UploadForm(FlaskForm):
     upload_submit = SubmitField(_l('Завантажити фотографії'))
 
 class IdentificationForm(FlaskForm):
-    # ЗАМІНА: Використовуємо observation_id замість photo_id
-    observation_id = HiddenField(_l("Observation ID")) 
-    
-    # ВИПРАВЛЕННЯ: Валідатор DataRequired тут не потрібен, бо перевірка робиться в JS.
-    # Залишаємо поле для того, щоб можна було легко отримати його ім'я в шаблоні.
+    """Series-level species identification (one vote applied to the whole observation)."""
+    observation_id = HiddenField(_l("Observation ID"))
+
+    # No DataRequired: species is validated client-side in JS; the field is declared
+    # only so its name is available in the template.
     species = RadioField(_l('Вид тварини'), coerce=int, validators=[Optional()])
     
     quantity = IntegerField(_l('Особин'), default=1, validators=[DataRequired(), NumberRange(min=1, max=100)])
@@ -52,7 +51,7 @@ class IdentificationForm(FlaskForm):
     
     is_favorite = BooleanField(_l('У вибране'))
 
-    # #47: необов'язковий вільний коментар до ідентифікації, ≤200 символів.
+    # Optional free-text note, capped at 200 chars.
     comment = TextAreaField(
         _l('Коментар'),
         validators=[Optional(), Length(max=200)],

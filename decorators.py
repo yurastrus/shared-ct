@@ -4,32 +4,31 @@ from flask_login import current_user
 from flask_babel import gettext as _
 
 def role_required(*required_roles):
-    """
-    Декоратор для перевірки, чи має користувач необхідну роль для доступу.
-    Підтримує передачу декількох ролей, наприклад: @role_required('analyst', 'manager').
-    Ролі перевіряються тільки по новій системі (головна база даних).
+    """Restrict a view to users holding one of the given roles (or higher).
+
+    Accepts several roles, e.g. ``@role_required('analyst', 'manager')``. Roles are
+    resolved against the main database through the privilege hierarchy below.
     """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Ієрархія ролей нової системи.
+            # Role hierarchy, lowest → highest privilege.
             role_hierarchy = ['viewer', 'ct_verifier', 'analyst', 'manager', 'admin']
 
             if not current_user.is_authenticated:
                 return redirect(url_for('auth.login', lang_code=g.lang_code))
 
-            # Формуємо список усіх дозволених ролей (передані + ті, що вище за ієрархією)
+            # Allowed = requested roles plus everything above them in the hierarchy.
             allowed_roles = set()
             for req_role in required_roles:
                 if req_role in role_hierarchy:
                     req_index = role_hierarchy.index(req_role)
-                    # Додаємо цю роль і всі, що вище
+                    # this role and all higher ones
                     allowed_roles.update(role_hierarchy[req_index:])
                 else:
-                    # Якщо роль нестандартна (не з ієрархії), просто додаємо її
+                    # non-hierarchical role: allow as-is
                     allowed_roles.add(req_role)
 
-            # Перевірка за новою системою (головна база)
             has_new_access = any(current_user.has_role(role) for role in allowed_roles)
 
             if has_new_access:

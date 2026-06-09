@@ -1,8 +1,8 @@
-# myproject/app/camera_traps/__init__.py
+"""Camera-traps blueprint package."""
 
 from flask import Blueprint
 
-# Створюємо Blueprint. 'camera_traps' - це і ім'я Blueprint, і папка з шаблонами
+# Blueprint name doubles as the templates folder name.
 camera_traps_bp = Blueprint('camera_traps', __name__,
                             template_folder='templates')
 
