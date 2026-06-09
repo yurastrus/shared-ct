@@ -1,5 +1,3 @@
-# myproject/app/camera_traps/models.py
-
 from sqlalchemy import Column, Integer, String, DateTime, Date, Time, Boolean, Text, Numeric, Float, ForeignKey, Index, Table, Interval
 from sqlalchemy import CheckConstraint, Computed, UniqueConstraint, func
 from sqlalchemy.orm import relationship, backref
@@ -8,7 +6,7 @@ from datetime import datetime
 
 from .database import CTBase
 
-# Проміжна таблиця для зв'язку many-to-many між Identification та BehaviorType
+# Association table for the many-to-many relationship between Identification and BehaviorType
 identification_behaviors = Table(
     'identification_behaviors',
     CTBase.metadata,
@@ -32,7 +30,7 @@ location_institutions = Table(
 
 class Species(CTBase):
     __tablename__ = 'species'
-    
+
     id = Column(Integer, primary_key=True)
     scientific_name = Column(String(200), unique=True, nullable=False)
     common_name_ua = Column(String(200))
@@ -42,13 +40,13 @@ class Species(CTBase):
 
     kingdom = Column(String(100))
     phylum = Column(String(100))
-    class_ = Column("class", String(100)) # "class" - це назва колонки в БД
+    class_ = Column("class", String(100)) # "class" is the column name in the database
     order_rank = Column(String(100))
     family = Column(String(100))
     genus = Column(String(100))
     establishment_means = Column(String(100))
 
-    # Зв'язки
+    # Relationships
     identifications = relationship('Identification', back_populates='species')
 
     def __repr__(self):
@@ -56,7 +54,7 @@ class Species(CTBase):
 
 class Location(CTBase):
     __tablename__ = 'locations'
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(200), nullable=False)
     latitude = Column(Numeric(10, 5), nullable=False)
@@ -65,16 +63,16 @@ class Location(CTBase):
     description = Column(Text)
     photo_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
-    created_by_id = Column(Integer, nullable=True)  # ID користувача з основної БД
+    created_by_id = Column(Integer, nullable=True)  # User ID from the main database
     visibility_level = Column(Integer, default=1, nullable=False)
 
-    # Зв'язки
+    # Relationships
     observations = relationship('Observation', back_populates='location')
     biotopes = relationship('Biotope', secondary=location_biotopes, backref='locations')
     service_visits = relationship('ServiceVisit', back_populates='location', order_by=lambda: ServiceVisit.visit_datetime.desc())
     deployments = relationship('Deployment', back_populates='location', order_by=lambda: Deployment.start_date)
-    
-    # Індекс для швидкого пошуку за округленими координатами
+
+    # Index for fast lookup by rounded coordinates
     __table_args__ = (
         Index('idx_locations_rounded', func.round(latitude, 5), func.round(longitude, 5)),
     )
@@ -84,7 +82,7 @@ class Location(CTBase):
 
 class Biotope(CTBase):
     __tablename__ = 'biotopes'
-    
+
     id = Column(Integer, primary_key=True)
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
@@ -96,42 +94,44 @@ class Biotope(CTBase):
         return f'<Biotope {self.name_en}>'
 
 class Deployment(CTBase):
-    """Встановлення фотопастки на локації за конкретний період (камеро-сезон).
+    """Camera trap deployment at a location for a specific period (camera-season).
 
-    Один фізичний `Location` має багато деплойментів у часі. Деплоймент несе
-    тимчасові поля та секцію контролю якості (qc_*) з ARD-таблиці деплойментів.
-    Прив'язка спостережень/фото до деплойменту НЕ через FK, а на льоту по
-    перекриттю дат: observation.captured_at ∈ [start_date, end_date] для тієї ж
-    location_id. Установу/регіон не дублюємо — вони доступні через location.
+    A single physical ``Location`` may have many deployments over time. A deployment
+    carries temporal fields and a quality-control section (qc_*) from the ARD
+    deployments table. The link between observations/photos and a deployment is NOT
+    a foreign key — it is resolved on-the-fly by date overlap:
+    ``observation.captured_at ∈ [start_date, end_date]`` for the same
+    ``location_id``. Institution and region are not duplicated here — they are
+    accessible via ``location``.
     """
     __tablename__ = 'deployments'
 
     id = Column(Integer, primary_key=True)
-    # Може бути NULL для деплойментів без GPS-координат (їх включаємо в QC-аналіз як
-    # qc_no_gps_coordinates=TRUE; локацію не створюємо, на мапі не показуємо).
+    # Can be NULL for deployments without GPS coordinates (included in QC analysis as
+    # qc_no_gps_coordinates=TRUE; no Location is created, not shown on the map).
     location_id = Column(Integer, ForeignKey('locations.id'), nullable=True, index=True)
-    name = Column(String(200), nullable=False)  # deployment_id з Екселю
+    name = Column(String(200), nullable=False)  # deployment_id from the Excel sheet
 
-    # Часовий інтервал деплойменту
+    # Deployment time interval
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    start_time = Column(Time, nullable=True)  # зберігаємо заради відповідності Екселю
+    start_time = Column(Time, nullable=True)  # retained to match the Excel source
     end_time = Column(Time, nullable=True)
 
-    # Описові поля деплойменту
+    # Descriptive deployment fields
     study_year = Column(Integer, nullable=True)
     study_season = Column(String(20), nullable=True)   # Summer / Winter
     study_design = Column(String(100), nullable=True)
-    camera_id = Column(String(10), nullable=True)      # String: провідні нулі (напр. '0405'); буває 5 знаків — це валідно
-    n_days_working = Column(Integer, nullable=True)     # з Екселю як є, НЕ end-start
-    # Обчислюється БД як календарний інтервал (end-start); NULL якщо дат немає.
-    # Окремо від n_days_working, бо фактичні робочі дні можуть відрізнятись.
+    camera_id = Column(String(10), nullable=True)      # String: leading zeros (e.g. '0405'); 5-digit values are valid
+    n_days_working = Column(Integer, nullable=True)     # from Excel as-is, NOT end-start
+    # Computed by the DB as the calendar interval (end-start); NULL when dates are absent.
+    # Separate from n_days_working because actual working days may differ.
     n_days_calc = Column(Integer, Computed('end_date - start_date'), nullable=True)
     n_photos = Column(Integer, nullable=True)
     camera_model = Column(String(100), nullable=True)
     serial_number = Column(String(100), nullable=True)
 
-    # Контроль якості (NULL = невідомо → не виключає за правилом «сироти валідні»)
+    # Quality control (NULL = unknown → does not exclude under the "orphans are valid" rule)
     qc_non_functional = Column(Boolean, nullable=True)
     qc_stolen = Column(Boolean, nullable=True)
     qc_hardware_issue = Column(Boolean, nullable=True)
@@ -154,32 +154,32 @@ class Deployment(CTBase):
     qc_datetime_photos_missed = Column(Boolean, nullable=True)
     qc_local_datetime_not_set = Column(Boolean, nullable=True)
     qc_local_datetime_issue = Column(Text, nullable=True)
-    qc_data_not_usable = Column(Boolean, nullable=True)  # головний прапор фільтра
+    qc_data_not_usable = Column(Boolean, nullable=True)  # master filter flag
     qc_used_brf = Column(Boolean, nullable=True)
     qc_comment = Column(Text, nullable=True)
 
-    # Службові
-    history_unknown = Column(Boolean, default=False, nullable=False)  # синтетичний backfill
+    # Administrative fields
+    history_unknown = Column(Boolean, default=False, nullable=False)  # synthetic backfill flag
     created_at = Column(DateTime, default=func.now())
     created_by_id = Column(Integer, nullable=True)
 
     location = relationship('Location', back_populates='deployments')
 
     __table_args__ = (
-        # Інтервальний матчинг спостережень: WHERE location_id=:x AND captured_at BETWEEN start AND end
+        # Interval matching for observations: WHERE location_id=:x AND captured_at BETWEEN start AND end
         Index('idx_deployments_loc_dates', 'location_id', 'start_date', 'end_date'),
     )
 
     def is_usable(self):
-        """Чи придатний деплоймент для аналізу. NULL трактуємо як придатний."""
+        """Return whether the deployment is usable for analysis. NULL is treated as usable."""
         return not bool(self.qc_data_not_usable)
 
     def count_photos(self, session):
-        """Кількість згрупованих фото в інтервалі деплойменту (на льоту).
+        """Return the number of grouped photos in the deployment interval (on-the-fly).
 
-        Рахується по photos через observations тієї ж локації з captured_at у
-        [start_date, end_date]. Окремо від імпортованого n_photos (авторитет з
-        Екселю). Незгруповані фото (observation_id IS NULL) не враховуються.
+        Counts photos via observations for the same location with captured_at in
+        [start_date, end_date]. Separate from the imported n_photos (authoritative from
+        Excel). Ungrouped photos (observation_id IS NULL) are not counted.
         """
         q = (session.query(func.count(Photo.id))
              .join(Observation, Photo.observation_id == Observation.id)
@@ -195,7 +195,7 @@ class Deployment(CTBase):
 
 class Observation(CTBase):
     __tablename__ = 'observations'
-    
+
     id = Column(Integer, primary_key=True)
     location_id = Column(Integer, ForeignKey('locations.id'), nullable=False)
     series_start_time = Column(DateTime, nullable=False)
@@ -205,21 +205,21 @@ class Observation(CTBase):
     uploaded_by_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=func.now())
 
-    # Прапорець «на повторний розгляд» (Idea 6) — організаційна позначка для
-    # верифікаторів/адміна. НЕ змінює status і НЕ виключає серію з аналітики
-    # (це окреме, спірне рішення — поки не застосовуємо).
+    # "Needs re-review" flag (Idea 6) — an organisational marker for
+    # verifiers/admins. Does NOT change status and does NOT exclude the series
+    # from analytics (this is a separate, debated decision — not applied yet).
     flagged = Column(Boolean, nullable=False, default=False, server_default='false')
     flag_note = Column(Text)
 
-    # Зв'язки
+    # Relationships
     location = relationship('Location', back_populates='observations')
-    
-    # Старий relationship (залишаємо для зворотної сумісності)
+
+    # Legacy relationship (kept for backwards compatibility)
     photos = relationship('Photo', back_populates='observation')
-    
-    # Новий relationship для хронологічного порядку
+
+    # New relationship in chronological order
     photos_chronological = relationship(
-        'Photo', 
+        'Photo',
         back_populates='observation',
         order_by='Photo.captured_at',
         viewonly=True
@@ -227,10 +227,10 @@ class Observation(CTBase):
 
     def __repr__(self):
         return f'<Observation {self.id} at {self.location.name}>'
-    
+
 class UploadBatch(CTBase):
     __tablename__ = 'upload_batches'
-    
+
     id = Column(String(36), primary_key=True)  # UUID
     location_id = Column(Integer, ForeignKey('locations.id'), nullable=False)
     uploaded_by_id = Column(Integer, nullable=False)
@@ -241,7 +241,7 @@ class UploadBatch(CTBase):
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
 
-    # Зв'язки
+    # Relationships
     location = relationship('Location')
     photos = relationship('Photo', back_populates='upload_batch')
 
@@ -250,31 +250,31 @@ class UploadBatch(CTBase):
 
 class Photo(CTBase):
     __tablename__ = 'photos'
-    
+
     id = Column(Integer, primary_key=True)
-    observation_id = Column(Integer, ForeignKey('observations.id'), nullable=True)  # Тепер може бути NULL
-    upload_batch_id = Column(String(36), ForeignKey('upload_batches.id'), nullable=True)  # Новий зв'язок
+    observation_id = Column(Integer, ForeignKey('observations.id'), nullable=True)  # Can now be NULL
+    upload_batch_id = Column(String(36), ForeignKey('upload_batches.id'), nullable=True)  # New relationship
     original_filename = Column(String(500), nullable=False)
     system_filename = Column(String(500), unique=True, nullable=False)
-    sequence_number = Column(Integer, nullable=True)  # Тепер може бути NULL до групування
+    sequence_number = Column(Integer, nullable=True)  # Can now be NULL until grouping
     captured_at = Column(DateTime, nullable=False)
     status = Column(String(20), default='uploaded', nullable=False)  # uploaded, grouped, pending, completed, archived, needs_review
     identification_count = Column(Integer, default=0)
     is_favorite = Column(Boolean, default=False, nullable=False)
 
-    # Зв'язки
+    # Relationships
     observation = relationship('Observation', back_populates='photos')
     upload_batch = relationship('UploadBatch', back_populates='photos')
     identifications = relationship('Identification', back_populates='photo')
 
     __table_args__ = (
-        # Індекс під CTE-групування у /upload-fast: LAG(captured_at)
-        # OVER (ORDER BY captured_at, id) для фотографій конкретного batchʼа.
-        # Покриває WHERE upload_batch_id=:b AND status='uploaded' + ORDER BY.
+        # Index for CTE-based grouping in /upload-fast: LAG(captured_at)
+        # OVER (ORDER BY captured_at, id) for photos of a specific batch.
+        # Covers WHERE upload_batch_id=:b AND status='uploaded' + ORDER BY.
         Index('idx_photos_batch_captured', 'upload_batch_id', 'captured_at', 'id'),
-        # Фільтр за статусом: cleanup (status='completed'/'pending') і
-        # dashboard. На проді індекс уже існує — декларуємо, щоб create_all
-        # на нових/dev-інсталяціях теж його створював (метадані = реальна БД).
+        # Status filter: cleanup (status='completed'/'pending') and
+        # dashboard. Index already exists on prod — declared here so that create_all
+        # on new/dev installations also creates it (metadata = real DB).
         Index('idx_photos_status', 'status'),
     )
 
@@ -283,14 +283,14 @@ class Photo(CTBase):
 
 class BehaviorType(CTBase):
     __tablename__ = 'behavior_types'
-    
+
     id = Column(Integer, primary_key=True)
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
 
-    # Зв'язки
+    # Relationships
     identifications = relationship('Identification', secondary=identification_behaviors, back_populates='behaviors')
-    
+
     def get_name(self, lang_code):
         return self.name_ua if lang_code == 'uk' else self.name_en
 
@@ -299,28 +299,28 @@ class BehaviorType(CTBase):
 
 class Identification(CTBase):
     __tablename__ = 'identifications'
-    
+
     id = Column(Integer, primary_key=True)
     photo_id = Column(Integer, ForeignKey('photos.id'), nullable=False)
-    user_id = Column(Integer, nullable=False)  # ID користувача з основної БД
-    species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # None для "Інший вид"
-    # confidence_level видалено (#46): колонка була порожня (форма не писала) —
-    # архітектурний залишок. DROP COLUMN застосовано на проді.
+    user_id = Column(Integer, nullable=False)  # User ID from the main database
+    species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # None for "Other species"
+    # confidence_level removed (#46): the column was always empty (the form never wrote to it) —
+    # an architectural leftover. DROP COLUMN applied on prod.
     quantity = Column(Integer, default=1)
     comment = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
-    # Зв'язки
+    # Relationships
     photo = relationship('Photo', back_populates='identifications')
     species = relationship('Species', back_populates='identifications')
     behaviors = relationship('BehaviorType', secondary=identification_behaviors, back_populates='identifications')
 
-    # Унікальне обмеження: один користувач може ідентифікувати одне фото тільки раз
+    # Unique constraint: one user can identify a single photo only once
     __table_args__ = (
         UniqueConstraint('photo_id', 'user_id', name='_photo_user_uc'),
-        # Фільтр/групування за автором: dashboard top-contributors,
-        # сторінка внеску. На проді індекс уже існує — декларуємо для
-        # консистентності з create_all на нових/dev-інсталяціях.
+        # Filter/grouping by author: dashboard top-contributors,
+        # contribution page. Index already exists on prod — declared here for
+        # consistency with create_all on new/dev installations.
         Index('idx_identifications_user_id', 'user_id'),
     )
 
@@ -329,8 +329,8 @@ class Identification(CTBase):
 
 class UserProfile(CTBase):
     __tablename__ = 'user_profiles'
-    
-    user_id = Column(Integer, primary_key=True)  # ID користувача з основної БД
+
+    user_id = Column(Integer, primary_key=True)  # User ID from the main database
     camera_trap_role = Column(String(20), default='viewer', nullable=False)
     identifications_count = Column(Integer, default=0, nullable=False)
     accuracy_score = Column(Numeric(5, 2), default=0.0, nullable=False)
@@ -340,38 +340,38 @@ class UserProfile(CTBase):
 
 class LocationMergeLog(CTBase):
     __tablename__ = 'location_merge_log'
-    
+
     id = Column(Integer, primary_key=True)
-    merged_by_id = Column(Integer, nullable=False)  # ID користувача з основної БД
+    merged_by_id = Column(Integer, nullable=False)  # User ID from the main database
     main_location_id = Column(Integer, ForeignKey('locations.id'), nullable=False)
     merged_location_ids = Column(ARRAY(Integer), nullable=False)
     merged_location_names = Column(ARRAY(String), nullable=False)
     merge_reason = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
-    # Зв'язки
+    # Relationships
     main_location = relationship('Location')
 
     def __repr__(self):
         return f'<LocationMergeLog {self.id}>'
-    
+
 class LocationMonthlyActivity(CTBase):
-    """
-    Проміжна таблиця для зберігання щомісячної активності по локаціях.
-    Розраховується фоновим процесом.
+    """Intermediate table for storing monthly activity per location.
+
+    Populated by a background process.
     """
     __tablename__ = 'location_monthly_activity'
-    
-    # Використовуємо складений первинний ключ для унікальності та швидкості пошуку
+
+    # Composite primary key for uniqueness and fast lookup
     species_id = Column(Integer, ForeignKey('species.id'), primary_key=True)
     location_id = Column(Integer, ForeignKey('locations.id'), primary_key=True)
     year = Column(Integer, primary_key=True)
     month = Column(Integer, primary_key=True)
-    
+
     detection_count = Column(Integer, nullable=False, default=0)
     trap_days = Column(Integer, nullable=False, default=0)
 
-    # Зв'язки для можливих майбутніх запитів (не обов'язкові зараз)
+    # Relationships for potential future queries (not strictly required now)
     species = relationship('Species')
     location = relationship('Location')
 
@@ -379,10 +379,10 @@ class LocationMonthlyActivity(CTBase):
         return f'<Activity: SpID {self.species_id}, LocID {self.location_id}, {self.year}-{self.month}>'
 
 class SpeciesYearlyTrend(CTBase):
-    """
-    Фінальна таблиця з розрахованими річними трендами та довірчими інтервалами.
+    """Final table with computed annual trends and confidence intervals.
+
     scope_type: 'global' | 'institution' | 'ecoregion'
-    scope_id:   '' для global, str(institution.id) для institution, ecoregion_uk для ecoregion
+    scope_id:   '' for global, str(institution.id) for institution, ecoregion_uk for ecoregion
     """
     __tablename__ = 'species_yearly_trends'
 
@@ -401,35 +401,33 @@ class SpeciesYearlyTrend(CTBase):
         return f'<Trend: SpID {self.species_id}, Year {self.year}, {self.scope_type}:{self.scope_id}>'
 
 class CalculationLog(CTBase):
-    """
-    Сервісна таблиця для відстеження стану даних та необхідності перерахунку.
-    """
+    """Service table for tracking data state and recalculation needs."""
     __tablename__ = 'calculation_log'
 
     id = Column(Integer, primary_key=True)
-    source_name = Column(String(100), unique=True, nullable=False) # Напр. 'completed_observations'
+    source_name = Column(String(100), unique=True, nullable=False) # e.g. 'completed_observations'
     last_count = Column(Integer, nullable=False, default=0)
     last_calculated_at = Column(DateTime, nullable=True)
 
-    # Стан асинхронного перерахунку (analytics_calculator.start_async_analytics):
-    #   'idle'      — перерахунку немає; last_calculated_at — час останнього успіху
-    #   'running'   — фоновий потік виконує update_analytics_tables
-    #   'completed' — останній запуск завершився успішно
-    #   'failed'    — останній запуск впав (деталі в error_message)
-    # NB: на проді колонки додаються через scripts/init_analytics_status.py
-    # (create_all не додає колонки в існуючу таблицю). Декларація тут —
-    # для нових/dev-інсталяцій.
+    # State of the async recalculation (analytics_calculator.start_async_analytics):
+    #   'idle'      — no recalculation in progress; last_calculated_at is the time of last success
+    #   'running'   — background thread is executing update_analytics_tables
+    #   'completed' — last run finished successfully
+    #   'failed'    — last run crashed (details in error_message)
+    # NB: on prod the columns are added via scripts/init_analytics_status.py
+    # (create_all does not add columns to an existing table). Declaration here
+    # is for new/dev installations.
     status = Column(String(20), nullable=False, default='idle')
-    started_at = Column(DateTime, nullable=True)       # коли стартував поточний/останній run
-    error_message = Column(Text, nullable=True)        # текст помилки останнього failed-run
+    started_at = Column(DateTime, nullable=True)       # when the current/last run started
+    error_message = Column(Text, nullable=True)        # error text from the last failed run
 
     def __repr__(self):
         return f'<Log: {self.source_name}, Count: {self.last_count}, Status: {self.status}>'
-    
+
 class BatteryType(CTBase):
-    """Довідкова таблиця: Типи елементів живлення."""
+    """Lookup table: battery types."""
     __tablename__ = 'battery_types'
-    
+
     id = Column(Integer, primary_key=True)
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
@@ -442,9 +440,9 @@ class BatteryType(CTBase):
         return f'<BatteryType {self.name_en}>'
 
 class VisitPurpose(CTBase):
-    """Довідкова таблиця: Цілі візиту."""
+    """Lookup table: visit purposes."""
     __tablename__ = 'visit_purposes'
-    
+
     id = Column(Integer, primary_key=True)
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
@@ -456,24 +454,24 @@ class VisitPurpose(CTBase):
         return f'<VisitPurpose {self.name_en}>'
 
 class ServiceVisit(CTBase):
-    """Основна таблиця: Журнал обслуговування фотопасток."""
+    """Main table: camera trap service visit log."""
     __tablename__ = 'service_visits'
-    
+
     id = Column(Integer, primary_key=True)
     location_id = Column(Integer, ForeignKey('locations.id'), nullable=False, index=True)
-    user_id = Column(Integer, nullable=False)  # ID користувача з основної БД
+    user_id = Column(Integer, nullable=False)  # User ID from the main database
     visit_datetime = Column(DateTime, nullable=False, default=func.now())
-    
+
     visit_purpose_id = Column(Integer, ForeignKey('visit_purposes.id'), nullable=False)
-    battery_type_id = Column(Integer, ForeignKey('battery_types.id'), nullable=True) # Може бути NULL, якщо заміна не проводилась
-    
-    is_camera_operational = Column(Boolean, nullable=True) # True/False/NULL (невідомо)
+    battery_type_id = Column(Integer, ForeignKey('battery_types.id'), nullable=True) # Can be NULL if no battery was replaced
+
+    is_camera_operational = Column(Boolean, nullable=True) # True/False/NULL (unknown)
     sd_card_changed = Column(Boolean, nullable=False, default=False)
-    photos_on_card = Column(Integer, nullable=True) # Необов'язкове поле
+    photos_on_card = Column(Integer, nullable=True) # Optional field
     comments = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
-    # Зв'язки
+    # Relationships
     location = relationship('Location', back_populates='service_visits')
     visit_purpose = relationship('VisitPurpose')
     battery_type = relationship('BatteryType')
@@ -482,9 +480,9 @@ class ServiceVisit(CTBase):
         return f'<ServiceVisit LocID {self.location_id} at {self.visit_datetime}>'
 
 class LocationStats(CTBase):
-    """
-    Таблиця для зберігання розрахованої статистики по кожній локації.
-    Оновлюється фоновим процесом для швидкого доступу.
+    """Table for storing computed statistics per location.
+
+    Updated by a background process for fast access.
     """
     __tablename__ = 'location_stats'
 
@@ -497,7 +495,7 @@ class LocationStats(CTBase):
     other_observations = Column(Integer, nullable=False, default=0) # species_id < -1
     last_calculated_at = Column(DateTime, nullable=True)
 
-    # Зв'язок "один-до-одного" з локацією
+    # One-to-one relationship with Location
     location = relationship('Location', backref=backref('stats', uselist=False))
 
     def __repr__(self):
@@ -505,35 +503,36 @@ class LocationStats(CTBase):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# AI-РУНЕР: автоматична класифікація зображень нейромережею
+# AI RUNNER: automatic image classification by a neural network
 # ════════════════════════════════════════════════════════════════════════════
-# Окремий допоміжний підмодуль. Прогнози не йдуть у фінальні `identifications`,
-# а лише підказують верифікатору вид. Worker (`services/biomon_ai/`) живе в
-# окремому процесі з власним venv (torch + ultralytics), щоб не вантажити
-# веб-додаток. Якщо worker або модель не встановлені — Flask цього просто
-# не помічає (feature-flag перевіряє наявність таблиць + кофіг).
+# Separate auxiliary sub-module. Predictions do not go into the final
+# `identifications` table — they only suggest a species to the verifier.
+# The worker (`services/biomon_ai/`) lives in a separate process with its
+# own venv (torch + ultralytics) so the web app is not burdened. If the
+# worker or model are not installed, Flask simply ignores this
+# (a feature-flag checks for table presence + config).
 # ════════════════════════════════════════════════════════════════════════════
 
 class AIModelLevel(CTBase):
-    """Довідник рівнів детектора DeepFaune (нормалізація, щоб не дублювати
-    текст детектора в кожному рядку ai_models / ai_predictions).
+    """Lookup table for DeepFaune detector levels (normalisation to avoid
+    duplicating the detector string in every ai_models / ai_predictions row).
 
-    DeepFaune v1.4.1 має три базові детектори, які можна комбінувати в
-    ensemble. accuracy_rank упорядковує їх за точністю (більше = точніше) —
-    сторінка ідентифікації може віддавати перевагу прогнозу з вищим рівнем.
+    DeepFaune v1.4.1 has three base detectors that can be combined into an
+    ensemble. ``accuracy_rank`` orders them by accuracy (higher = more accurate) —
+    the identification page may prefer predictions from a higher-ranked level.
 
-        DF       deepfaune-yolov8s_960            швидкий
-        MDS      md_v1000.0.0-sorrel              середній (MegaDetector Sorrel)
-        DF+MDS   deepfaune-yolov8s_960 + sorrel   ensemble (поточний прод)
-        MDR      md_v1000.0.0-redwood             точний (MegaDetector Redwood, 1280px)
+        DF       deepfaune-yolov8s_960            fast
+        MDS      md_v1000.0.0-sorrel              medium (MegaDetector Sorrel)
+        DF+MDS   deepfaune-yolov8s_960 + sorrel   ensemble (current prod)
+        MDR      md_v1000.0.0-redwood             accurate (MegaDetector Redwood, 1280px)
     """
     __tablename__ = 'ai_model_levels'
 
     id            = Column(Integer, primary_key=True)
     code          = Column(String(32), nullable=False, unique=True)   # 'DF' | 'MDS' | 'DF+MDS' | 'MDR'
-    name          = Column(String(128), nullable=False)               # людська назва
-    detector      = Column(String(128), nullable=True)                # рядок детектора як у config_json
-    accuracy_rank = Column(Integer, nullable=False, default=0)        # більше = точніше
+    name          = Column(String(128), nullable=False)               # human-readable name
+    detector      = Column(String(128), nullable=True)                # detector string as in config_json
+    accuracy_rank = Column(Integer, nullable=False, default=0)        # higher = more accurate
     description   = Column(Text, nullable=True)
     created_at    = Column(DateTime, default=func.now(), nullable=False)
 
@@ -544,11 +543,11 @@ class AIModelLevel(CTBase):
 
 
 class AIModel(CTBase):
-    """Реєстр AI-моделей, що використовувалися для класифікації.
+    """Registry of AI models used for classification.
 
-    Один рядок на пару (name, version). is_active=True для тієї, яку
-    зараз використовує worker. Дозволяє трекати, яка модель видала
-    конкретний прогноз, і безболісно мігрувати на нову модель/класифікатор.
+    One row per (name, version) pair. is_active=True for the model currently
+    used by the worker. Enables tracking which model produced a specific
+    prediction and seamless migration to a new model/classifier.
     """
     __tablename__ = 'ai_models'
 
@@ -557,15 +556,15 @@ class AIModel(CTBase):
     version     = Column(String(32), nullable=False)   # '1.4.1'
     config_json = Column(JSONB, nullable=True)         # {detector, threshold, ...}
     is_active   = Column(Boolean, default=True, nullable=False)
-    level_id    = Column(Integer, ForeignKey('ai_model_levels.id'), nullable=True)  # рівень детектора (довідник)
+    level_id    = Column(Integer, ForeignKey('ai_model_levels.id'), nullable=True)  # detector level (lookup)
     created_at  = Column(DateTime, default=func.now(), nullable=False)
 
     predictions = relationship('AIPrediction', back_populates='model')
     level       = relationship('AIModelLevel', back_populates='models')
 
     __table_args__ = (
-        # Розрізняємо моделі ще й за рівнем детектора: та сама версія DeepFaune
-        # може бути прогнана на різних рівнях (DF+MDS на проді, MDR імпортом).
+        # Models are also distinguished by detector level: the same DeepFaune version
+        # may have been run at different levels (DF+MDS on prod, MDR via import).
         UniqueConstraint('name', 'version', 'level_id', name='uq_ai_models_name_version_level'),
     )
 
@@ -574,52 +573,52 @@ class AIModel(CTBase):
 
 
 class AIPrediction(CTBase):
-    """Прогноз AI по одному фото. Одна модель = один рядок на фото.
+    """AI prediction for a single photo. One model = one row per photo.
 
-    Зберігаємо одразу 3 варіанти прогнозу (sequence-aware, per-photo, top1)
-    щоб у майбутньому можна було перебудовувати фільтри (наприклад,
-    змінити поріг впевненості) без перепрогону моделі.
+    Stores three prediction variants simultaneously (sequence-aware, per-photo,
+    top1) so that filters can be rebuilt in the future (e.g. changing the
+    confidence threshold) without re-running the model.
 
-    `photo_id` — без `ondelete=CASCADE` навмисно: cleanup-таски CT лише
-    архівують Photo (status='archived'), сам запис не видаляють — тож
-    FK залишається валідним. Якщо колись Photo все-таки буде видалятись —
-    схему доведеться денормалізувати (зберігати path/captured_at у самому
-    `ai_predictions`).
+    ``photo_id`` deliberately has no ``ondelete=CASCADE``: CT cleanup tasks only
+    archive Photo records (status='archived') without deleting the row itself —
+    so the FK remains valid. If Photo records are ever physically deleted, the
+    schema will need to be denormalised (store path/captured_at directly in
+    ``ai_predictions``).
     """
     __tablename__ = 'ai_predictions'
 
     id                    = Column(Integer, primary_key=True)
     photo_id              = Column(Integer, ForeignKey('photos.id'), nullable=False)
-    observation_id        = Column(Integer, ForeignKey('observations.id'), nullable=False)  # денормалізовано для швидких фільтрів
+    observation_id        = Column(Integer, ForeignKey('observations.id'), nullable=False)  # denormalized for fast filtering
     model_id              = Column(Integer, ForeignKey('ai_models.id'), nullable=False)
 
-    # Sequence-aware прогноз (DeepFaune агрегує по серії)
-    prediction_label      = Column(String(64), nullable=True)   # сирий label від моделі, напр. 'roe deer'
-    prediction_species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # nullable: коли мапінга немає
+    # Sequence-aware prediction (DeepFaune aggregates over the series)
+    prediction_label      = Column(String(64), nullable=True)   # raw label from the model, e.g. 'roe deer'
+    prediction_species_id = Column(Integer, ForeignKey('species.id'), nullable=True)  # nullable: when no mapping exists
     prediction_score      = Column(Float, nullable=True)        # 0..1
 
-    # Per-photo (без агрегації по серії)
+    # Per-photo (no aggregation over the series)
     base_label            = Column(String(64), nullable=True)
     base_score            = Column(Float, nullable=True)
 
-    # Топ-1 завжди, незалежно від threshold — для майбутніх метрик
+    # Top-1 always, regardless of threshold — for future metrics
     top1_label            = Column(String(64), nullable=True)
     top1_score            = Column(Float, nullable=True)
 
-    # Допоміжне
+    # Auxiliary fields
     animal_count          = Column(Integer, nullable=True)
     human_count           = Column(Integer, nullable=True)
-    bbox_json             = Column(JSONB, nullable=True)        # найкращий bbox від детектора
+    bbox_json             = Column(JSONB, nullable=True)        # best bounding box from the detector
 
-    # Чи збігся прогноз із консенсусним видом — заповнюється у момент
-    # досягнення консенсусу (Idea 4). nullable: None = ще не оцінено
-    # (pending-серія) або AI не визначив вид (prediction_species_id IS NULL).
+    # Whether the prediction matched the consensus species — filled when consensus
+    # is reached (Idea 4). nullable: None = not yet evaluated
+    # (pending series) or AI did not identify a species (prediction_species_id IS NULL).
     was_correct           = Column(Boolean, nullable=True)
 
     processed_at          = Column(DateTime, default=func.now(), nullable=False)
     error_msg             = Column(Text, nullable=True)
 
-    # Зв'язки
+    # Relationships
     photo            = relationship('Photo')
     observation      = relationship('Observation')
     model            = relationship('AIModel', back_populates='predictions')
@@ -627,7 +626,7 @@ class AIPrediction(CTBase):
 
     __table_args__ = (
         UniqueConstraint('photo_id', 'model_id', name='uq_ai_predictions_photo_model'),
-        # Найважливіший індекс — фільтр на /identify: "знайти серії, де AI каже X"
+        # Most important index — filter on /identify: "find series where AI says X"
         Index('idx_ai_pred_filter',
               'model_id', 'prediction_species_id', 'observation_id'),
         Index('idx_ai_pred_observation', 'observation_id'),
@@ -638,16 +637,16 @@ class AIPrediction(CTBase):
 
 
 class AILabelMap(CTBase):
-    """Довідник: сирий label від DeepFaune → biomon Species.id.
+    """Lookup table: raw DeepFaune label → biomon Species.id.
 
-    ЄДИНЕ джерело правди для мапінгу labels, спільне для:
-      • worker (services/biomon_ai) — читає при старті, fallback на
-        вшитий DEEPFAUNE_TO_SPECIES_ID, якщо таблиця порожня/недоступна;
-      • сторінки імпорту класифікацій (app/camera_traps).
+    The SINGLE source of truth for label mapping, shared by:
+      • the worker (services/biomon_ai) — read at startup, falls back to
+        the hard-coded DEEPFAUNE_TO_SPECIES_ID if the table is empty/unavailable;
+      • the classification import page (app/camera_traps).
 
-    species_id = NULL означає, що виду немає в Species — сирий label усе
-    одно зберігається в ai_predictions.prediction_label, тож при додаванні
-    виду можна back-fill. Редагується без редеплою коду.
+    species_id = NULL means the species is not in Species — the raw label is
+    still stored in ai_predictions.prediction_label, so a back-fill is possible
+    once the species is added. Editable without a code redeploy.
     """
     __tablename__ = 'ai_label_map'
 
@@ -663,31 +662,32 @@ class AILabelMap(CTBase):
 
 
 class AIRunQueue(CTBase):
-    """Черга ручних запусків AI-воркера (адмін-кнопка).
+    """Queue for manual AI worker runs (admin button).
 
-    Worker (cron або systemd-timer) періодично сканує цю таблицю — якщо
-    є pending записи, обробляє вказану кількість observation і записує
-    результат. Для нічного автоматичного batch worker не використовує
-    чергу — просто бере N=AI_MAX_PER_RUN найстаріших pending observation.
+    The worker (cron or systemd-timer) periodically scans this table — if
+    there are pending records it processes the specified number of observations
+    and writes the result. For the nightly automatic batch the worker does NOT
+    use the queue — it simply picks the N=AI_MAX_PER_RUN oldest pending
+    observations.
 
-    `requested_by` — id користувача з ОСНОВНОЇ БД (users), а не з ct_db.
-    FK не ставимо, бо це cross-DB; зберігаємо як простий INTEGER.
+    ``requested_by`` is a user id from the MAIN database (users), not ct_db.
+    No FK is set because this is a cross-DB reference; stored as a plain INTEGER.
     """
     __tablename__ = 'ai_run_queue'
 
     id              = Column(Integer, primary_key=True)
-    requested_by    = Column(Integer, nullable=False)            # users.id з основної БД
+    requested_by    = Column(Integer, nullable=False)            # users.id from the main database
     requested_at    = Column(DateTime, default=func.now(), nullable=False)
-    n_observations  = Column(Integer, nullable=False)            # скільки серій оброблятиме worker
+    n_observations  = Column(Integer, nullable=False)            # number of observations the worker will process
     status          = Column(String(16), default='pending', nullable=False)  # pending|running|done|failed
     started_at      = Column(DateTime, nullable=True)
     finished_at     = Column(DateTime, nullable=True)
-    processed_count = Column(Integer, nullable=True)             # фактично оброблено
+    processed_count = Column(Integer, nullable=True)             # actual number processed
     error_msg       = Column(Text, nullable=True)
 
-    # Згенерована STORED колонка в PostgreSQL: finished_at - started_at.
-    # БД заповнює сама при кожному UPDATE; Python НЕ пише сюди.
-    # Computed(..., persisted=True) → STORED (не VIRTUAL).
+    # Generated STORED column in PostgreSQL: finished_at - started_at.
+    # The DB fills this on every UPDATE; Python does NOT write here.
+    # Computed(..., persisted=True) → STORED (not VIRTUAL).
     duration        = Column(Interval, Computed('finished_at - started_at', persisted=True), nullable=True)
 
     __table_args__ = (
@@ -699,33 +699,33 @@ class AIRunQueue(CTBase):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# CLEANUP-LOG: журнал dry-run/execute для очистки сиріт і невдалих batchʼів
+# CLEANUP LOG: audit log for dry-run/execute orphan and failed-batch cleanup
 # ════════════════════════════════════════════════════════════════════════════
-# Cleanup складається з двох кроків (analyze → execute). Один рядок у цій
-# таблиці супроводжує обидва: спочатку зберігається повний звіт у
-# report_json, після execute наповнюються лічильники deleted_*.
-# Retention: рядки старші CLEANUP_LOG_RETENTION_DAYS видаляються при
-# наступному analyze (см. cleanup.purge_old_logs).
+# Cleanup consists of two steps (analyze → execute). One row in this table
+# accompanies both: the full report is stored in report_json first, then
+# the deleted_* counters are filled after execute.
+# Retention: rows older than CLEANUP_LOG_RETENTION_DAYS are removed on the
+# next analyze call (see cleanup.purge_old_logs).
 # ════════════════════════════════════════════════════════════════════════════
 
 class CleanupLog(CTBase):
-    """Журнал операцій очистки."""
+    """Cleanup operations log."""
     __tablename__ = 'cleanup_log'
 
     id              = Column(String(36), primary_key=True)  # UUID
     kind            = Column(String(20), nullable=False)    # 'analysis' | 'execution'
     status          = Column(String(20), nullable=False)    # 'analyzing'|'analyzed'|'executing'|'completed'|'failed'
-    triggered_by    = Column(Integer, nullable=False)       # users.id з основної БД
+    triggered_by    = Column(Integer, nullable=False)       # users.id from the main database
     started_at      = Column(DateTime, default=func.now(), nullable=False)
     finished_at     = Column(DateTime, nullable=True)
 
-    # Параметри запуску
+    # Launch parameters
     threshold_hours = Column(Integer, nullable=False, default=0)
 
-    # Звіт після analyze (списки + агрегати)
+    # Report after analyze (lists + aggregates)
     report_json     = Column(JSONB, nullable=True)
 
-    # Підсумки виконання
+    # Execution summary
     batches_examined = Column(Integer, nullable=True)
     batches_marked_failed = Column(Integer, nullable=True)
     photos_deleted  = Column(Integer, nullable=True)
