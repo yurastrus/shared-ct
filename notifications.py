@@ -1,7 +1,4 @@
-# app/camera_traps/notifications.py
-"""
-Відправка email-нагадувань про непроідентифіковані серії фотопасток.
-"""
+"""Email reminders to verifiers about pending (unidentified) camera-trap series."""
 from flask import current_app
 from flask_mail import Message
 from sqlalchemy import select, or_
@@ -16,11 +13,13 @@ from app.camera_traps.models import (
 
 
 def send_identification_reminders():
-    """
-    Проходить по всіх користувачах з роллю ct_verifier та email,
-    рахує їхні pending серії і надсилає нагадування тим, у кого > 0.
+    """Email every ct_verifier whose pending-series count is high enough.
 
-    Повертає (sent, skipped) — кількість надісланих і пропущених листів.
+    Iterates ct_verifier users that have an email, counts their pending series,
+    and sends a reminder to those at or above the threshold.
+
+    Returns:
+        tuple[int, int]: (sent, skipped) — emails sent and users skipped.
     """
     ct_verifier_role = Role.query.filter_by(name='ct_verifier').first()
     if not ct_verifier_role:
@@ -61,9 +60,9 @@ def send_identification_reminders():
 
 
 def _count_pending_for_user(ct_session, user):
-    """
-    Рахує кількість pending серій, доступних для ідентифікації даним користувачем.
-    Логіка ідентична /api/identification-stats.
+    """Count pending series still available for this user to identify.
+
+    Mirrors the logic of /api/identification-stats.
     """
     user_identified_photos = (
         ct_session.query(Identification.photo_id)
@@ -126,7 +125,7 @@ def _send_reminder_email(user, count):
 
 
 def _pluralize_uk(n, form1, form2, form5):
-    """Повертає правильну форму іменника для числівника (українська мова)."""
+    """Return the correct Ukrainian noun form for a numeral (1 / 2-4 / 5+ rule)."""
     n = abs(n) % 100
     n1 = n % 10
     if 11 <= n <= 19:
