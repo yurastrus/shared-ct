@@ -3306,7 +3306,7 @@ def manage_locations(lang_code):
         else:
             loc_inst_map = {}
 
-        # Установи для фільтра — тільки ті, що є у видимих локаціях
+        # Institutions for the filter — only those present in visible locations
         used_inst_ids = set()
         for ids in loc_inst_map.values():
             used_inst_ids.update(ids)
@@ -3333,10 +3333,10 @@ def manage_locations(lang_code):
 
         geoserver_url = current_app.config['GEOSERVER_URL']
 
-        # Менеджер з установами теж може редагувати/створювати локації
+        # Managers with institutions can also edit/create locations
         can_edit = is_admin or bool(user_inst_ids)
 
-        # Список установ для форми створення локації
+        # List of institutions for the location creation form
         if is_admin:
             user_institutions = Institution.query.order_by(Institution.name_uk).all()
         else:
@@ -3360,7 +3360,7 @@ def manage_locations(lang_code):
     finally:
         close_ct_session()
 
-# ── Деплойменти ───────────────────────────────────────────────────────────────
+# ── Deployments ──────────────────────────────────────────────────────────────
 DEPLOYMENT_STR_FIELDS = ['name', 'study_season', 'study_design', 'camera_id',
                          'camera_model', 'serial_number']
 DEPLOYMENT_INT_FIELDS = ['study_year', 'n_days_working', 'n_photos']
@@ -3400,8 +3400,8 @@ def _deployment_to_dict(dep):
 
 
 def _apply_deployment_fields(dep, data):
-    """Застосовує надіслані поля до деплойменту (спільне для create/update).
-    Кидає ValueError на невірний формат дати/числа."""
+    """Apply submitted fields to a deployment (shared by create/update).
+    Raises ValueError on invalid date/number format."""
     from datetime import datetime as _dt
     for f in DEPLOYMENT_STR_FIELDS:
         if f in data:
@@ -3433,7 +3433,7 @@ def _apply_deployment_fields(dep, data):
 
 
 def _user_can_access_location(ct_session, location_id):
-    """admin/quality_control -> завжди; manager -> лише якщо локація належить його установі."""
+    """admin/quality_control → always; manager → only if the location belongs to their institution."""
     if current_user.has_role('admin') or current_user.has_role('quality_control'):
         return True
     user_inst_ids = [inst.id for inst in current_user.institutions]
@@ -3452,7 +3452,7 @@ def _user_can_access_location(ct_session, location_id):
 @login_required
 @role_required('manager', 'quality_control')
 def manage_deployments(lang_code):
-    """Сторінка управління деплойментами: карта локацій + таблиця/форма деплойментів."""
+    """Deployment management page: location map + deployments table/form."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
@@ -3473,7 +3473,7 @@ def manage_deployments(lang_code):
 
         loc_ids = [loc.id for loc in locations_objects]
 
-        # Зв'язки локацій з установами (для фільтра)
+        # Location–institution links (for the filter)
         if loc_ids:
             inst_rows = ct_session.execute(
                 select(location_institutions.c.location_id, location_institutions.c.institution_id)
@@ -3496,8 +3496,8 @@ def manage_deployments(lang_code):
         else:
             filter_institutions = []
 
-        # Деплойменти видимих локацій. Адмін / quality_control також бачать деплойменти
-        # без GPS (location_id IS NULL); звичайний менеджер — лише з локацією.
+        # Deployments for visible locations. Admin / quality_control also see deployments
+        # without GPS (location_id IS NULL); regular managers — only those with a location.
         dep_q = ct_session.query(Deployment)
         if is_full_access:
             cond = Deployment.location_id.is_(None)
@@ -3545,7 +3545,7 @@ def manage_deployments(lang_code):
                                geoserver_url=current_app.config['GEOSERVER_URL'],
                                filter_institutions=filter_institutions,
                                years=years,
-                               is_admin=is_full_access,  # quality_control теж бачить усе
+                               is_admin=is_full_access,  # quality_control also sees everything
                                bool_fields=DEPLOYMENT_BOOL_FIELDS)
     except Exception as e:
         current_app.logger.error(f"Error loading deployment management page: {e}", exc_info=True)
@@ -3575,7 +3575,7 @@ def api_get_deployment(lang_code, deployment_id):
 @login_required
 @role_required('manager', 'quality_control')
 def update_deployment(lang_code, deployment_id):
-    """Оновлення полів деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
+    """Update deployment fields. Managers may only edit deployments for their institution's locations."""
     ct_session = get_ct_session()
     try:
         dep = ct_session.query(Deployment).get(deployment_id)
@@ -3607,7 +3607,7 @@ def update_deployment(lang_code, deployment_id):
 @login_required
 @role_required('manager', 'quality_control')
 def api_create_deployment(lang_code):
-    """Створення нового деплойменту на вибраній локації."""
+    """Create a new deployment for the selected location."""
     ct_session = get_ct_session()
     try:
         data = request.json or {}
@@ -3645,7 +3645,7 @@ def api_create_deployment(lang_code):
 @login_required
 @role_required('manager', 'quality_control')
 def delete_deployment(lang_code, deployment_id):
-    """Видалення деплойменту. Менеджер — лише деплойменти локацій своїх установ."""
+    """Delete a deployment. Managers may only delete deployments for their institution's locations."""
     ct_session = get_ct_session()
     try:
         dep = ct_session.query(Deployment).get(deployment_id)
@@ -3666,7 +3666,7 @@ def delete_deployment(lang_code, deployment_id):
         close_ct_session()
 
 
-# Експорт: (заголовок як у вихідному Екселі -> атрибут моделі Deployment)
+# Export: (column header as in the original Excel → Deployment model attribute)
 DEPLOYMENT_EXPORT_QC = [
     ('qc_non_functional', 'qc_non_functional'),
     ('qc_stolen', 'qc_stolen'),
@@ -3697,13 +3697,13 @@ DEPLOYMENT_EXPORT_QC = [
 
 
 def _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institution_id):
-    """Множина location_id з урахуванням ролі та (опційного) фільтра установи."""
+    """Return a list of location_ids respecting the user's role and an optional institution filter."""
     if institution_id:
         if not is_admin and institution_id not in user_inst_ids:
-            return None  # немає доступу
+            return None  # no access
         target = [institution_id]
     elif is_admin:
-        target = None  # усі
+        target = None  # all locations
     else:
         target = user_inst_ids
     if target is None:
@@ -3719,8 +3719,8 @@ def _resolve_export_location_ids(ct_session, is_admin, user_inst_ids, institutio
 @login_required
 @role_required('manager', 'quality_control')
 def export_deployments(lang_code):
-    """Експорт деплойментів в Ексель з урахуванням фільтрів (установа, рік).
-    Структура файлу повторює вихідний ARD-Ексель + назва установи й природний регіон."""
+    """Export deployments to Excel respecting filters (institution, year).
+    File structure mirrors the original ARD Excel plus institution name and ecoregion."""
     import io
     import pandas as pd
 
@@ -3745,7 +3745,7 @@ def export_deployments(lang_code):
                 q = q.filter(Deployment.study_year == year)
             deps = q.order_by(Deployment.study_year, Deployment.location_id, Deployment.name).all()
 
-        # Локації (координати) + мапа location -> institution
+        # Locations (coordinates) + location → institution map
         locs = {l.id: l for l in ct_session.query(Location).filter(Location.id.in_(loc_ids)).all()} if loc_ids else {}
         loc_inst = {}
         if loc_ids:
@@ -3753,7 +3753,7 @@ def export_deployments(lang_code):
                 select(location_institutions.c.location_id, location_institutions.c.institution_id)
                 .where(location_institutions.c.location_id.in_(loc_ids))
             ).fetchall():
-                loc_inst.setdefault(row.location_id, row.institution_id)  # перша установа
+                loc_inst.setdefault(row.location_id, row.institution_id)  # first institution
 
         inst_ids = set(loc_inst.values())
         inst_map = {i.id: i for i in Institution.query.filter(Institution.id.in_(inst_ids)).all()} if inst_ids else {}
@@ -3832,8 +3832,8 @@ def export_deployments(lang_code):
         close_ct_session()
 
 
-# Похідні QC-поля (обчислюються на льоту, як у R-скрипті аналізу локацій).
-# Критичні / некритичні — для впорядкування й кольору на графіках.
+# Derived QC fields (computed on the fly, as in the R location-analysis script).
+# Critical / non-critical — for sort order and chart colouring.
 QUALITY_FIELDS_CRITICAL = [
     'qc_summary', 'qc_data_not_usable', 'qc_no_gps_coordinates', 'qc_feeding_location',
     'qc_installation_incorrect', 'qc_placement_incorrect', 'qc_hardware_issue',
@@ -3847,7 +3847,7 @@ QUALITY_FIELDS_NONCRITICAL = [
     'qc_settings_issue', 'qc_firmware_issue', 'qc_stolen',
 ]
 
-# Порядок QC-фільтрів як у вихідному Екселі (+ похідні зведені — в кінці).
+# QC filter order as in the original Excel (+ derived summary fields at the end).
 QC_FILTER_ORDER = [
     'qc_non_functional', 'qc_stolen', 'qc_hardware_issue', 'qc_firmware_issue',
     'qc_settings_issue', 'qc_battery_issue', 'qc_sd_issue', 'qc_no_data_uploaded_by_pa',
@@ -3861,12 +3861,12 @@ QC_FILTER_ORDER = [
 
 
 def _b(v):
-    """None трактуємо як False для логіки якості (де треба обчислити «чи проблема»)."""
+    """Treat None as False for quality logic (where we need to check whether there is a problem)."""
     return bool(v) if v is not None else False
 
 
 def _kor(*vals):
-    """3-значне OR (як в R). True переважає; за відсутності True NA дає NA."""
+    """Three-valued OR (as in R). True dominates; in the absence of True, NA yields NA."""
     has_na = False
     for v in vals:
         if v is True:
@@ -3877,7 +3877,7 @@ def _kor(*vals):
 
 
 def _kand(a, b):
-    """3-значне AND. False переважає; за відсутності False NA дає NA."""
+    """Three-valued AND. False dominates; in the absence of False, NA yields NA."""
     if a is False or b is False:
         return False
     if a is None or b is None:
@@ -3889,20 +3889,20 @@ def _kand(a, b):
 @login_required
 @role_required('manager', 'quality_control')
 def data_quality(lang_code):
-    """Сторінка оцінки якості даних: карта + інтерактивні графіки QC.
-    Похідні поля рахуються як у R-скрипті 01_Camera_trap_location_analysis."""
+    """Data quality assessment page: map + interactive QC charts.
+    Derived fields are computed as in R script 01_Camera_trap_location_analysis."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
         user_inst_ids = [inst.id for inst in current_user.institutions]
-        # _resolve_export_location_ids приймає is_admin — для quality_control «увесь доступ»
-        # передаємо True, щоб отримати ВСІ локації.
+        # _resolve_export_location_ids takes is_admin — pass True for quality_control so
+        # it gets ALL locations (full access).
         loc_ids = _resolve_export_location_ids(ct_session, is_full_access, user_inst_ids, None)
         if not loc_ids:
             loc_ids = []
 
-        # Адмін / quality_control бачать також деплойменти без GPS (location_id IS NULL).
+        # Admin / quality_control also see deployments without GPS (location_id IS NULL).
         dep_q = ct_session.query(Deployment)
         if is_full_access:
             cond = Deployment.location_id.is_(None)
@@ -3935,8 +3935,8 @@ def data_quality(lang_code):
             if n_days is None and dep.start_date and dep.end_date:
                 n_days = (dep.end_date - dep.start_date).days
 
-            qc_no_gps = (lat is None or lon is None)  # завжди True/False
-            # 3-значна логіка (як в R-скрипті): NA OR NA = NA; NA OR TRUE = TRUE; FALSE OR FALSE = FALSE.
+            qc_no_gps = (lat is None or lon is None)  # always True/False
+            # Three-valued logic (as in R): NA OR NA = NA; NA OR TRUE = TRUE; FALSE OR FALSE = FALSE.
             data_not_usable = _kor(
                 dep.qc_data_not_usable,
                 qc_no_gps,
@@ -3957,7 +3957,7 @@ def data_quality(lang_code):
                 elif dep.study_season == 'Summer':
                     min_days_not_reached = n_days < 60
 
-            # Для статусу маркера на мапі трактуємо None як «без проблеми» (None != True).
+            # For map marker status, treat None as "no problem" (None != True).
             if qc_summary is True:
                 status = 'issue'
             elif dep.study_season == 'Summer':
@@ -3974,18 +3974,18 @@ def data_quality(lang_code):
                 'study_year': dep.study_year, 'study_season': dep.study_season,
                 'study_design': dep.study_design, 'camera_model': dep.camera_model,
                 'camera_id': dep.camera_id, 'n_days_working': n_days, 'n_photos': dep.n_photos,
-                # похідні QC
+                # derived QC fields
                 'qc_no_gps_coordinates': qc_no_gps,
                 'qc_data_not_usable': data_not_usable,
                 'qc_summary': qc_summary,
                 'qc_min_days_not_reached': min_days_not_reached,
             }
             for f in DEPLOYMENT_BOOL_FIELDS:
-                if f not in rec:  # не перетираємо похідні
+                if f not in rec:  # don't overwrite derived fields
                     rec[f] = dep.__getattribute__(f)
             records.append(rec)
 
-        # Опції категоріальних фільтрів
+        # Categorical filter options
         def distinct(key):
             return sorted({r[key] for r in records if r[key] not in (None, '')},
                           key=lambda x: str(x))
@@ -4015,12 +4015,12 @@ def data_quality(lang_code):
 @login_required
 @role_required('manager')
 def update_location(lang_code, location_id):
-    """API для оновлення даних локації. Менеджер може оновлювати тільки локації своїх установ."""
+    """API for updating location data. Managers may only update locations of their own institutions."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
 
-        # Перевірка доступу до локації за установою
+        # Check access to the location by institution
         if not is_admin:
             user_inst_ids = [inst.id for inst in current_user.institutions]
             if not user_inst_ids:
@@ -4048,7 +4048,7 @@ def update_location(lang_code, location_id):
         selected_biotopes = ct_session.query(Biotope).filter(Biotope.id.in_(biotope_ids)).all()
         location.biotopes = selected_biotopes
 
-        # Оновлення установ
+        # Update institutions
         new_inst_ids = data.get('institution_ids')
         if new_inst_ids is not None:
             if not is_admin:
@@ -4085,7 +4085,7 @@ def update_location(lang_code, location_id):
 @login_required
 @role_required('manager')
 def api_create_location_admin(lang_code):
-    """API для створення нової локації. Менеджер створює тільки для своїх установ."""
+    """API for creating a new location. Managers may only create locations for their own institutions."""
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
@@ -4104,7 +4104,7 @@ def api_create_location_admin(lang_code):
         if lat is None or lon is None:
             return jsonify({'success': False, 'error': _('Вкажіть координати.')}), 400
 
-        # Перевірка: менеджер може призначати тільки свої установи
+        # Validation: managers can only assign their own institutions
         if institution_ids and not is_admin:
             if not all(i_id in user_inst_ids for i_id in institution_ids):
                 return jsonify({'success': False, 'error': _('Немає доступу до цієї установи.')}), 403
@@ -4148,11 +4148,11 @@ def api_create_location_admin(lang_code):
 @login_required
 @role_required('admin')
 def manual_delete_originals(lang_code):
-    """Маршрут для ручного запуску процесу видалення оригіналів, що не є у вибраному."""
+    """Route for manually triggering deletion of original files not marked as favourite."""
     try:
         current_app.logger.info(f"Manual deletion of unfavorited originals triggered by admin: {current_user.username}")
-        
-        # Імпортуємо нову функцію
+
+        # Import the helper
         from .background_tasks import delete_unfavorited_raw_files
         
         result = delete_unfavorited_raw_files()
@@ -4173,15 +4173,15 @@ def manual_delete_originals(lang_code):
 @role_required('admin')
 def manual_run_analytics(lang_code):
     """
-    Стартує ПОВНИЙ перерахунок аналітики у фоні й повертається миттєво.
+    Start a FULL analytics recalculation in the background and return immediately.
 
-    Раніше перерахунок (~3 хв) виконувався синхронно в запиті й перевищував
-    gunicorn --timeout → воркер убивався → 500. Тепер start_async_analytics
-    запускає threading-потік, а клієнт опитує /admin/analytics/status.
+    Previously the recalculation (~3 min) ran synchronously and exceeded
+    gunicorn --timeout → worker killed → 500. Now start_async_analytics
+    launches a threading thread while the client polls /admin/analytics/status.
 
-    Відповідає двома способами:
-      • AJAX (Accept: application/json) → 202/409 JSON (для polling-UI);
-      • звичайна форма → flash + redirect (graceful fallback без JS).
+    Responds in two ways:
+      • AJAX (Accept: application/json) → 202/409 JSON (for polling UI);
+      • regular form POST → flash + redirect (graceful fallback without JS).
     """
     from .analytics_calculator import start_async_analytics
 
@@ -4219,7 +4219,7 @@ def manual_run_analytics(lang_code):
 @login_required
 @role_required('admin')
 def analytics_status(lang_code):
-    """Polling: повертає поточний стан фонового перерахунку аналітики."""
+    """Polling endpoint: return current state of the background analytics recalculation."""
     from .analytics_calculator import get_analytics_status
     try:
         return jsonify(get_analytics_status()), 200
@@ -4227,15 +4227,13 @@ def analytics_status(lang_code):
         current_app.logger.exception(f"analytics_status failed: {e}")
         return jsonify({'error': _('Помилка отримання статусу')}), 500
 
-# --- СЕКЦІЯ ЕКСПОРТУ ДАНИХ (додати в кінець файлу routes.py) ---
-
 @camera_traps_bp.route('/data-export')
 @login_required
 @role_required('analyst')
 def ct_data_export(lang_code):
     """
-    Сторінка для підготовки та експорту даних з модуля фотопасток.
-    Доступно: будь-який користувач з can_export=True хоча б для однієї установи; admin — без обмежень.
+    Page for preparing and exporting data from the camera-traps module.
+    Access: any user with can_export=True for at least one institution; admin — no restrictions.
     """
     g.lang_code = lang_code
     try:
@@ -4257,9 +4255,7 @@ def ct_data_export(lang_code):
 @camera_traps_bp.route('/api/get-taxonomic-filters')
 @login_required
 def api_get_ct_taxonomic_filters(lang_code):
-    """
-    API для отримання динамічних таксономічних фільтрів для фотопасток.
-    """
+    """API for fetching dynamic taxonomic filters for camera traps."""
     session = None
     try:
         session = get_ct_session()
@@ -4281,13 +4277,13 @@ def api_get_ct_taxonomic_filters(lang_code):
             params = {}
             for key, value in filter_by.items():
                 if value:
-                    # Адаптуємо назви колонок до моделі
+                    # Map request parameter names to model column names
                     db_column = 'class' if key == 'class' else 'order_rank' if key == 'order' else key
                     conditions.append(f"s.{db_column} = :{key}")
                     params[key] = value
             
             where_clause = "WHERE " + " AND ".join(conditions)
-            # Звертаємось до колонки "class" в лапках, щоб уникнути помилки SQL
+            # Quote the "class" column name to avoid an SQL keyword conflict
             query_column = '"class"' if column == 'class' else column
             query = text(f"SELECT DISTINCT s.{query_column} FROM species s {where_clause} ORDER BY s.{query_column}")
             return [row[0] for row in conn.execute(query, params).fetchall()]
@@ -4340,9 +4336,9 @@ def api_get_ct_taxonomic_filters(lang_code):
 
 def _get_export_institution_ids():
     """
-    Повертає список institution_ids для поточного запиту з урахуванням прав.
-    - admin: може вибирати будь-які; якщо не передано — None (без обмеження).
-    - інші: перетин запитаних і тих, де can_export=True; якщо не передано — всі дозволені.
+    Return the institution_ids for the current request, respecting access rights.
+    - admin: may select any; if not provided — None (no restriction).
+    - others: intersection of requested and those where can_export=True; if not provided — all allowed.
     """
     is_admin = current_user.has_role('admin')
     allowed_ids = None if is_admin else {i.id for i in current_user.export_institutions}
@@ -4352,11 +4348,11 @@ def _get_export_institution_ids():
         requested = [int(x) for x in raw.split(',') if x.strip().isdigit()]
         if is_admin:
             return requested if requested else None
-        # Фільтруємо лише ті, що входять в дозволені для експорту
+        # Filter to those that are in the export-allowed set
         valid = [i for i in requested if i in allowed_ids]
         return valid if valid else list(allowed_ids)
     else:
-        # Нічого не передано — для admin без обмеження, для інших — всі дозволені
+        # Nothing passed — admin: no restriction; others: all export-allowed
         return None if is_admin else list(allowed_ids)
 
 
@@ -4364,7 +4360,7 @@ def _get_export_institution_ids():
 @login_required
 @role_required('analyst')
 def api_ct_data_preview(lang_code):
-    """API для попереднього перегляду даних з фотопасток."""
+    """API for previewing camera-trap occurrence data."""
     try:
         filters = {
             'species_ids': [int(sid) for sid in request.args.get('species_ids', '').split(',') if sid],
@@ -4796,7 +4792,7 @@ def api_update_service_visit(lang_code, visit_id):
             # Перевірка власності запису
             if visit.user_id != current_user.id:
                 return jsonify({'success': False, 'error': _('Недостатньо прав для редагування цього запису.')}), 403
-            # Перевірка доступу до локації за установою
+            # Check access to the location by institution
             user_inst_ids = [inst.id for inst in current_user.institutions]
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
