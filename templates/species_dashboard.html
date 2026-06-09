@@ -12,7 +12,7 @@
         <h1>{{ _('Аналіз трендів по видах') }}</h1>
     </div>
 
-    <!-- Панель фільтрів -->
+    <!-- Filter panel -->
     <div class="filters-container">
         <div class="filters-grid">
             <div class="filter-item species-filter">
@@ -77,7 +77,7 @@
         </div>
     </div>
     
-    <!-- Контейнер для графіків або повідомлення -->
+    <!-- Container for charts or message -->
     <div id="dashboard-content">
         <div class="message-container info">
             <p>{{ _('Будь ласка, виберіть вид та натисніть "Побудувати графіки" для аналізу.') }}</p>
@@ -108,7 +108,7 @@ $(document).ready(function() {
         width: '100%'
     });
 
-    // --- Код для валідації років ---
+    // --- Year validation ---
     function validateYearRange() {
         const startYear = parseInt(startYearSelect.val(), 10);
         const endYear = parseInt(endYearSelect.val(), 10);
@@ -125,7 +125,7 @@ $(document).ready(function() {
 
     startYearSelect.on('change', validateYearRange);
     validateYearRange();
-    // --- Кінець коду валідації ---
+    // --- End of year validation ---
 
     const urlParams = new URLSearchParams(window.location.search);
     const speciesIdFromUrl = urlParams.get('species_id');
@@ -201,7 +201,7 @@ $(document).ready(function() {
         if (seasonalChartInstance) seasonalChartInstance.destroy();
         if (yearlyChartInstance) yearlyChartInstance.destroy();
 
-        // --- Графік 1: Сезонна активність ---
+        // --- Chart 1: Seasonal activity ---
         if (data.seasonal_activity && data.seasonal_activity.length > 0) {
             const seasonalCtx = document.getElementById('seasonalActivityChart').getContext('2d');
             const seasonalData = processSeasonalData(data.seasonal_activity);
@@ -215,7 +215,7 @@ $(document).ready(function() {
             });
         }
 
-        // --- Графік 2: Річна динаміка ---
+        // --- Chart 2: Annual trends ---
         if (data.yearly_trend && data.yearly_trend.length > 0) {
             const yearlyCtx = document.getElementById('yearlyTrendChart').getContext('2d');
             yearlyChartInstance = new Chart(yearlyCtx, {

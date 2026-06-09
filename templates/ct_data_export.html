@@ -1,5 +1,3 @@
-{# myproject/app/camera_traps/templates/ct_data_export.html #}
-
 {% extends "ct_base.html" %}
 
 {% block title %}{{ _('Експорт даних') }} - {{ _('Фотопастки') }}{% endblock %}
@@ -58,20 +56,20 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
-        // --- Ініціалізація Select2 для інституцій ---
+        // --- Select2 initialisation for institutions ---
         $('#institution-select').select2({
             placeholder: '{{ _("Всі доступні інституції") }}',
             allowClear: true,
             width: '100%'
         });
 
-        // Якщо є лише одна інституція — обираємо її автоматично
+        // Auto-select the only available institution.
         const instOptions = $('#institution-select option');
         if (instOptions.length === 1) {
             $('#institution-select').val(instOptions.first().val()).trigger('change');
         }
 
-        // При зміні вибору інституції — оновлюємо поле DwC-коду (якщо одна)
+        // On institution change — refresh the DwC institution code field (if single selection).
         $('#institution-select').on('change', function() {
             const selected = $(this).find('option:selected');
             if (selected.length === 1) {
@@ -153,7 +151,7 @@
         });
 
         $('#filter-type-select').on('change', function() {
-            // Очищуємо існуючий вибір видів та оновлюємо списки
+            // Clear the existing species selection and refresh the lists.
             filters.species.val(null).trigger('change.select2');
             fetchAllFilterOptions();
         });
@@ -164,7 +162,7 @@
             }
             filters.species.val(null).trigger('change.select2');
 
-            // Скидаємо інституції: якщо одна — залишаємо обраною
+            // Reset institutions: keep the sole one selected if applicable.
             const instOptions = $('#institution-select option');
             if (instOptions.length === 1) {
                 $('#institution-select').val(instOptions.first().val()).trigger('change');
@@ -173,7 +171,7 @@
             }
 
             fetchAllFilterOptions();
-            // Скидаємо дати
+            // Reset dates.
             const formatLocalDate = (date) => {
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -198,7 +196,7 @@
         $('#reset-btn').on('click', resetToDefaults);
         resetToDefaults();
 
-        // #36: показувати поле «інтервал незалежності» лише для timewindow-режиму
+        // #36: show the independence-interval field only for the time-window aggregation mode.
         $('#aggregation-level').on('change', function() {
             $('#timewindow-group').toggle($(this).val() === 'location_timewindow');
         });
@@ -206,7 +204,7 @@
         function getApiParams() {
             const params = new URLSearchParams();
 
-            // Інституції
+            // Institutions.
             const selectedInst = $('#institution-select').val();
             if (selectedInst && selectedInst.length > 0) {
                 params.append('institution_ids', selectedInst.join(','));

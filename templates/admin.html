@@ -23,7 +23,7 @@
         </p>
     </div>
 
-    {# ── AI-класифікатор (показуємо тільки якщо worker встановлений) ── #}
+    {# ── AI classifier (shown only if the worker is installed) ── #}
     {% if ai_available %}
     <section class="hub-section">
         <h2 class="hub-section-title">🤖 {{ _('AI-класифікатор') }}</h2>
@@ -40,7 +40,7 @@
         </p>
         {% endif %}
 
-        {# ── Загальний прогрес ── #}
+        {# ── Overall progress ── #}
         <div class="ai-stats">
             <div class="ai-stat ai-stat--done">
                 <div class="ai-stat__num">{{ '{:,}'.format(ai_stats.classified).replace(',', ' ') }}</div>
@@ -118,7 +118,7 @@
     </section>
     {% endif %}
 
-    {# ── Аналітика ── #}
+    {# ── Analytics ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Перерахунки') }}</h2>
         <div class="admin-actions">
@@ -153,7 +153,7 @@
         </div>
     </section>
 
-    {# ── Сховище та батчі (health-метрики) ── #}
+    {# ── Storage and batches (health metrics) ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">💾 {{ _('Сховище та батчі') }}</h2>
         <p class="ai-meta text-muted">
@@ -190,7 +190,7 @@
         {% endif %}
     </section>
 
-    {# ── Очищення ── #}
+    {# ── Cleanup ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Очищення даних') }}</h2>
         <div class="admin-actions">
@@ -233,7 +233,7 @@
                 </button>
             </div>
 
-            <!-- Cleanup-модалка з результатами analyze + кнопка execute -->
+            <!-- Cleanup modal: analyze results + execute button -->
             <div id="cleanup-modal" style="display:none; position:fixed; top:0; left:0;
                  width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999;
                  align-items:center; justify-content:center;">
@@ -443,7 +443,7 @@
     $$('#cleanup-close-btn').addEventListener('click', closeModal);
 })();
 
-// ── Перерахунок аналітики: AJAX-старт + polling статусу ─────────────────────
+// ── Analytics recalculation: AJAX start + status polling ───────────────────
 (function() {
     const LANG = '{{ g.lang_code }}';
     const csrfToken = '{{ csrf_token() }}';
@@ -491,7 +491,7 @@
             render(data);
             if (data.status === 'running') startPolling();
             else stopPolling();
-        } catch (e) { /* мовчки — статус не критичний */ }
+        } catch (e) { /* silently ignore — status is not critical */ }
     }
 
     function startPolling() {
@@ -503,7 +503,7 @@
     }
 
     form.addEventListener('submit', async function(ev) {
-        // onclick кнопки вже показав confirm(); якщо дійшли сюди — підтверджено.
+        // The button's onclick already showed confirm(); reaching here means confirmed.
         ev.preventDefault();
         btn.disabled = true;
         line.textContent = '{{ _("Запуск…") }}';
@@ -520,7 +520,7 @@
                 body: '{}',
                 credentials: 'same-origin'
             });
-            // 202 — стартовано; 409 — вже виконується. В обох випадках — polling.
+            // 202 — started; 409 — already running. Poll in both cases.
             await r.json().catch(() => ({}));
             startPolling();
             fetchStatus();
@@ -531,7 +531,7 @@
         }
     });
 
-    fetchStatus();  // початковий стан при відкритті сторінки
+    fetchStatus();  // Initial state when the page loads.
 })();
 </script>
 {% endblock %}

@@ -28,7 +28,7 @@
             <h4>{{ _('Повний перелік учасників та їхній внесок за ковзні періоди.') }}</h4>
         </div>
 
-        <!-- Панель фільтрів -->
+        <!-- Filter panel -->
         <form id="filters-form" method="GET" class="filters-panel">
             <div class="filter-group filter-group--grow">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
@@ -102,7 +102,7 @@
 $(document).ready(function() {
     $('#scope-select').select2({ width: '100%' });
 
-    // Просте клієнтське сортування таблиці
+    // Simple client-side table sorting.
     $('#contributors-table th').on('click', function() {
         var table = $('#contributors-table');
         var rows = table.find('tbody tr').get();

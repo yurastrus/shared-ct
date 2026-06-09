@@ -13,7 +13,7 @@
         <p style="text-align:center; margin-left:auto; margin-right:auto;">{{ _('Виберіть два регіони або установи для порівняння статистики детекцій і видового різноманіття.') }}</p>
     </div>
 
-    <!-- Глобальні фільтри (дати + біотоп) -->
+    <!-- Global filters (dates + biotope) -->
     <div class="global-filters">
         <div class="filter-item">
             <label for="start-date">{{ _('Від:') }}</label>
@@ -33,7 +33,7 @@
         </div>
     </div>
 
-    <!-- Фільтри порівняння (ліво / право) -->
+    <!-- Comparison scope filters (left / right) -->
     <div class="scope-filters">
         <div class="scope-panel left">
             <h4>{{ _('Ліво (синій)') }}</h4>
@@ -91,7 +91,7 @@
         <a href="{{ url_for('camera_traps.dashboard', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('До загального аналізу') }}</a>
     </div>
 
-    <!-- Контент -->
+    <!-- Content -->
     <div id="comparison-content">
         <div class="message-box info">
             <p>{{ _('Оберіть ліво та право і натисніть «Порівняти».') }}</p>
@@ -298,7 +298,7 @@ $(document).ready(function () {
 
         $('#comparison-content').html(statsHtml + chartHtml + indicesHtml + vennHtml);
 
-        // Будуємо барчарт RAI
+        // Build the RAI bar chart.
         if (chartInstance) chartInstance.destroy();
         if (species.length === 0) {
             $('#raiChart').parent().html('<div class="message-box"><p>{{ _("Немає даних для графіка.") }}</p></div>');

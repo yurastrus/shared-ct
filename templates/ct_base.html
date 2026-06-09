@@ -5,8 +5,8 @@
 {% block ct_head_extra %}{% endblock %}
 {% endblock %}
 
-{# Загальний layout для всіх CT-сторінок: кнопка повернення до хабу + контент. #}
-{# Дочірні шаблони використовують {% block ct_content %} замість {% block content %}. #}
+{# Shared layout for all CT pages: hub back-link + content block. #}
+{# Child templates use {% block ct_content %} instead of {% block content %}. #}
 {% block content %}
     {% if request.endpoint != 'camera_traps.overview' %}
     <a href="{{ url_for('camera_traps.overview', lang_code=g.lang_code) }}" class="ct-back-link">

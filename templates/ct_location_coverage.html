@@ -15,7 +15,7 @@
            class="btn btn-secondary btn-sm">&larr; {{ _('До локацій') }}</a>
     </div>
 
-    {# ── Режим відображення ── #}
+    {# ── Display mode ── #}
     <div class="coverage-modes">
         <a href="?mode=all" class="btn btn-sm {{ 'btn-primary' if coverage.mode != 'aggregated' else 'btn-outline-secondary' }}">{{ _('Усі роки') }}</a>
         <a href="?mode=aggregated" class="btn btn-sm {{ 'btn-primary' if coverage.mode == 'aggregated' else 'btn-outline-secondary' }}">{{ _('Зведено за рік') }}</a>
@@ -25,7 +25,7 @@
         {{ _('«Камера працювала» = дні в межах деплойментів та дні з фото (прогалини до %(n)s днів вважаються неперервними).') | format(n=max_gap) }}
     </p>
 
-    {# ── Зведення ── #}
+    {# ── Summary ── #}
     <div class="coverage-summary">
         <div class="coverage-stat">
             <div class="coverage-stat__num">{{ '{:,}'.format(coverage.active_camera_days).replace(',', ' ') }}</div>
@@ -47,7 +47,7 @@
         {% endif %}
     </div>
 
-    {# ── Легенда (градієнт за к-стю фото) ── #}
+    {# ── Legend (gradient by photo count) ── #}
     <div class="coverage-legend">
         <span>{{ _('менше') }}</span>
         <i class="coverage-gradient-bar"></i>

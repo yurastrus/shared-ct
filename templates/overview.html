@@ -11,7 +11,7 @@
         <p>{{ _('Моніторинг диких тварин — серії фото з камер-пасток, ідентифікація та аналітика. Виберіть розділ для роботи.') }}</p>
     </div>
 
-    {# ── АНАЛІТИКА (доступна всім, частина — лише авторизованим) ── #}
+    {# ── ANALYTICS (available to all; some sections require authentication) ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Аналітика') }}</h2>
         <div class="hub-grid">
@@ -63,7 +63,7 @@
         </div>
     </section>
 
-    {# ── РОБОТА (тільки для авторизованих з відповідними ролями) ── #}
+    {# ── WORK (authenticated users with appropriate roles only) ── #}
     {% if can_identify or can_upload or can_manage or can_export %}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Робота') }}</h2>
@@ -121,7 +121,7 @@
     </section>
     {% endif %}
 
-    {# ── АДМІНІСТРУВАННЯ (тільки для admin) ── #}
+    {# ── ADMINISTRATION (admin only) ── #}
     {% if is_admin %}
     <section class="hub-section">
         <h2 class="hub-section-title">{{ _('Адміністрування') }}</h2>
