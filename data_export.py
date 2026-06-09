@@ -4,14 +4,15 @@ from .database import get_ct_engine
 from app.models import User
 
 def get_ct_occurrence_data(filters, limit=None):
-    """
-    Отримує дані спостережень та їх загальну кількість з модуля фотопасток.
-    (ВЕРСІЯ 3: Збагачена даними про ідентифікаторів).
-    Повертає словник: {'data': [...], 'total_count': N}
+    """Fetch camera-trap occurrence rows (Darwin Core-style) plus a total count.
 
-    filters може містити:
-      institution_ids: list[int] — обмежити лише локаціями цих інституцій;
-                                    None або відсутнє = без обмеження (тільки для admin).
+    Returns:
+        dict: ``{'data': [...], 'total_count': N}``.
+
+    Args:
+        filters: may include ``institution_ids`` (list[int]) to restrict to those
+            institutions' locations; None/absent = no restriction (admin only).
+        limit: optional cap on returned rows (the count is computed separately).
     """
     engine = get_ct_engine()
     try:
@@ -43,7 +44,7 @@ def get_ct_occurrence_data(filters, limit=None):
             filter_type = filters.get('filter_type', 'species_only')
             species_filter_condition = "AND c.species_id > 0" if filter_type == 'species_only' else ""
 
-            # --- Фільтр по інституціях ---
+            # --- Institution filter ---
             institution_ids = filters.get('institution_ids')
             if institution_ids:
                 inst_cond = """
@@ -56,7 +57,7 @@ def get_ct_occurrence_data(filters, limit=None):
             else:
                 inst_cond = ""
 
-            # --- ОНОВЛЕНИЙ SQL-ЗАПИТ З ДОДАТКОВИМ CTE ---
+            # --- Main SQL query (CTE pipeline) ---
 
             base_query_cte = f"""
                 WITH ObservationConsensus AS (
@@ -187,7 +188,7 @@ def get_ct_occurrence_data(filters, limit=None):
                 sql_query = f"{final_query_base} ORDER BY series_start_time"
                 count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
 
-            else: # 'none' - Простий режим
+            else:  # 'none' — no aggregation
                 final_query_base = "SELECT * FROM BaseData"
                 sql_query = f"{base_query_cte} {final_query_base} ORDER BY series_start_time"
                 count_query_str = f"{base_query_cte} SELECT COUNT(*) FROM BaseData"
@@ -208,7 +209,7 @@ def get_ct_occurrence_data(filters, limit=None):
 
             user_map = {}
             if all_user_ids:
-                # Робимо запит до основної бази даних, щоб отримати імена
+                # Query the main database for the identifiers' display names.
                 users = User.query.filter(User.id.in_(list(all_user_ids))).all()
                 user_map = {u.id: u.full_name for u in users}
 
@@ -220,23 +221,23 @@ def get_ct_occurrence_data(filters, limit=None):
                 except IndexError:
                     specific_epithet = None
 
-                identifiedBy = 'Human Expert' # Fallback
+                identifiedBy = 'Human Expert'  # fallback
                 user_ids_str = row['identifier_user_ids']
                 if user_ids_str:
                     ids = [int(uid) for uid in user_ids_str.split('|')]
                     names = [user_map.get(uid, f'User #{uid}') for uid in ids]
                     identifiedBy = " | ".join(names)
 
-                basisOfRecord = 'MachineObservation' # Завжди, згідно з вимогою
+                basisOfRecord = 'MachineObservation'  # always, per requirement
                 identificationVerificationStatus = 'verified by human'
                 identificationRemarks = 'Verified by expert consensus'
 
                 occurrence_data.append({
                     'occurrenceID': f"URN:ctmon:{institution_code}:observation:{row['observation_id']}",
-                    'basisOfRecord': basisOfRecord, # <-- ДОДАНО
-                    'identificationVerificationStatus': identificationVerificationStatus, # <-- ДОДАНО
-                    'identifiedBy': identifiedBy, # <-- ДОДАНО
-                    'identificationRemarks': identificationRemarks, # <-- ДОДАНО
+                    'basisOfRecord': basisOfRecord,
+                    'identificationVerificationStatus': identificationVerificationStatus,
+                    'identifiedBy': identifiedBy,
+                    'identificationRemarks': identificationRemarks,
                     'institutionCode': institution_code,
                     'scientificName': row['scientific_name'], 'kingdom': row['kingdom'], 'phylum': row['phylum'],
                     'class': row['class'], 'order': row['order_rank'], 'family': row['family'], 'genus': row['genus'],

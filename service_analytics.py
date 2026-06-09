@@ -1,4 +1,4 @@
-# myproject/app/camera_traps/analytics.py
+"""Per-location statistics: consensus-based observation counts → LocationStats."""
 
 from datetime import datetime
 from sqlalchemy import func, case, text
@@ -8,12 +8,12 @@ from .database import get_ct_session, close_ct_session
 from .models import Location, Photo, Identification, Species, LocationStats, Observation, CalculationLog
 
 def calculate_stats_for_location(location_id, db_session):
-    """
-    Розраховує всю необхідну статистику для однієї локації та зберігає її.
-    ВИПРАВЛЕНА ВЕРСІЯ: використовує логіку консенсусу для підрахунку спостережень.
+    """Compute and persist all statistics for a single location.
+
+    Observation counts use consensus logic (the top-voted species per observation).
     """
     try:
-        # --- 1. Базові метрики по фотографіях (залишається без змін) ---
+        # --- 1. Basic photo metrics ---
         photo_stats = db_session.query(
             func.count(Photo.id),
             func.min(Photo.captured_at),
@@ -21,7 +21,7 @@ def calculate_stats_for_location(location_id, db_session):
         ).join(Observation).filter(Observation.location_id == location_id).one_or_none()
 
         if not photo_stats or not photo_stats[0]:
-            # Якщо фото немає, виходимо, статистика нульова
+            # No photos → nothing to compute.
             return True
 
         total_photos, first_photo_date, last_photo_date = photo_stats
@@ -29,8 +29,8 @@ def calculate_stats_for_location(location_id, db_session):
         duration_days = (last_photo_date - first_photo_date).total_seconds() / (24 * 3600)
         avg_photos_per_day = total_photos / duration_days if duration_days >= 1 else total_photos
 
-        # --- 2. Статистика по спостереженнях НА ОСНОВІ КОНСЕНСУСУ ---
-        # Використовуємо "чистий" SQL, оскільки він ефективніший для такої складної логіки.
+        # --- 2. Consensus-based observation statistics ---
+        # Raw SQL: more efficient for this windowed consensus logic.
         
         consensus_query = text("""
             WITH ObservationConsensus AS (
@@ -70,7 +70,7 @@ def calculate_stats_for_location(location_id, db_session):
         conn = db_session.connection()
         observation_stats = conn.execute(consensus_query, {'location_id': location_id}).mappings().one()
 
-        # --- 3. Зберігаємо або оновлюємо запис у LocationStats ---
+        # --- 3. Upsert the LocationStats row ---
         stats_record = db_session.query(LocationStats).get(location_id)
         if not stats_record:
             stats_record = LocationStats(location_id=location_id)
@@ -92,12 +92,10 @@ def calculate_stats_for_location(location_id, db_session):
         return False
 
 def update_all_location_stats(force_run=False):
-    """
-    Перевіряє, чи потрібне оновлення, і запускає розрахунок статистики для всіх локацій.
-    """
+    """Recompute stats for all locations; skip when there are no new completed observations."""
     ct_session = get_ct_session()
     try:
-        # --- Перевірка, чи змінились дані з минулого разу ---
+        # --- Skip if nothing changed since last run ---
         log_entry_name = 'completed_observations'
         current_completed_count = ct_session.query(Observation).filter(Observation.status.in_(['completed', 'archived'])).count()
 
@@ -111,7 +109,7 @@ def update_all_location_stats(force_run=False):
             current_app.logger.info("Skipping stats calculation: no new data.")
             return
 
-        # --- Запуск розрахунку ---
+        # --- Run the calculation ---
         print("Starting location stats calculation...")
         locations = ct_session.query(Location).all()
         processed_count = 0
@@ -119,7 +117,7 @@ def update_all_location_stats(force_run=False):
             if calculate_stats_for_location(loc.id, ct_session):
                 processed_count += 1
         
-        # Оновлюємо лог
+        # Update the calculation log.
         log_entry.last_count = current_completed_count
         log_entry.last_calculated_at = datetime.utcnow()
         
