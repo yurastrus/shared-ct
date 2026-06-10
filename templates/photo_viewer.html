@@ -5,10 +5,10 @@
 {% block ct_content %}
 <div class="container-fluid mt-3">
     <div class="photo-viewer-container">
-        <!-- Основна секція з фото -->
+        <!-- Main photo section -->
         <div class="photo-display-section">
             <div class="photo-viewer-main" id="photo-container">
-                <!-- Стрілки навігації -->
+                <!-- Navigation arrows -->
                 {% if current_photo_index > 0 %}
                     <a href="{{ url_for('camera_traps.view_photo', lang_code=g.lang_code, observation_id=observation.id, photo_index=current_photo_index-1) }}" class="nav-arrow prev">&lt;</a>
                 {% endif %}
@@ -17,7 +17,7 @@
                     <a href="{{ url_for('camera_traps.view_photo', lang_code=g.lang_code, observation_id=observation.id, photo_index=current_photo_index+1) }}" class="nav-arrow next">&gt;</a>
                 {% endif %}
                 
-                <!-- Контроли зуму -->
+                <!-- Zoom controls -->
                 <div class="zoom-controls">
                     <button type="button" class="zoom-btn" onclick="zoomOut()">−</button>
                     <span id="zoom-level"></span>
@@ -31,7 +31,7 @@
                     style="display:none"
                     alt="{{ _('Фото #') }}{{ photo.id }}">
                 
-                <!-- Мета-інформація під фото -->
+                <!-- Photo metadata -->
                 <div class="photo-meta">
                     <strong>{{ _('Локація:') }}</strong> {{ observation.location.name }} | 
                     <strong>{{ _('Час:') }}</strong> {{ photo.captured_at.strftime('%d.%m.%Y %H:%M:%S') }} |
@@ -40,10 +40,10 @@
             </div>
         </div>
 
-        <!-- Бокова панель з інформацією -->
+        <!-- Info sidebar -->
         <div class="photo-info-sidebar">
             
-            <!-- === ОНОВЛЕНИЙ БЛОК "Серія спостереження" === -->
+            <!-- === "Observation series" block === -->
             <div class="info-card">
                 <div class="card-header">
                     {{ _('Серія спостереження') }} #{{ observation.id }}
@@ -64,7 +64,7 @@
                 </div>
             </div>
 
-            <!-- === ОНОВЛЕНИЙ БЛОК "Деталі фотографії" === -->
+            <!-- === "Photo details" block === -->
             <div class="info-card">
                 <div class="card-header">
                     {{ _('Деталі фотографії') }}
@@ -82,7 +82,7 @@
                 </div>
             </div>
 
-            <!-- === ОНОВЛЕНИЙ БЛОК "Ідентифікації" === -->
+            <!-- === "Identifications" block === -->
             <div class="info-card">
                 <div class="card-header">
                     {{ _('Ідентифікації') }} ({{ photo.identifications|length }})
@@ -134,7 +134,7 @@ const photoImg = document.getElementById('photo-img');
 const photoContainer = document.getElementById('photo-container');
 const zoomLevelSpan = document.getElementById('zoom-level');
 
-// Функції зуму
+// Zoom functions.
 function zoomIn() {
     currentZoom = Math.min(currentZoom * 1.2, 5);
     updateZoom();
@@ -154,7 +154,7 @@ function resetZoom() {
 }
 
 function updateZoom() {
-    // Зберігаємо позицію при зумі
+    // Save the position during zoom.
     photoImg.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${currentZoom})`;
     updateZoomLevel();
 }
@@ -164,7 +164,7 @@ function updateZoomLevel() {
 }
 
 function fitToContainer() {
-    // Запобігаємо повторним викликам після ініціалізації
+    // Prevent repeated calls after initialisation.
     if (isInitialized) {
         console.log('Already initialized, skipping fitToContainer');
         return;
@@ -172,14 +172,14 @@ function fitToContainer() {
     
     const containerRect = photoContainer.getBoundingClientRect();
     
-    // Перевіряємо чи контейнер має розміри
+    // Check that the container has dimensions.
     if (containerRect.width === 0 || containerRect.height === 0) {
         console.log('Container not ready, retrying...');
         setTimeout(fitToContainer, 100);
         return;
     }
     
-    // Перевіряємо чи зображення завантажене
+    // Check that the image is loaded.
     if (!photoImg.naturalWidth || !photoImg.naturalHeight) {
         console.log('Image not ready, retrying...');
         setTimeout(fitToContainer, 100);
@@ -196,34 +196,34 @@ function fitToContainer() {
         height: photoImg.naturalHeight
     });
     
-    // Розраховуємо масштаб для підганяння під контейнер
+    // Calculate the scale to fit the image in the container.
     const scaleX = containerRect.width / photoImg.naturalWidth;
     const scaleY = containerRect.height / photoImg.naturalHeight;
     
-    // Вибираємо менший масштаб, щоб фото поміщалось повністю
-    // Множимо на 0.9 для невеликого відступу від країв
+    // Choose the smaller scale to ensure the photo fits fully.
+    // Multiply by 0.9 to leave a small margin from the edges.
     const scale = Math.min(scaleX, scaleY) * 0.9;
     
-    // Обмежуємо мінімальний масштаб
+    // Clamp the minimum scale.
     initialScale = Math.max(scale, 0.1);
     currentZoom = initialScale;
-    // Тимчасово вимикаємо анімацію
+    // Temporarily disable animation.
     photoImg.classList.add('no-transition');
 
-    // Миттєво застосовуємо правильний розмір і робимо фото видимим
-    updateZoom(); // Це встановлює transform
+    // Instantly apply the correct size and make the photo visible.
+    updateZoom(); // This sets the transform.
     photoImg.classList.remove('start');
    
-    // Через крихітну затримку повертаємо анімацію для майбутніх дій (зум, і т.д.)
+    // After a tiny delay, re-enable animation for future interactions (zoom, etc.).
     requestAnimationFrame(() => {
         photoImg.classList.remove('no-transition');
     });
     
-    // Позначаємо що ініціалізація завершена
+    // Mark initialisation as complete.
     isInitialized = true;
 }
 
-// Ініціалізація після завантаження сторінки
+// Initialise after page load.
 function initializePhotoViewer() {
     console.log('Preloading image...');
 
@@ -240,7 +240,7 @@ function initializePhotoViewer() {
         initialScale = Math.max(scale, 0.1);
         currentZoom = initialScale;
 
-        // Виставляємо відразу правильний transform
+        // Apply the correct transform immediately.
         photoImg.style.transform =
             `translate(-50%, -50%) scale(${initialScale})`;
         photoImg.style.display = 'block';
@@ -252,12 +252,12 @@ function initializePhotoViewer() {
     };
 }
 
-// Обробка зміни розміру вікна
+// Handle window resize.
 let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(function() {
-        // При зміні розміру перераховуємо тільки якщо зум на початковому рівні
+        // Recalculate on resize only if zoom is at its initial level.
         if (Math.abs(currentZoom - initialScale) < 0.01) {
             isInitialized = false;
             fitToContainer();
@@ -265,48 +265,48 @@ window.addEventListener('resize', function() {
     }, 250);
 });
 
-// Запускаємо ініціалізацію
+// Run initialisation.
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializePhotoViewer);
 } else {
     initializePhotoViewer();
 }
 
-// Додатково викликаємо після повного завантаження
+// Also call after full page load.
 window.addEventListener('load', function() {
     if (!isInitialized) {
         setTimeout(fitToContainer, 200);
     }
 });
 
-// Зум колесом миші
+// Mouse-wheel zoom.
 photoContainer.addEventListener('wheel', function(e) {
     e.preventDefault();
     
-    // Зберігаємо позицію курсора відносно контейнера
+    // Save the cursor position relative to the container.
     const rect = photoContainer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    // Визначаємо напрямок зуму
+    // Determine the zoom direction.
     const zoomFactor = e.deltaY < 0 ? 1.2 : 1/1.2;
     const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.1), 5);
     
-    // Якщо зум змінився
+    // If the zoom changed.
     if (newZoom !== currentZoom) {
         currentZoom = newZoom;
         updateZoom();
     }
 });
 
-// Перетягування фото
+// Photo dragging.
 photoImg.addEventListener('mousedown', function(e) {
     if (currentZoom <= initialScale) return;
     
     isDragging = true;
     photoContainer.classList.add('dragging');
     
-    // Зберігаємо початкову позицію миші
+    // Save the initial mouse position.
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     
@@ -316,19 +316,19 @@ photoImg.addEventListener('mousedown', function(e) {
 document.addEventListener('mousemove', function(e) {
     if (!isDragging) return;
     
-    // Обчислюємо зміщення
+    // Calculate the offset.
     const deltaX = e.clientX - dragStartX;
     const deltaY = e.clientY - dragStartY;
     
-    // Оновлюємо позицію
+    // Update the position.
     translateX += deltaX;
     translateY += deltaY;
     
-    // Оновлюємо початкову позицію для наступного руху
+    // Update the starting position for the next move.
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     
-    // Застосовуємо трансформацію
+    // Apply the transformation.
     photoImg.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${currentZoom})`;
 });
 
@@ -339,12 +339,12 @@ document.addEventListener('mouseup', function() {
     }
 });
 
-// Запобігаємо виділенню тексту при перетягуванні
+// Prevent text selection during drag.
 photoImg.addEventListener('selectstart', function(e) {
     e.preventDefault();
 });
 
-// Клавіатурна навігація
+// Keyboard navigation.
 document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowLeft') {
         const prevBtn = document.querySelector('.nav-arrow.prev');
@@ -361,10 +361,10 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Початкове оновлення рівня зуму
+// Initial zoom level update.
 updateZoomLevel();
 
-// Робимо функції глобальними для onclick handlers
+// Expose functions globally for onclick handlers.
 window.zoomIn = zoomIn;
 window.zoomOut = zoomOut;
 window.resetZoom = resetZoom;

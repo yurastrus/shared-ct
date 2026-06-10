@@ -1,6 +1,6 @@
 {% extends "ct_base.html" %}
 
-{# QC-мітки доступні і в ct_content, і в scripts. Узгоджено зі сторінкою якості. #}
+{# QC labels are accessible in both ct_content and scripts — consistent with the quality page. #}
 {% set qc_labels = {
   'qc_non_functional': _('Не функціонує'),
   'qc_stolen': _('Викрадена'),
@@ -25,7 +25,7 @@
   'qc_data_not_usable': _('Дані непридатні'),
   'qc_used_brf': _('Використано BRF'),
 } %}
-{# Поля QC, які доречно ставити при завантаженні (без qc_no_gps_coordinates — воно автоматичне) #}
+{# QC fields appropriate to set during upload (excluding qc_no_gps_coordinates — set automatically). #}
 {% set qc_upload_fields = [
   'qc_data_not_usable', 'qc_feeding_location', 'qc_installation_incorrect',
   'qc_placement_incorrect', 'qc_poor_placement', 'qc_no_species_captured',
@@ -38,15 +38,15 @@
 ] %}
 
 {# ──────────────────────────────────────────────────────────────────────────
-   upload_fast.html — клон upload.html для масштабних завантажень.
-   Відмінності від legacy /upload:
-     • JS-аплоадер з пулом N=4 паралельних process-single
-     • Після останнього файла — асинхронний /api/finalize-batch-async (202)
-       + polling /api/batch-status (фаза 'grouping' → 'completed')
-     • Resumable: batch_id у localStorage, перевірка вже залитих через
-       /api/batch/<id>/uploaded-files і пропуск їх при повторному вході
-     • Старе legacy /upload жодним чином не зачіпається
-   Розмітка / стилі / Leaflet-карта — ідентичні до upload.html.
+   upload_fast.html — clone of upload.html for large-scale uploads.
+   Differences from legacy /upload:
+     • JS uploader with a pool of N=4 concurrent process-single workers
+     • After the last file — async /api/finalize-batch-async (202)
+       + polling /api/batch-status (phase 'grouping' → 'completed')
+     • Resumable: batch_id in localStorage, check already-uploaded files via
+       /api/batch/<id>/uploaded-files and skip them on re-entry
+     • Legacy /upload is not affected in any way
+   Markup / styles / Leaflet map — identical to upload.html.
    ────────────────────────────────────────────────────────────────────── #}
 
 {% block title %}{{ _('Завантаження даних фотопасток') }}{% endblock %}
@@ -56,7 +56,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <style>
-  /* Tri-state QC button: null/false/true (як на manage-deployments) */
+  /* Tri-state QC button: null/false/true (same as manage-deployments) */
   .qc-tri-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
   .qc-tri-up { width: 18px; height: 18px; padding: 0; border: 1px solid #adb5bd; border-radius: 3px;
                background: #fff; display: inline-flex; align-items: center; justify-content: center;
@@ -87,7 +87,7 @@
     <div class="upload-layout">
         <div class="left-panel">
 
-            <!-- STEP 1: Локація -->
+            <!-- STEP 1: Location -->
             <div class="step-card">
                 <div class="step-title"><span class="step-num">1</span>{{ _('Локація') }}</div>
                 <div class="mb-2 d-flex align-items-center gap-2">
@@ -140,7 +140,7 @@
                 </div>
             </div>
 
-            <!-- STEP 2: Фотографії -->
+            <!-- STEP 2: Photos -->
             <div class="step-card">
                 <div class="step-title"><span class="step-num">2</span>{{ _('Фотографії') }}</div>
                 <div class="file-btn-row">
@@ -183,7 +183,7 @@
                 </div>
             </div>
 
-            <!-- STEP 3: Деплоймент / контроль якості (необов'язково, згорнуто) -->
+            <!-- STEP 3: Deployment / quality control (optional, collapsed) -->
             <div class="step-card">
                 <details id="deployment-block">
                     <summary class="step-title" style="cursor:pointer; list-style:none;">
@@ -247,7 +247,7 @@
                 </details>
             </div>
 
-            <!-- STEP 4: Завантаження -->
+            <!-- STEP 4: Upload -->
             <div class="step-card">
                 <div class="step-title"><span class="step-num">4</span>{{ _('Завантаження') }}</div>
 
@@ -318,7 +318,7 @@
 
 <script>
 $(document).ready(function () {
-    // Tri-state QC у блоці деплойменту: клік перемикає null -> true -> false -> null.
+    // Tri-state QC in the deployment block: click cycles null -> true -> false -> null.
     const _qcCycleUp = { 'null': 'true', 'true': 'false', 'false': 'null' };
     $(document).on('click', 'button.qc-tri-up', function(){
         const cur = $(this).attr('data-value') || 'null';
@@ -328,9 +328,8 @@ $(document).ready(function () {
         $('#' + $(this).attr('for')).trigger('click');
     });
 
-    // Coord inputs: дозволяємо як крапку, так і кому як десятковий
-    // розділювач (Ukrainian Excel використовує кому). На input — одразу
-    // нормалізуємо до крапки, щоб parseFloat коректно прочитав.
+    // Coord inputs: allow both period and comma as the decimal separator
+    // (Ukrainian Excel uses comma). Normalise to period on input.
     document.querySelectorAll('input[inputmode="decimal"]').forEach(el => {
         el.addEventListener('input', e => {
             if (e.target.value.includes(',')) {
@@ -339,7 +338,7 @@ $(document).ready(function () {
         });
     });
 
-    // ─── Константи ───────────────────────────────────────────────────────
+    // ─── Constants ───────────────────────────────────────────────────────
     const LANG = '{{ g.lang_code }}';
     const csrfToken          = $('#csrf-field').val();
     const locationApiUrlBase = `/${LANG}/camera-traps/api/location/`;
@@ -355,13 +354,13 @@ $(document).ready(function () {
     const POLL_INTERVAL_MS = 2000;
     const RESUME_LS_KEY    = 'ct_fast_upload_batch_v1';
 
-    // ─── Стан ────────────────────────────────────────────────────────────
+    // ─── State ────────────────────────────────────────────────────────────
     const locationsData = {{ locations_data|tojson }};
     let selectedFiles   = [];
     let activeLocationId = null;
     let map, markers = {};
 
-    // ─── Select2 / Map / Location-handlers — ідентично до legacy upload ──
+    // ─── Select2 / Map / Location-handlers — identical to legacy upload ──
     $('#institution-select').select2({ minimumResultsForSearch: Infinity, width: '100%' });
     $('#location-select').select2({ placeholder: '{{ _("-- Будь ласка, виберіть --") }}', allowClear: false, width: '100%' });
 
@@ -386,7 +385,7 @@ $(document).ready(function () {
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        osmLayer.addTo(map);  // #45: OSM — дефолт
+        osmLayer.addTo(map);  // #45: OSM — default
         L.control.layers({ "{{ _('OSM') }}": osmLayer, "{{ _('Супутник') }}": hybridLayer }).addTo(map);
 
         const markersGroup = L.featureGroup();
@@ -506,13 +505,13 @@ $(document).ready(function () {
         });
     });
 
-    // ─── Файли ───────────────────────────────────────────────────────────
+    // ─── Files ───────────────────────────────────────────────────────────
     function displayFileList() {
         if (!selectedFiles.length) {
             $('#file-list,#file-summary-row').hide(); checkReady(); return;
         }
-        // На 45к фото повний DOM-рендер списку — самогубство. Показуємо
-        // лише підсумок + перші 200 рядків як превʼю.
+        // Full DOM render of 45k photos is impractical. Show
+        // only a summary + the first 200 rows as a preview.
         const PREVIEW = 200;
         let html = '';
         const preview = selectedFiles.slice(0, PREVIEW);
@@ -592,10 +591,10 @@ $(document).ready(function () {
         resumeUpload(selectedFiles, locId, batchId);
     });
 
-    // ─── Завантаження ────────────────────────────────────────────────────
+    // ─── Upload ────────────────────────────────────────────────────────────
     /**
-     * Шле один файл. На вхід — File-обʼєкт; повертає Promise від $.ajax.
-     * Викликається з worker-а і з retry-петлі.
+     * Send a single file. Accepts a File object; returns a Promise from $.ajax.
+     * Called from the worker and from the retry loop.
      */
     async function uploadOne(file, locationId, batchId, saveOriginal) {
         let toUpload = file;
@@ -608,7 +607,7 @@ $(document).ready(function () {
                 toUpload = new File([compressed], file.name, {
                     type: compressed.type, lastModified: file.lastModified
                 });
-            } catch (e) { /* fallback на оригінал */ }
+            } catch (e) { /* fallback to original */ }
         }
         const fd = new FormData();
         fd.append('location_id', locationId);
@@ -624,8 +623,8 @@ $(document).ready(function () {
     }
 
     /**
-     * Класифікація помилки: реальний дублікат (не повторювати) чи
-     * транзієнтна (мережа / 5xx / race / таймаут — повторити).
+     * Classify the error: real duplicate (do not retry) or
+     * transient (network / 5xx / race / timeout — retry).
      */
     function isRealDuplicateError(xhr) {
         const err = (xhr && xhr.responseJSON && xhr.responseJSON.error) || '';
@@ -633,10 +632,10 @@ $(document).ready(function () {
     }
 
     /**
-     * Промісовий пул паралельних завантажень з вбудованим АВТО-RETRY.
-     * Інваріант серіальності зберігається на стороні сервера: фінальне
-     * групування викликаємо ТІЛЬКИ після того, як ВСІ promises resolved
-     * (включно з retry-проходами).
+     * Promise-based pool of parallel uploads with built-in AUTO-RETRY.
+     * Serialisation invariant is maintained server-side: final grouping
+     * is called ONLY after ALL promises are resolved
+     * (including retry passes).
      */
     async function uploadWithPool(files, locationId, batchId, alreadyUploadedSet) {
         const totalCount = files.length;
@@ -646,7 +645,7 @@ $(document).ready(function () {
         const concurrency = $('#parallel-checkbox').is(':checked') ? PARALLEL_DEFAULT : 1;
         const saveOriginal = $('#save-original-checkbox').is(':checked');
 
-        // Черга транзієнтних помилок — для авто-повтору після першого проходу.
+        // Queue of transient errors — for auto-retry after the first pass.
         const retryQueue = [];
 
         function updateProgress(phase) {
@@ -661,7 +660,7 @@ $(document).ready(function () {
         }
         updateProgress();
 
-        // ─── Фаза 1: основний пул із N паралельних воркерів ─────────────
+        // ─── Phase 1: main pool of N parallel workers ─────────────
         let queueIdx = 0;
         async function worker() {
             while (true) {
@@ -669,20 +668,20 @@ $(document).ready(function () {
                 if (myIdx >= files.length) return;
                 const file = files[myIdx];
                 const key = (file.webkitRelativePath || file.name);
-                if (alreadyUploadedSet.has(key)) continue; // вже на сервері
+                if (alreadyUploadedSet.has(key)) continue; // already on the server.
 
                 try {
                     await uploadOne(file, locationId, batchId, saveOriginal);
                     successCount++;
                 } catch (xhr) {
                     if (isRealDuplicateError(xhr)) {
-                        // Реальний дублікат — точно є в БД, retry не допоможе.
+                        // Real duplicate — definitely in DB, retry will not help.
                         errorCount++;
                         if (errorCount <= 10) {
                             console.warn(`[upload-fast] duplicate ${file.name}`);
                         }
                     } else {
-                        // Транзієнтна помилка — додаємо в чергу retry.
+                        // Transient error — add to retry queue.
                         retryQueue.push(file);
                     }
                 }
@@ -695,10 +694,10 @@ $(document).ready(function () {
         for (let i = 0; i < concurrency; i++) workers.push(worker());
         await Promise.all(workers);
 
-        // ─── Фаза 1.5: АВТО-ПОВТОР з backoff ─────────────────────────────
-        // До 2 проходів по черзі retry, послідовно (concurrency=1) щоб
-        // не реактивувати race; перед кожним проходом — невелика пауза.
-        // Здебільшого все добивається на першому ж проході.
+        // ─── Phase 1.5: AUTO-RETRY with backoff ─────────────────────────────
+        // Up to 2 passes over the retry queue, sequential (concurrency=1) to
+        // avoid reactivating races; a short pause before each pass.
+        // Usually everything succeeds on the first pass.
         const MAX_RETRY_PASSES = 2;
         for (let pass = 1; pass <= MAX_RETRY_PASSES && retryQueue.length > 0; pass++) {
             const thisPass = retryQueue.splice(0, retryQueue.length);
@@ -706,7 +705,7 @@ $(document).ready(function () {
                 `{{ _("Повторне завантаження") }} ${thisPass.length} ` +
                 `{{ _("файлів") }} ({{ _("спроба") }} ${pass + 1}/${MAX_RETRY_PASSES + 1})...`
             );
-            // Пауза перед retry — даємо мережі/серверу видихнути
+            // Pause before retry — give the network/server time to recover.
             await new Promise(r => setTimeout(r, 800 * pass));
 
             for (const file of thisPass) {
@@ -717,14 +716,14 @@ $(document).ready(function () {
                     if (isRealDuplicateError(xhr)) {
                         errorCount++;
                     } else if (pass < MAX_RETRY_PASSES) {
-                        retryQueue.push(file); // ще один шанс
+                        retryQueue.push(file); // one more chance.
                     } else {
                         errorCount++;
                         console.warn(`[upload-fast] gave up on ${file.name}:`,
                             xhr.responseJSON ? xhr.responseJSON.error : 'failed');
                     }
                 }
-                // processed уже інкрементовано у фазі 1 — не подвоюємо
+                // processed was already incremented in phase 1 — do not double-count.
             }
             updateProgress();
         }
@@ -732,7 +731,7 @@ $(document).ready(function () {
         return { successCount, errorCount, skippedCount };
     }
 
-    /** Polling /api/batch-status, доки status != completed/failed. */
+    /** Poll /api/batch-status until status is completed or failed. */
     function pollUntilDone(batchId) {
         return new Promise((resolve, reject) => {
             const tick = () => {
@@ -740,7 +739,7 @@ $(document).ready(function () {
                     .done(data => {
                         if (data.status === 'completed') return resolve(data);
                         if (data.status === 'failed') return reject(new Error(data.error_message || 'Grouping failed'));
-                        // ready_to_group / grouping — показуємо фазу 2
+                        // ready_to_group / grouping — show phase 2.
                         $('#progress-text').text(
                             data.status === 'grouping'
                                 ? '{{ _("Групування серій...") }}'
@@ -781,7 +780,7 @@ $(document).ready(function () {
                 });
                 batchId = createResp.batch_id;
             } else {
-                // Resumable: запитуємо вже залиті файли
+                // Resumable: fetch already-uploaded files.
                 const list = await $.get(uploadedFilesUrl(batchId));
                 (list.files || []).forEach(f => alreadyUploaded.add(f.original_filename));
                 $('#progress-text').text(
@@ -790,14 +789,14 @@ $(document).ready(function () {
             }
             saveResumeState({ batchId, locationId, total: files.length, ts: Date.now() });
 
-            // Фаза 1: паралельне завантаження файлів
+            // Phase 1: parallel file upload.
             const result = await uploadWithPool(files, locationId, batchId, alreadyUploaded);
 
             if (result.successCount + result.skippedCount === 0) {
                 throw new Error('{{ _("Жоден файл не вдалося завантажити") }}');
             }
 
-            // Фаза 2: finalize-async + polling
+            // Phase 2: finalize-async + polling.
             $('#progress-bar').css('width', '85%');
             $('#progress-text').text('{{ _("Запуск групування серій...") }}');
             await $.ajax({
@@ -840,7 +839,7 @@ $(document).ready(function () {
         if (!locationId || locationId === '-1' || locationId === '0') {
             return alert('{{ _("Виберіть дійсне місце перед завантаженням.") }}');
         }
-        // Якщо є незавершений batch — продовжуємо його, а не створюємо новий
+        // If an incomplete batch exists, resume it rather than creating a new one.
         const st = loadResumeState();
         if (st && st.batchId && String(st.locationId) === String(locationId)) {
             resumeUpload(selectedFiles, locationId, st.batchId);

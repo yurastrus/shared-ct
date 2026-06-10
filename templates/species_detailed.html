@@ -15,7 +15,7 @@
         <h1>{{ _('Карта детекцій видів фотопастками') }}</h1>
     </div>
 
-    <!-- Панель фільтрів -->
+    <!-- Filter panel -->
     <div class="filters-panel">
         <div class="filter-group">
             <label>{{ _('Період з:') }}</label>
@@ -43,7 +43,7 @@
         </div>
     </div>
 
-    <!-- Блок статистики -->
+    <!-- Statistics block -->
     <div class="stats-bar">
         <div class="stat-box">
             <div class="stat-label">{{ _('Всього детекцій') }}</div>
@@ -59,7 +59,7 @@
         </div>
     </div>
 
-    <!-- Контейнер для карти -->
+    <!-- Map container -->
     <div id="map"></div>
 </div>
 {% endblock %}
@@ -71,7 +71,7 @@
 
 <script>
 $(document).ready(function() {
-    // --- 1. ІНІЦІАЛІЗАЦІЯ ---
+    // --- 1. INITIALISATION ---
     
     // Select2
     $('#species-select').select2({
@@ -80,10 +80,10 @@ $(document).ready(function() {
         width: '100%'
     });
 
-    // Змінні карти
-    const map = L.map('map').setView([49.0, 31.0], 6); // Центр України (приблизно)
+    // Map variables.
+    const map = L.map('map').setView([49.0, 31.0], 6); // Centre of Ukraine (approximate).
 
-    // Базові шари (Tiles)
+    // Base layers (Tiles).
     const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap',
         maxZoom: 19
@@ -94,15 +94,15 @@ $(document).ready(function() {
         maxZoom: 19
     });
 
-    // Групи шарів для даних (Data Layers)
-    const absoluteLayerGroup = L.layerGroup().addTo(map); // Цей шар активний за замовчуванням
+    // Data layer groups.
+    const absoluteLayerGroup = L.layerGroup().addTo(map); // This layer is active by default.
     const normalizedLayerGroup = L.layerGroup();
 
-    // Контроль шарів (Layer Control)
-    // Ми використовуємо хитрий прийом: додаємо групи даних як "Base Maps" у другий контрол,
-    // або як "Overlays". Щоб реалізувати перемикання (radio button behavior) між даними,
-    // найзручніше додати їх як Overlays і керувати подіями, або просто як Base Maps (але тоді зникне перемикач тайлів).
-    // Найкращий UX тут: Тайли окремо, Дані окремо.
+    // Layer control.
+    // We use a trick: add data groups as "Base Maps" in a second control
+    // or as "Overlays". For radio-button-style switching between data layers,
+    // Overlays + event listeners is simplest (Base Maps hides the tile switcher).
+    // Best UX: Tiles separate, Data separate.
     
     const baseMaps = {
         "{{ _('Карта (OSM)') }}": osmLayer,
@@ -116,7 +116,7 @@ $(document).ready(function() {
 
     const layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
 
-    // Легенда
+    // Legend.
     const legend = L.control({ position: 'bottomleft' });
     legend.onAdd = function (map) {
         const div = L.DomUtil.create('div', 'info legend');
@@ -125,11 +125,11 @@ $(document).ready(function() {
     };
     legend.addTo(map);
 
-    // Змінні для зберігання даних
+    // Data storage variables.
     let currentMaxDetections = 0;
     let currentMaxDR = 0;
 
-    // --- 2. ЛОГІКА ЗАВАНТАЖЕННЯ ---
+    // --- 2. LOAD LOGIC ---
 
     $('#apply-btn').click(function() {
         const speciesId = $('#species-select').val();
@@ -141,7 +141,7 @@ $(document).ready(function() {
             return;
         }
 
-        // Блокуємо кнопку
+        // Disable the button.
         const btn = $(this);
         const originalText = btn.html();
         btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ _("Завантаження...") }}');
@@ -169,10 +169,10 @@ $(document).ready(function() {
         $('#stat-rai').text(summary.avg_rai);
     }
 
-    // --- 3. РЕНДЕРИНГ КАРТИ ---
+    // --- 3. MAP RENDERING ---
 
     function renderMapData(locations) {
-        // Очищаємо старі шари
+        // Clear old layers.
         absoluteLayerGroup.clearLayers();
         normalizedLayerGroup.clearLayers();
 
@@ -181,9 +181,9 @@ $(document).ready(function() {
             return;
         }
 
-        // Знаходимо максимуми для масштабування
+        // Find maximums for scaling.
         currentMaxDetections = Math.max(...locations.map(l => l.detections));
-        currentMaxDR = Math.max(...locations.map(l => l.rai * 100)); // DR на 100 днів для зручності
+        currentMaxDR = Math.max(...locations.map(l => l.rai * 100)); // DR per 100 trap-days for convenience.
 
         const bounds = L.latLngBounds();
 
@@ -191,7 +191,7 @@ $(document).ready(function() {
             const latLng = [loc.lat, loc.lon];
             bounds.extend(latLng);
 
-            // 1. Абсолютний маркер (Червоний)
+            // 1. Absolute marker (red).
             const absRadius = getLogRadius(loc.detections);
             const absMarker = L.circleMarker(latLng, {
                 radius: absRadius,
@@ -215,7 +215,7 @@ $(document).ready(function() {
             absMarker.bindPopup(popupContent);
             absoluteLayerGroup.addLayer(absMarker);
 
-            // 2. Нормалізований маркер (Синій) - DR * 100 (детекцій на 100 трап-днів)
+            // 2. Normalised marker (blue) — DR × 100 (detections per 100 trap-days).
             const raiVal = loc.rai * 100; 
             const normRadius = getLogRadius(raiVal); 
             const normMarker = L.circleMarker(latLng, {
@@ -231,22 +231,22 @@ $(document).ready(function() {
             normalizedLayerGroup.addLayer(normMarker);
         });
 
-        // Центруємо карту
+        // Centre the map.
         if (bounds.isValid()) {
             map.fitBounds(bounds, { padding: [50, 50] });
         }
 
-        // Оновлюємо легенду для активного шару
+        // Update the legend for the active layer.
         updateLegend();
     }
 
-    // --- 4. МАТЕМАТИКА ТА ЛЕГЕНДА ---
+    // --- 4. MATHS AND LEGEND ---
 
-    // Логарифмічна функція радіуса (Base 10)
+    // Logarithmic radius function (base 10).
     // r = base + multiplier * log10(value)
-    // Щоб 1 = маленький, 10 = середній, 100 = великий
+    // So that 1 = small, 10 = medium, 100 = large.
     function getLogRadius(value) {
-        if (value <= 0) return 3; // Мінімальний радіус
+        if (value <= 0) return 3; // Minimum radius.
         // log10(1) = 0 -> radius 4
         // log10(10) = 1 -> radius 4 + 6 = 10
         // log10(100) = 2 -> radius 4 + 12 = 16
@@ -254,9 +254,9 @@ $(document).ready(function() {
         return 4 + (7 * Math.log10(value)); 
     }
 
-    // Слухаємо перемикання шарів, щоб оновити легенду
+    // Listen for layer switches to update the legend.
     map.on('overlayadd', function(eventLayer) {
-        // Хитрий фікс: якщо вмикаємо один шар, вимикаємо інший, щоб не було каші
+        // Trick: when one layer is enabled, disable the other to avoid overlap.
         if (eventLayer.layer === absoluteLayerGroup) {
             if (map.hasLayer(normalizedLayerGroup)) {
                 map.removeLayer(normalizedLayerGroup);
@@ -277,7 +277,7 @@ $(document).ready(function() {
         let color = '';
         let labelSuffix = '';
 
-        // Визначаємо режим, якщо не переданий (при першому завантаженні)
+        // Determine the mode if not passed (on first load).
         if (map.hasLayer(normalizedLayerGroup) && !map.hasLayer(absoluteLayerGroup)) {
             mode = 'normalized';
         }
@@ -287,7 +287,7 @@ $(document).ready(function() {
             color = '#ff3333';
             html += '<div style="margin-bottom:5px; font-weight:bold; color:#000000">{{ _("Кількість детекцій") }}</div>';
         } else {
-            maxVal = currentMaxDR; // Це DR * 100
+            maxVal = currentMaxDR; // This is DR × 100.
             color = '#3388ff';
             html += '<div style="margin-bottom:5px; font-weight:bold; color:#0055cc">{{ _("DR (на 100 днів)") }}</div>';
         }
@@ -297,20 +297,20 @@ $(document).ready(function() {
             return;
         }
 
-        // Генеруємо ступені 10: 1, 10, 100, 1000... до maxVal
+        // Generate powers of 10: 1, 10, 100, 1000 … up to maxVal.
         // 10^0, 10^1...
         let power = 0;
         let val = 1;
         
-        while (val <= maxVal * 10) { // *10 щоб показати наступний крок як "максимум"
-            // Відображаємо тільки ті кроки, які менші або трохи більші за макс
+        while (val <= maxVal * 10) { // ×10 to show the next step as the "maximum".
+            // Display only steps that are smaller than or slightly above the max.
             if (val > maxVal && val > 10) break; // Stop loop appropriately
 
-            // Рахуємо радіус для легенди за тією ж формулою
+            // Calculate the legend radius using the same formula.
             const r = getLogRadius(val);
             const diameter = r * 2;
             
-            // Вирівнювання тексту
+            // Text alignment.
             let textVal = val;
             if (val >= 1000) textVal = (val/1000) + 'k';
 
@@ -323,7 +323,7 @@ $(document).ready(function() {
                         opacity: 0.6; 
                         border-radius: 50%; 
                         margin-right: 8px;
-                        margin-left: ${24 - r}px;"> <!-- Центрування кіл -->
+                        margin-left: ${24 - r}px;"> <!-- Circle centering -->
                     </div>
                     <span>${textVal}</span>
                 </div>

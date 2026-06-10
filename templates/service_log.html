@@ -21,14 +21,14 @@
     </div>
 
     <div class="page-layout">
-        <!-- Ліва панель: Карта -->
+        <!-- Left panel: Map -->
         <div class="map-panel">
             <div id="map"></div>
         </div>
 
-        <!-- Права панель: Форма та Історія -->
+        <!-- Right panel: Form and History -->
         <div class="details-panel">
-            <!-- Форма додавання запису -->
+            <!-- Add-record form -->
             <div class="form-container">
                 <h4 id="form-title">{{ _('Додати новий запис') }}</h4>
                 <div id="form-placeholder" class="text-muted">{{ _('Виберіть локацію на карті, щоб почати.') }}</div>
@@ -100,7 +100,7 @@
                 </form>
             </div>
 
-            <!-- Історія обслуговування -->
+            <!-- Maintenance history -->
             <div class="history-container">
                 <h4>{{ _('Історія обслуговування') }}</h4>
                 <div id="history-placeholder" class="text-muted">{{ _('Немає даних для відображення.') }}</div>
@@ -117,7 +117,7 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Ініціалізація
+    // Initialisation.
     $('#visit-purpose, #battery-type').select2({ theme: 'bootstrap-5' });
     const form = $('#service-log-form');
     const formPlaceholder = $('#form-placeholder');
@@ -126,25 +126,25 @@ $(document).ready(function() {
     let map, markers = {};
     let activeLocationId = null;
 
-    // Створюємо іконки для різних статусів
-    function createIcon(color, customClassName = '') { // Додаємо другий аргумент
+    // Create icons for different statuses.
+    function createIcon(color, customClassName = '') { // Add the second argument.
         return L.icon({
             iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
             shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
-            className: customClassName // <-- ДОДАЄМО ЦЕЙ ВАЖЛИВИЙ ПАРАМЕТР
+            className: customClassName
         });
     }
     const icons = {
         ok: createIcon('green'),
         warning: createIcon('yellow'),
         critical: createIcon('red'),
-        unknown: createIcon('grey'), // Звичайний сірий для невідомих
-        inactive: createIcon('grey', 'marker-inactive'), // Спеціальний сірий для неактивних
+        unknown: createIcon('grey'), // Plain grey for unknown statuses.
+        inactive: createIcon('grey', 'marker-inactive'), // Special grey for inactive locations.
         selected: createIcon('violet')
     };
 
-    // Ініціалізація карти
+    // Map initialisation.
     function initMap() {
         const GEOSERVER_BASE_URL = "{{ geoserver_url }}";
         const geocache = `${GEOSERVER_BASE_URL}/gwc/service/wms`;
@@ -154,14 +154,14 @@ $(document).ready(function() {
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
         map = L.map('map').setView([49.9, 23.7], 11);
-        osmLayer.addTo(map);  // #45: OSM — дефолт
+        osmLayer.addTo(map);  // #45: OSM — default
         L.control.layers({ "{{ _('OSM') }}": osmLayer, "{{ _('Супутник') }}": satelliteLayer }).addTo(map);
         
         loadLocations();
     }
     initMap();
 
-    // Завантаження локацій з їх статусами
+    // Load locations with their statuses.
     function loadLocations() {
         fetch(`/{_ g.lang_code _}/camera-traps/api/locations-with-status`)
             .then(res => res.json())
@@ -174,17 +174,17 @@ $(document).ready(function() {
                     let popupContent = `<b>${loc.name}</b><br>`;
                     popupContent += `{{ _('Останній візит:') }} ${loc.last_visit_date}<br>`;
 
-                    // Перевіряємо, чи активна камера
+                    // Check whether the camera is active.
                     if (loc.status === 'inactive') {
-                        // Якщо ні, просто показуємо причину і не робимо прогнозів
+                        // If not, show the reason and skip forecasts.
                         popupContent += `<b>{{ _('Статус:') }} ${loc.status_reason}</b>`;
                     } else {
-                        // Якщо так, показуємо повну інформацію з прогнозом
+                        // If yes, show full information with the forecast.
                         popupContent += `{{ _('Статус:') }} ${loc.status}<br>`;
                         if (loc.days_since_visit !== null) {
-                            // Розраховуємо місяці, ділячи дні на середню кількість днів у місяці (~30.44)
+                            // Calculate months by dividing days by the average days per month (~30.44).
                             const months = (loc.days_since_visit / 30.4375).toFixed(2);
-                            // Додаємо розрахунок у рядок
+                            // Add the calculation to the string.
                             popupContent += `{{ _('Днів тому:') }} ${loc.days_since_visit} (${months} {{ _('міс.') }})<br>`;
                         }
                         if (loc.predicted_photos !== null) {
@@ -209,7 +209,7 @@ $(document).ready(function() {
             });
     }
 
-    // Вибір локації
+    // Location selection.
     function selectLocation(locationId) {
         if (activeLocationId) {
             const prevMarker = markers[activeLocationId];
@@ -221,12 +221,12 @@ $(document).ready(function() {
         currentMarker.setIcon(icons.selected);
         map.panTo(currentMarker.getLatLng());
 
-        // Заповнення форми та історії
+        // Populate the form and history.
         const locationName = currentMarker.getPopup().getContent().split('<br>')[0];
         $('#form-title').html(`{{ _('Новий запис для:') }} <b>${locationName}</b>`);
         $('#location-id').val(locationId);
         
-        // Встановлюємо поточний час у поле datetime-local
+        // Set the current time in the datetime-local field.
         const now = new Date();
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
         $('#visit-datetime').val(now.toISOString().slice(0, 16));
@@ -237,7 +237,7 @@ $(document).ready(function() {
         loadHistory(locationId);
     }
     
-    // Завантаження історії
+    // Load history.
     function loadHistory(locationId) {
         historyContent.html('<div class="text-center">{{ _("Завантаження...") }}</div>');
         historyPlaceholder.hide();
@@ -279,7 +279,7 @@ $(document).ready(function() {
             });
     }
 
-    // Обробка відправки форми (буде реалізовано на наступному кроці)
+    // Handle form submission.
     form.on('submit', function(e) {
         e.preventDefault();
         
@@ -287,7 +287,7 @@ $(document).ready(function() {
         const originalButtonText = submitButton.html();
         submitButton.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> {{ _("Збереження...") }}');
 
-        // 1. Збираємо дані з форми
+        // 1. Collect data from the form.
         const formData = {
             location_id: $('#location-id').val(),
             visit_datetime: $('#visit-datetime').val(),
@@ -299,22 +299,22 @@ $(document).ready(function() {
             comments: $('#comments').val()
         };
 
-        // 2. Відправляємо дані на сервер
+        // 2. Send the data to the server.
         fetch(`/{{ g.lang_code }}/camera-traps/api/service-log/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token() }}' // Важливо для безпеки
+                'X-CSRFToken': '{{ csrf_token() }}' // Important for security.
             },
             body: JSON.stringify(formData)
         })
         .then(response => response.json().then(data => ({ok: response.ok, data})))
         .then(({ok, data}) => {
             if (ok) {
-                // 3. Обробка успішної відповіді
+                // 3. Handle a successful response.
                 alert(data.message);
                 
-                // Очищаємо форму, але залишаємо вибрану локацію та поточний час
+                // Clear the form but keep the selected location and current time.
                 $('#visit-purpose').val('').trigger('change');
                 $('#battery-type').val('').trigger('change');
                 $('input[name="is-operational"][value=""]').prop('checked', true);
@@ -322,27 +322,27 @@ $(document).ready(function() {
                 $('#photos-on-card').val('');
                 $('#comments').val('');
 
-                // Оновлюємо список історії
+                // Update the history list.
                 loadHistory(formData.location_id);
                 
-                // Також варто оновити статус точки на карті, оскільки тепер у неї є свіжий візит
+                // Also update the map marker status — the location now has a fresh visit.
             const marker = markers[formData.location_id];
             if (marker) {
                 marker.originalStatus = 'ok';
                 marker.setIcon(icons.selected);
 
-                // 1. Беремо дату з форми, а не створюємо нову
+                // 1. Take the date from the form rather than creating a new one.
                 const visitDate = new Date(formData.visit_datetime);
                 const formattedVisitDate = visitDate.toLocaleDateString('uk-UA');
 
-                // 2. Оновлюємо popup з правильною датою
-                let popupContent = marker.getPopup().getContent().split('<br>')[0]; // Отримуємо тільки назву локації
+                // 2. Update the popup with the correct date.
+                let popupContent = marker.getPopup().getContent().split('<br>')[0]; // Get only the location name.
                 popupContent += `<br>{{ _('Статус:') }} ok<br>{{ _('Останній візит:') }} ${formattedVisitDate}<br>{{ _('Днів тому:') }} 0 (0.00 {{ _('міс.') }})<br><small>{{ _('Прогноз за часом') }}</small>`;
                 marker.setPopupContent(popupContent);
             }
 
             } else {
-                // 4. Обробка помилки
+                // 4. Handle errors.
                 throw new Error(data.error || '{{ _("Невідома помилка") }}');
             }
         })
@@ -350,13 +350,13 @@ $(document).ready(function() {
             alert(`{{ _('Помилка збереження:') }} ${error.message}`);
         })
         .finally(() => {
-            // Повертаємо кнопку до початкового стану
+            // Restore the button to its initial state.
             submitButton.prop('disabled', false).html(originalButtonText);
         });
     });
 });
 
-// Обробник для кнопки перерахунку статистики
+// Handler for the recalculate-stats button.
 $('#recalculate-stats-btn').on('click', function() {
     const btn = $(this);
     const btnText = btn.find('span');
@@ -380,7 +380,7 @@ $('#recalculate-stats-btn').on('click', function() {
     .then(({ok, data}) => {
         alert(data.message || data.error);
         if (ok) {
-            // Очищаємо старі маркери і завантажуємо нові з оновленими статусами
+            // Clear old markers and reload them with updated statuses.
             for (let id in markers) {
                 map.removeLayer(markers[id]);
             }

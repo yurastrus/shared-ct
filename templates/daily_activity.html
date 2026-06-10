@@ -12,9 +12,9 @@
         <h1>{{ _('Добова активність видів') }}</h1>
     </div>
 
-    <!-- Панель налаштувань -->
+    <!-- Settings panel -->
     <div class="filters-panel">
-        <!-- РЯДОК 1: ДАТИ (Горизонтально) -->
+        <!-- ROW 1: DATES (horizontal) -->
         <div class="filter-row">
             <div class="filter-group">
                 <label>{{ _('Період з:') }}</label>
@@ -64,7 +64,7 @@
                 </div>
             </div>
 
-            <!-- Блок 2: Галочка CI -->
+            <!-- Block 2: CI checkbox -->
             <div class="filter-group">
                 <label>{{ _('Довірчі інтервали:') }}</label>
                 {% if current_user.is_authenticated %}
@@ -79,13 +79,13 @@
             </div>
 
             <div class="filter-group">
-                <!-- 1. Напис на окремому рядку (display: block) -->
+                <!-- 1. Label on its own line (display: block) -->
                 <label style="display: block; margin-bottom: 5px; width: 100%;">
                     {{ _('Згладжування (KDE):') }} 
                     <span id="bw-value" style="color: #0d6efd; font-weight: bold;">0.1</span>
                 </label>
                 
-                <!-- 2. Повзунок та підписи під ним (окремий flex-контейнер) -->
+                <!-- 2. Slider and labels below it (separate flex container) -->
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span class="filter-hint">{{ _('Різко') }}</span>
                     <input type="range" class="form-range" id="bw-adjust" min="0" max="0.3" step="0.01" value="0.1" style="width: 120px;">
@@ -94,7 +94,7 @@
             </div>
         </div>
 
-        <!-- РЯДОК 2: ВИДИ (На всю ширину) -->
+        <!-- ROW 2: SPECIES (full width) -->
         <div class="filter-row">
             <div class="filter-group full-width">
                 <label>{{ _('Види (можна декілька):') }}</label>
@@ -109,7 +109,7 @@
         </div>
 
 
-        <!-- РЯДОК 3: Кнопки -->
+        <!-- ROW 3: Buttons -->
         <div class="filter-row">
             <div class="filter-group buttons-group">
                 <div style="display: flex; gap: 10px;">
@@ -127,7 +127,7 @@
         </div>
     </div>
 
-    <!-- Графік -->
+    <!-- Chart -->
     <div class="chart-container">
         <canvas id="activityChart"></canvas>
     </div>
@@ -135,7 +135,7 @@
         <span id="effort-display"></span>
     </div>
 
-    <!-- БЛОК ДЛЯ МАТРИЦІ -->
+    <!-- MATRIX BLOCK -->
     <div id="overlap-section" class="matrix-container" style="display: none;">
         <h4 class="mb-3">{{ _('Матриця перекриття активності') }}</h4>
         
@@ -145,7 +145,7 @@
         </p>
 
         <div class="table-responsive">
-            <!-- Додав style="width: auto;" щоб таблиця не розтягувалась занадто сильно, якщо видів мало -->
+            <!-- style="width: auto;" prevents the table from stretching too wide when few species are present -->
             <table class="table table-bordered table-hover text-center align-middle mb-0" id="overlap-table" style="min-width: 300px;">
                 <thead class="table-light"></thead>
                 <tbody></tbody>
@@ -162,7 +162,7 @@
 
 <script>
 $(document).ready(function() {
-    // --- 1. ІНІЦІАЛІЗАЦІЯ ---
+    // --- 1. INITIALISATION ---
     
     $('#species-select').select2({
         placeholder: "{{ _('-- Виберіть види --') }}",
@@ -170,39 +170,39 @@ $(document).ready(function() {
         allowClear: true
     });
 
-    // --- Обробка повзунка ---
+    // --- Slider handling ---
     $('#bw-adjust').on('input', function() {
         $('#bw-value').text($(this).val());
     });
 
     let chartInstance = null;
     let rawApiData = null; 
-    let currentMode = 'rai'; // 'rai' або 'percent'
+    let currentMode = 'rai'; // 'rai' or 'percent'.
     
-    // Палітра кольорів
+    // Colour palette.
     const baseColors = [
         '#0d6efd', '#dc3545', '#198754', '#ffc107', '#6610f2', 
         '#0dcaf0', '#fd7e14', '#20c997', '#e83e8c', '#6f42c1'
     ];
 
-    // Допоміжна функція для прозорості
+    // Helper function for opacity.
     function hexToRgba(hex, alpha) {
-        // Простий конвертер HEX -> RGBA
+        // Simple HEX → RGBA converter.
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
-    // --- 2. ОБРОБКА КНОПКИ "ПОБУДУВАТИ" ---
+    // --- 2. "BUILD" BUTTON HANDLER ---
 
     $('#apply-btn').click(function() {
         const speciesIds = $('#species-select').val();
         const startDate = $('#start-date').val();
         const endDate = $('#end-date').val();
         
-        // Перевіряємо чекбокс (якщо він є на сторінці)
-        // Для незалогінених його немає, метод поверне false, що нам і треба
+        // Check the checkbox (may not be present for unauthenticated users).
+        // For unauthenticated users it is absent — method returns false, which is correct.
         const computeCi = $('#ci-checkbox').is(':checked');
 
         const bwAdjust = $('#bw-adjust').val();
@@ -216,28 +216,28 @@ $(document).ready(function() {
         const originalText = btn.html();
         btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ _("Зачекайте...") }}');
         
-        // Блокуємо кнопку завантаження на час запиту
+        // Disable the download button while the request is in progress.
         $('#download-btn').prop('disabled', true);
 
-        // Scope (установа / екорегіон); default 'global:' (всі дані)
+        // Scope (institution / ecoregion); default 'global:' (all data).
         const scopeVal = $('#scope-select').val() || 'global:';
         const [scopeType, scopeId] = scopeVal.split(':');
 
-        // Формуємо URL
+        // Build the URL.
         const apiUrl = `{{ url_for('camera_traps.api_daily_activity', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&compute_ci=${computeCi}&bw_adjust=${bwAdjust}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
 
         $.getJSON(apiUrl)
             .done(function(data) {
                 rawApiData = data;
                 
-                // Якщо помилка прийшла в JSON (наприклад, мало даних)
+                // Error returned as JSON (e.g. not enough data).
                 if (data.error) {
                     alert(data.error);
                 } else {
                     updateStatsDisplay(data.total_effort);
                     renderChart();
                     
-                    // Якщо дані є - активуємо кнопку завантаження
+                    // Data received — enable the download button.
                     if (data.species_data && Object.keys(data.species_data).length > 0) {
                         $('#download-btn').prop('disabled', false);
                     } else {
@@ -247,7 +247,7 @@ $(document).ready(function() {
                     if (data.overlap_matrix) {
                     renderOverlapMatrix(data.overlap_matrix, data.species_names);
                     } else {
-                        $('#overlap-section').hide(); // Ховаємо, якщо вид один
+                        $('#overlap-section').hide(); // Hide if only one species.
                     }
                 }
             })
@@ -259,21 +259,21 @@ $(document).ready(function() {
             });
     });
 
-    // --- 3. ОБРОБКА КНОПКИ "ЗАВАНТАЖИТИ" ---
+    // --- 3. "DOWNLOAD" BUTTON HANDLER ---
     
     $('#download-btn').click(function() {
         const speciesIds = $('#species-select').val();
         const startDate = $('#start-date').val();
         const endDate = $('#end-date').val();
-        const bwAdjust = $('#bw-adjust').val(); // Значення слайдера
+        const bwAdjust = $('#bw-adjust').val(); // Slider value.
         
-        // Читаємо стан чекбокса. Якщо він не існує (user not logged in), буде false.
+        // Read checkbox state; if absent (user not logged in), defaults to false.
         const computeCi = $('#ci-checkbox').is(':checked');
         
         if (!speciesIds || speciesIds.length === 0) return;
 
-        // Формуємо URL з усіма параметрами
-        // Той самий scope що для apply (download має дати identичну вибірку)
+        // Build the URL with all parameters.
+        // Same scope as "apply" — download must produce an identical dataset.
         const scopeVal = $('#scope-select').val() || 'global:';
         const [scopeType, scopeId] = scopeVal.split(':');
 
@@ -282,7 +282,7 @@ $(document).ready(function() {
         window.location.href = downloadUrl;
     });
 
-    // --- 4. ПЕРЕМИКАННЯ РЕЖИМІВ (RAI / %) ---
+    // --- 4. MODE TOGGLE (RAI / %) ---
 
     $('.mode-btn').click(function() {
         $('.mode-btn').removeClass('active');
@@ -294,7 +294,7 @@ $(document).ready(function() {
         }
     });
 
-    // --- 5. ФУНКЦІЯ МАЛЮВАННЯ ГРАФІКА ---
+    // --- 5. CHART DRAW FUNCTION ---
 
     function renderChart() {
         if (!rawApiData || !rawApiData.species_data) return;
@@ -303,38 +303,38 @@ $(document).ready(function() {
         const datasets = [];
         let colorIdx = 0;
 
-        // Ітеруємо по видах
+        // Iterate over species.
         for (const [speciesId, speciesDataObj] of Object.entries(rawApiData.species_data)) {
             const speciesName = rawApiData.species_names[speciesId] || `Species ${speciesId}`;
             
-            // Вибираємо набір даних (rai або percent)
+            // Select the dataset (rai or percent).
             const dataSet = speciesDataObj[currentMode];
             if (!dataSet || !dataSet.hours) continue;
 
             const baseColor = baseColors[colorIdx % baseColors.length];
-            const ciColor = hexToRgba(baseColor, 0.2); // Напівпрозорий колір для CI
+            const ciColor = hexToRgba(baseColor, 0.2); // Semi-transparent colour for CI band.
 
-            // Формуємо точки {x, y}
+            // Build {x, y} data points.
             const meanPoints = dataSet.hours.map((h, i) => ({x: h, y: dataSet.mean[i]}));
 
-            // --- ШАР 1: Довірчі інтервали (якщо вони є) ---
+            // --- LAYER 1: Confidence intervals (if present) ---
             if (dataSet.ci_lower && dataSet.ci_upper) {
                 const upperPoints = dataSet.hours.map((h, i) => ({x: h, y: dataSet.ci_upper[i]}));
                 const lowerPoints = dataSet.hours.map((h, i) => ({x: h, y: dataSet.ci_lower[i]}));
 
-                // Верхня межа (невидима лінія, але заливає область під собою до 'fill: +1')
+                // Upper bound (invisible line that fills the area below it down to 'fill: +1').
                 datasets.push({
                     label: `${speciesName} (CI Upper)`,
                     data: upperPoints,
                     borderColor: 'transparent',
                     backgroundColor: ciColor,
                     pointRadius: 0,
-                    fill: '+1', // Заливка до наступного dataset (Lower CI)
+                    fill: '+1', // Fill to the next dataset (Lower CI).
                     order: 2,
-                    tension: 0 // Вже згладжено на бекенді
+                    tension: 0 // Already smoothed on the backend.
                 });
 
-                // Нижня межа (невидима лінія, обмежує заливку)
+                // Lower bound (invisible line that caps the fill).
                 datasets.push({
                     label: `${speciesName} (CI Lower)`,
                     data: lowerPoints,
@@ -346,29 +346,29 @@ $(document).ready(function() {
                 });
             }
 
-            // --- ШАР 2: Середнє значення (Основна лінія) ---
+            // --- LAYER 2: Mean value (main line) ---
             datasets.push({
                 label: speciesName,
                 data: meanPoints,
                 borderColor: baseColor,
                 backgroundColor: baseColor,
                 borderWidth: 2,
-                pointRadius: 0, // Приховуємо точки для гладкості
+                pointRadius: 0, // Hide points for a cleaner look.
                 pointHoverRadius: 4,
                 fill: false,
-                order: 1, // Малюємо поверх CI
+                order: 1, // Draw on top of CI.
                 tension: 0
             });
 
             colorIdx++;
         }
 
-        // Знищуємо старий графік перед створенням нового
+        // Destroy the old chart before creating a new one.
         if (chartInstance) {
             chartInstance.destroy();
         }
 
-        // Створюємо Chart.js екземпляр
+        // Create a Chart.js instance.
         chartInstance = new Chart(ctx, {
             type: 'line',
             data: { datasets: datasets },
@@ -395,7 +395,7 @@ $(document).ready(function() {
                         beginAtZero: true,
                         title: {
                             display: true,
-                            // Екрануємо %% для Jinja2
+                            // Escape %% for Jinja2.
                             text: currentMode === 'rai' ? '{{ _("Індекс DR") }}' : '{{ _("Щільність активності (%%)") }}'
                         }
                     }
@@ -403,7 +403,7 @@ $(document).ready(function() {
                 plugins: {
                     legend: {
                         labels: {
-                            // Ховаємо CI з тексту легенди (це у вас вже є)
+                            // Hide CI bands from the legend text.
                             filter: function(item, chart) {
                                 return !item.text.includes('(CI');
                             }
@@ -412,21 +412,21 @@ $(document).ready(function() {
                             const index = legendItem.datasetIndex;
                             const ci = legend.chart;
                             
-                            // 1. Перевіряємо, чи цей вид зараз видимий
-                            // (ci.isDatasetVisible повертає true, якщо зараз видно, значить юзер хоче сховати)
+                            // 1. Check whether this species is currently visible.
+                            // (ci.isDatasetVisible returns true if currently visible, meaning the user wants to hide it).
                             const isVisible = ci.isDatasetVisible(index);
 
-                            // Отримуємо назву виду, по якому клікнули (наприклад "Кабан")
+                            // Get the name of the clicked species (e.g. "Boar").
                             const targetLabel = ci.data.datasets[index].label;
 
-                            // 2. Проходимо по ВСІХ датасетах графіка
+                            // 2. Iterate over ALL chart datasets.
                             ci.data.datasets.forEach((ds, i) => {
-                                // Перевіряємо:
-                                // а) Це сам вид (Кабан)
-                                // б) АБО це його CI (Кабан (CI Upper) / Кабан (CI Lower))
+                                // Check:
+                                // a) This is the species itself (Boar).
+                                // b) OR this is its CI band (Boar (CI Upper) / Boar (CI Lower)).
                                 if (ds.label === targetLabel || ds.label.startsWith(targetLabel + ' (CI')) {
                                     
-                                    // Якщо було видимо -> ховаємо. Якщо було сховано -> показуємо.
+                                    // If visible → hide; if hidden → show.
                                     if (isVisible) {
                                         ci.hide(i);
                                     } else {
@@ -439,7 +439,7 @@ $(document).ready(function() {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                // Не показуємо тултіпи для меж інтервалів
+                                // Do not show tooltips for interval bounds.
                                 if (context.dataset.label.includes('(CI')) return null;
                                 
                                 let label = context.dataset.label || '';
@@ -455,7 +455,7 @@ $(document).ready(function() {
         });
     }
 
-    // --- 6. ФУНКЦІЯ ВІДОБРАЖЕННЯ МАТРИЦІ ПЕРЕКРИТТЯ ---
+    // --- 6. OVERLAP MATRIX RENDER FUNCTION ---
     
     function renderOverlapMatrix(matrixData, namesMap) {
         const order = matrixData.order;
@@ -468,7 +468,7 @@ $(document).ready(function() {
         $thead.empty();
         $tbody.empty();
 
-        // Шапка
+        // Header row.
         let headerRow = '<tr><th class="bg-light"></th>'; 
         order.forEach(id => {
             headerRow += `<th class="bg-light">${namesMap[id]}</th>`;
@@ -476,14 +476,14 @@ $(document).ready(function() {
         headerRow += '</tr>';
         $thead.append(headerRow);
 
-        // Рядки
+        // Data rows.
         order.forEach(rowId => {
             let tr = `<tr>`;
             tr += `<th class="bg-light text-center">${namesMap[rowId]}</th>`;
             
             order.forEach(colId => {
                 const cellData = data[rowId][colId]; 
-                // cellData тепер це об'єкт: {mean: ..., lower: ..., upper: ...}
+                // cellData is now an object: {mean: ..., lower: ..., upper: ...}.
 
                 let val = cellData.mean;
                 let percent = (val * 100).toFixed(1);
@@ -495,18 +495,18 @@ $(document).ready(function() {
                     style = 'background-color: #f8f9fa; color: #ccc;';
                     cellContent = '-';
                 } else {
-                    // Колір залежить від середнього значення
+                    // Colour depends on the mean value.
                     const textColor = val > 0.6 ? 'white' : 'black';
                     style = `background-color: rgba(13, 110, 253, ${val}); color: ${textColor};`;
                     
-                    // Основне число (Жирним)
+                    // Main number (bold).
                     cellContent += `<div style="font-weight: bold; font-size: 1.1em;">${percent}%</div>`;
                     
-                    // Довірчий інтервал (меншим шрифтом), якщо він є
+                    // Confidence interval (smaller font), if present.
                     if (cellData.lower !== null && cellData.upper !== null) {
                         let low = (cellData.lower * 100).toFixed(1);
                         let high = (cellData.upper * 100).toFixed(1);
-                        // Трохи прозоріший текст для CI
+                        // Slightly more transparent text for CI.
                         let ciColor = val > 0.6 ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
                         cellContent += `<div style="font-size: 0.75em; color: ${ciColor};">(${low}-${high}%)</div>`;
                     }

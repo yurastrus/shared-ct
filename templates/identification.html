@@ -30,7 +30,7 @@
         </select>
         {% endif %}
 
-        {# ── AI-фільтр ── #}
+        {# ── AI filter ── #}
         {% if ai_available %}
         <label for="ai-species-select" class="scope-filter-label">🤖 {{ _('AI вид:') }}</label>
         <select id="ai-species-select" class="scope-filter-select form-control form-control-sm"
@@ -45,7 +45,7 @@
         <div class="scope-bar-right">
             <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 0.95rem;"></span>
 
-            <!-- Перемикач теми + режим перегляду (перенесено з правої колонки) -->
+            <!-- Theme toggle + view mode (moved from right column) -->
             <div class="theme-and-review-toggle">
                 <div class="theme-toggle-option active" data-theme="light">
                     <span class="theme-icon">☀️</span>
@@ -65,12 +65,12 @@
     </div>
 
     <div id="identification-wrapper" style="display: none;">
-        <!-- Індикатор review режиму -->
+        <!-- Review mode indicator -->
         <div id="review-indicator" class="review-indicator" style="display: none;">
             {{ _('🔍 РЕЖИМ ПЕРЕГЛЯДУ: Перевіряється вже визначена серія') }}
         </div>
 
-        <!-- Фільтри для review режиму -->
+        <!-- Review mode filters -->
         <div id="review-filters" class="review-filters" style="display: none;">
             <div class="filter-row">
                 <div class="filter-group">
@@ -100,7 +100,7 @@
             </div>
         </div>
 
-        <!-- Блок з існуючими ідентифікаціями -->
+        <!-- Existing identifications block -->
         <div id="existing-identifications" class="existing-identifications" style="display: none;">
             <h4>{{ _('Існуючі ідентифікації серії:') }}</h4>
             <div id="existing-identifications-list"></div>
@@ -111,14 +111,14 @@
             <input type="hidden" id="observation_id" name="observation_id" value="">
 
             <div class="identification-layout">
-                <!-- Ліва колонка: Переглядач фото + Основна форма -->
+                <!-- Left column: photo viewer + main form -->
                 <div class="viewer-and-form">
                     <div class="photo-viewer">
                         <button type="button" id="prev-btn" class="nav-arrow">&lt;</button>
                         <img id="photo-display" src="" alt="{{ _('Фото для ідентифікації') }}">
                         <button type="button" id="next-btn" class="nav-arrow">&gt;</button>
                         
-                        <!-- Кнопка для відкриття у повному розмірі -->
+                        <!-- Open-in-full-size button -->
                         <button type="button" id="fullsize-btn" class="fullsize-btn" title="{{ _('Відкрити у повному розмірі') }}">
                             🔍
                         </button>
@@ -137,7 +137,7 @@
                             {% endfor %}
                         </div>
 
-                        <!-- Коментар (#47) — під тегами, зліва, на всю ширину -->
+                        <!-- Comment (#47) — below tags, left-aligned, full width -->
                         <div class="comment-panel" style="margin-top: 10px;">
                             {{ form.comment.label(class="form-label") }}
                             {{ form.comment(class="form-control", rows="2", style="width:100%; box-sizing:border-box;", placeholder=_('Короткий коментар, до 200 символів')) }}
@@ -146,9 +146,9 @@
                     </div>
                 </div>
 
-                <!-- Права колонка: два окремих контейнери -->
+                <!-- Right column: two separate containers -->
                 <div class="right-column">
-                    <!-- Кнопки дій (тема та режим перегляду — у верхній панелі) -->
+                    <!-- Action buttons (theme and view mode — in the top bar) -->
                     <div class="action-buttons-container">
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
@@ -159,7 +159,7 @@
                         </div>
                     </div>
                     
-                    <!-- Кількість особин + У вибране — над списком видів -->
+                    <!-- Count + Favourites — above the species list -->
                     <div class="quantity-panel">
                         <div class="quantity-field">
                             {{ form.quantity.label(class="form-label") }}
@@ -171,16 +171,16 @@
                         </div>
                     </div>
 
-                    <!-- Окремий контейнер для списку видів -->
+                    <!-- Separate container for the species list -->
                     <div class="species-selection-panel">
 
-                        <!-- AI-прогноз для цієї серії (заповнюється JS) -->
+                        <!-- AI prediction for this series (populated by JS) -->
                         <div id="ai-prediction-badge" class="ai-pred-badge" style="display: none;">
                             <span class="ai-pred-icon">🤖</span>
                             <span class="ai-pred-text"></span>
                         </div>
 
-                        <!-- Перша категорія: Пусто -->
+                        <!-- First category: Empty -->
                         <h3 class="species-group-title">{{ _('Загальні опції') }}</h3>
                         {% for value, label in empty_choices %}
                             <div class="species-option">
@@ -191,7 +191,7 @@
                             </div>
                         {% endfor %}
 
-                        <!-- Категорії тварин у правильному порядку -->
+                        <!-- Animal categories in correct order -->
                         {% set category_translations = {
                             'mammals': _('Ссавці'),
                             'birds': _('Птахи'), 
@@ -212,7 +212,7 @@
                             {% endif %}
                         {% endfor %}
 
-                        <!-- Інші категорії в кінці -->
+                        <!-- Other categories at the end -->
                         <h3 class="species-group-title">{{ _('Інші категорії') }}</h3>
                         {% for value, label in other_special_choices %}
                             <div class="species-option">
@@ -236,16 +236,16 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(document).ready(function() {
-    // === СИСТЕМА ПЕРЕМИКАЧІВ ТЕБМ ===
+    // === THEME TOGGLE SYSTEM ===
 
-    // Ініціалізація теми при завантаженні сторінки
+    // Initialise theme on page load.
     function initializeTheme() {
         const savedTheme = localStorage.getItem('camera-traps-theme') || 'light';
         applyTheme(savedTheme);
         updateThemeToggle(savedTheme);
     }
 
-    // Застосування теми
+    // Apply theme.
     function applyTheme(theme) {
         if (theme === 'dark') {
             document.body.classList.add('dark-theme');
@@ -254,27 +254,27 @@ $(document).ready(function() {
         }
     }
 
-    // Оновлення візуального стану перемикача
+    // Update the toggle's visual state.
     function updateThemeToggle(activeTheme) {
         $('.theme-toggle-option').removeClass('active');
         $(`.theme-toggle-option[data-theme="${activeTheme}"]`).addClass('active');
     }
 
-    // Обробники кліків на перемикач теми
+    // Click handlers for the theme toggle.
     $('.theme-toggle-option').on('click', function() {
         const selectedTheme = $(this).data('theme');
         
-        // Зберігаємо вибір користувача
+        // Save the user's choice.
         localStorage.setItem('camera-traps-theme', selectedTheme);
         
-        // Застосовуємо тему
+        // Apply the theme.
         applyTheme(selectedTheme);
         updateThemeToggle(selectedTheme);
         
         console.log(`Theme switched to: ${selectedTheme}`);
     });
 
-    // Клавіатурний ярлик для перемикання теми (Ctrl + Shift + T)
+    // Keyboard shortcut to toggle the theme (Ctrl + Shift + T).
     $(document).on('keydown', function(e) {
         if (e.ctrlKey && e.shiftKey && e.key === 'T') {
             e.preventDefault();
@@ -289,10 +289,10 @@ $(document).ready(function() {
         }
     });
 
-    // Ініціалізація теми
+    // Theme initialisation.
     initializeTheme();
 
-    // === КІНЕЦЬ СИСТЕМИ ПЕРЕМИКАЧІВ ТЕБМ ===
+    // === END THEME TOGGLE SYSTEM ===
 
     const wrapper = $('#identification-wrapper');
     const noPhotosMessage = $('#no-photos-message');
@@ -330,7 +330,7 @@ $(document).ready(function() {
     function loadAndDisplayCounter() {
         const counterElement = $('#identification-counter');
 
-        // Не показуємо лічильник у режимі перегляду
+        // Do not show the counter in review mode.
         if (reviewMode) {
             counterElement.hide();
             return;
@@ -370,7 +370,7 @@ $(document).ready(function() {
             });
     }
 
-    // Завантаження фільтрів для review режиму
+    // Load filters for review mode.
     function loadReviewFilters() {
         fetch("{{ url_for('camera_traps.get_review_filters', lang_code=g.lang_code) }}")
             .then(r => r.json())
@@ -378,13 +378,13 @@ $(document).ready(function() {
                 const userSelect = $('#review-user-filter');
                 const speciesSelect = $('#review-species-filter');
                 
-                // Заповнити користувачів
+                // Populate users.
                 userSelect.empty().append('<option value="">{{ _("-- Всі користувачі --") }}</option>');
                 data.users.forEach(user => {
                     userSelect.append(`<option value="${user.id}">${user.username}</option>`);
                 });
                 
-                // Заповнити види
+                // Populate species.
                 speciesSelect.empty().append('<option value="">{{ _("-- Всі види --") }}</option>');
                 data.species.forEach(species => {
                     speciesSelect.append(`<option value="${species.id}">${species.name}</option>`);
@@ -396,7 +396,7 @@ $(document).ready(function() {
     }
 
     function updateReviewModeUI() {
-        // Синхронізуємо стан чекбоксу зі змінною reviewMode
+        // Synchronise the checkbox state with the reviewMode variable.
         reviewModeToggle.prop('checked', reviewMode);
         
         if (reviewMode) {
@@ -409,7 +409,7 @@ $(document).ready(function() {
         }
     }
 
-    // Обробка перемикання review режиму
+    // Handle review mode toggle.
     reviewModeToggle.on('change', function() {
         reviewMode = $(this).is(':checked');
         updateReviewModeUI(); 
@@ -420,14 +420,14 @@ $(document).ready(function() {
             reviewFiltersData = { userId: '', speciesId: '' };
         }
         
-        // --- ДОДАНО: Оновлюємо лічильник при зміні режиму ---
+        // Update the counter when the mode changes.
         loadAndDisplayCounter();
         
         console.log('Review mode:', reviewMode);
         loadNextObservation();
     });
 
-    // Обробка фільтрів
+    // Handle filters.
     $('#apply-review-filters').on('click', function() {
         reviewFiltersData.userId = $('#review-user-filter').val();
         reviewFiltersData.speciesId = $('#review-species-filter').val();
@@ -435,14 +435,14 @@ $(document).ready(function() {
         loadNextObservation();
     });
 
-    // AI-фільтр: при зміні одразу завантажуємо нову серію.
+    // AI filter: load a new series immediately on change.
     $('#ai-species-select').on('change', function() {
         loadAndDisplayCounter();
         loadNextObservation();
     });
 
-    // Scope-фільтр: каскадно оновлюємо AI-список (актуальні види + лічильники),
-    // потім завантажуємо нову серію. Один напрямок: scope → AI.
+    // Scope filter: cascade-update the AI list (current species + counts),
+    // then load a new series. One direction: scope → AI.
     const aiSpeciesEndpoint =
         "{{ url_for('camera_traps.identify_ai_species_list', lang_code=g.lang_code) }}";
     const aiAnyLabel = "{{ _('Будь-який') }}";
@@ -471,16 +471,16 @@ $(document).ready(function() {
             .then(r => r.ok ? r.json() : Promise.reject(r))
             .then(data => {
                 const items = data && data.items || [];
-                // Перебудовуємо options
+                // Rebuild the options.
                 $sel.empty();
                 $sel.append($('<option>', {value: '', text: aiAnyLabel}));
                 items.forEach(s => {
                     $sel.append($('<option>', {value: s.id, text: s.text}));
                 });
-                // Зберігаємо вибір, якщо species ще в списку
+                // Preserve the selection if the species is still in the list.
                 const stillPresent = items.some(s => String(s.id) === String(prevVal));
                 $sel.val(stillPresent ? prevVal : '');
-                // Стан disabled залежить від наповненості
+                // Disabled state depends on whether the list has entries.
                 if (items.length === 0) {
                     $sel.prop('disabled', true).attr('title', aiEmptyHint);
                 } else {
@@ -506,7 +506,7 @@ $(document).ready(function() {
             return;
         }
 
-        const esc = (s) => $('<div>').text(s == null ? '' : s).html();  // #47: захист від XSS
+        const esc = (s) => $('<div>').text(s == null ? '' : s).html();  // #47: XSS protection.
         let html = '';
         identifications.forEach(function(ident) {
             html += `
@@ -525,7 +525,7 @@ $(document).ready(function() {
         existingIdentificationsBlock.show();
     }
 
-    // ── AI-прогноз: оновлює бейдж і pre-fill species radio ──────────────
+    // ── AI prediction: updates the badge and pre-fills the species radio ──────────────
     function applyAIPrediction(aiPred) {
         const $badge = $('#ai-prediction-badge');
         const $text  = $badge.find('.ai-pred-text');
@@ -535,7 +535,7 @@ $(document).ready(function() {
             return;
         }
 
-        // Текст бейджа: вид + впевненість %
+        // Badge text: species + confidence %.
         const label = aiPred.species_label || '—';
         const score = aiPred.score != null
             ? `${Math.round(aiPred.score * 100)}%`
@@ -548,7 +548,7 @@ $(document).ready(function() {
         $text.text(`${tplBadge}: ${label} · ${tplConf}: ${score} · ${tplAn}: ${animals}`);
         $badge.show();
 
-        // Pre-select species (radio button з value=species_id)
+        // Pre-select species (radio button with value=species_id).
         if (aiPred.species_id != null) {
             const $radio = $(`input[name="{{ form.species.name }}"][value="${aiPred.species_id}"]`);
             if ($radio.length) {
@@ -556,7 +556,7 @@ $(document).ready(function() {
             }
         }
 
-        // animal_count → попередньо заповнюємо quantity (якщо є реальне число)
+        // animal_count → pre-fill quantity (if a real number is present).
         if (aiPred.animal_count != null && aiPred.animal_count > 0) {
             $('#{{ form.quantity.id }}').val(aiPred.animal_count);
         }
@@ -585,7 +585,7 @@ $(document).ready(function() {
         let apiUrl = "{{ url_for('camera_traps.next_observation_for_identification', lang_code=g.lang_code) }}";
         const params = new URLSearchParams();
 
-        // Scope фільтр (установа або екорегіон)
+        // Scope filter (institution or ecoregion).
         const scopeVal = $('#scope-select').val() || '';
         if (scopeVal.startsWith('institution:')) {
             params.set('scope_institution_id', scopeVal.split(':')[1]);
@@ -593,7 +593,7 @@ $(document).ready(function() {
             params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
         }
 
-        // AI-фільтр: показуємо лише серії, де AI визначив цей вид
+        // AI filter: show only series where AI identified this species.
         const aiSpeciesId = $('#ai-species-select').val();
         if (aiSpeciesId) {
             params.set('ai_species_id', aiSpeciesId);
@@ -628,12 +628,12 @@ $(document).ready(function() {
                 wrapper.show();
                 noPhotosMessage.hide();
                 form[0].reset();
-                $('#comment-counter').text('0');  // #47: скинути лічильник коментаря
+                $('#comment-counter').text('0');  // #47: reset the comment character counter.
 
-                // AI-прогноз: pre-fill species + показуємо бейдж
+                // AI prediction: pre-fill species + show badge.
                 applyAIPrediction(data.ai_prediction);
 
-                // 2. ГОЛОВНЕ ВИПРАВЛЕННЯ: Відновлюємо стан чекбоксу після скидання форми
+                // 2. Restore checkbox state after form reset.
                 updateReviewModeUI();
             })
             .catch(error => {
@@ -665,10 +665,10 @@ $(document).ready(function() {
         } 
     });
     
-    // Обробка кнопки повного розміру
+    // Handle the full-size button.
     $('#fullsize-btn').on('click', function() {
         if (currentObservation && typeof currentPhotoIndex !== 'undefined') {
-            // Формуємо URL напряму
+            // Build the URL directly.
             const langCode = "{{ g.lang_code }}";
             const fullsizeUrl = `/${langCode}/camera-traps/observation/${currentObservation.observation_id}/photo/${currentPhotoIndex}`;
             
@@ -685,13 +685,13 @@ $(document).ready(function() {
 
     skipBtn.on('click', loadNextObservation);
 
-    // Прапорець «на повторний розгляд» (Idea 6): позначити поточну серію
-    // і перейти до наступної (fire-and-move-on).
+    // "Flag for re-review" (Idea 6): mark the current series
+    // and move to the next one (fire-and-move-on).
     $('#flag-btn').on('click', function() {
         const obsId = observationIdInput.val();
         if (!obsId) return;
         const note = prompt("{{ _('Коментар до позначки (за бажанням):') }}");
-        if (note === null) return;  // користувач скасував
+        if (note === null) return;  // user cancelled.
         const token = $('input[name="csrf_token"]').val();
         const fd = new FormData();
         fd.append('note', note || '');
@@ -717,7 +717,7 @@ $(document).ready(function() {
             return;
         }
 
-        // Збираємо вибрані поведінки з чекбоксів
+        // Collect selected behaviours from checkboxes.
         const selectedBehaviors = [];
         $('input[name="{{ form.behaviors.name }}"]:checked').each(function() {
             selectedBehaviors.push(parseInt($(this).val()));
@@ -728,7 +728,7 @@ $(document).ready(function() {
             species_id: selectedSpecies,
             quantity: $('#{{ form.quantity.id }}').val(),
             is_favorite: $('#{{ form.is_favorite.id }}').is(':checked'),
-            current_photo_index: currentPhotoIndex, // індекс поточного фото
+            current_photo_index: currentPhotoIndex, // current photo index.
             behaviors: selectedBehaviors,
             comment: $('#{{ form.comment.id }}').val(),  // #47
             csrf_token: $('input[name="csrf_token"]').val()
@@ -750,12 +750,12 @@ $(document).ready(function() {
         })
         .then(data => {
             if (!reviewMode && remainingIdentificationsCount > 0) {
-                remainingIdentificationsCount--; // Зменшуємо лічильник
+                remainingIdentificationsCount--; // Decrement the counter.
                 const counterElement = $('#identification-counter');
                 if (remainingIdentificationsCount > 0) {
                    counterElement.text(`${translations.counterText} ${remainingIdentificationsCount}`);
                 } else {
-                   // Якщо це була остання серія, ховаємо лічильник
+                   // If this was the last series, hide the counter.
                    counterElement.hide();
                 }
             }
@@ -766,7 +766,7 @@ $(document).ready(function() {
         });
     });
 
-    // #47: живий лічильник символів коментаря
+    // #47: live comment character counter.
     $('#{{ form.comment.id }}').on('input', function() {
         $('#comment-counter').text((this.value || '').length);
     });
