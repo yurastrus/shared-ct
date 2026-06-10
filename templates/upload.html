@@ -24,7 +24,7 @@
         <!-- ── LEFT PANEL ────────────────────────────────────────────── -->
         <div class="left-panel">
 
-            <!-- STEP 1: Локація -->
+            <!-- STEP 1: Location -->
             <div class="step-card">
                 <div class="step-title">
                     <span class="step-num">1</span>{{ _('Локація') }}
@@ -98,7 +98,7 @@
                 </div>
             </div>
 
-            <!-- STEP 2: Фотографії -->
+            <!-- STEP 2: Photos -->
             <div class="step-card">
                 <div class="step-title">
                     <span class="step-num">2</span>{{ _('Фотографії') }}
@@ -137,7 +137,7 @@
                 </div>
             </div>
 
-            <!-- STEP 3: Завантаження -->
+            <!-- STEP 3: Upload -->
             <div class="step-card">
                 <div class="step-title">
                     <span class="step-num">3</span>{{ _('Завантаження') }}
@@ -205,9 +205,8 @@
 
 <script>
 $(document).ready(function () {
-    // Coord inputs: дозволяємо як крапку, так і кому як десятковий
-    // розділювач (Ukrainian Excel використовує кому). На input — одразу
-    // нормалізуємо до крапки, щоб parseFloat коректно прочитав.
+    // Coord inputs: allow both period and comma as the decimal separator
+    // (Ukrainian Excel uses comma). Normalise to period on input.
     document.querySelectorAll('input[inputmode="decimal"]').forEach(el => {
         el.addEventListener('input', e => {
             if (e.target.value.includes(',')) {
@@ -216,13 +215,13 @@ $(document).ready(function () {
         });
     });
 
-    // ─── Константи ────────────────────────────────────────────────────────────
+    // ─── Constants ────────────────────────────────────────────────────────────
     const csrfToken          = $('#csrf-field').val();
     const locationApiUrlBase = '/{{ g.lang_code }}/camera-traps/api/location/';
     const createLocationUrl  = '/{{ g.lang_code }}/camera-traps/api/create-location';
     const GEOSERVER_BASE_URL = '{{ geoserver_url }}';
 
-    // ─── Стан ─────────────────────────────────────────────────────────────────
+    // ─── State ─────────────────────────────────────────────────────────────────
     const locationsData = {{ locations_data|tojson }};
     let selectedFiles   = [];
     let activeLocationId = null;
@@ -232,7 +231,7 @@ $(document).ready(function () {
     $('#institution-select').select2({ minimumResultsForSearch: Infinity, width: '100%' });
     $('#location-select').select2({ placeholder: '{{ _("-- Будь ласка, виберіть --") }}', allowClear: false, width: '100%' });
 
-    // ─── Іконки ───────────────────────────────────────────────────────────────
+    // ─── Icons ───────────────────────────────────────────────────────────────
     const CM     = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
     const shadow = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
     const defaultIcon = L.icon({
@@ -246,7 +245,7 @@ $(document).ready(function () {
         shadowUrl: shadow, iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
     });
 
-    // ─── Карта ────────────────────────────────────────────────────────────────
+    // ─── Map ────────────────────────────────────────────────────────────────
     function initMap() {
         map = L.map('map').setView([49.8, 23.6], 9);
 
@@ -255,7 +254,7 @@ $(document).ready(function () {
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        osmLayer.addTo(map);  // #45: OSM — дефолт
+        osmLayer.addTo(map);  // #45: OSM — default
 
         const overlayMaps = {};
         if (GEOSERVER_BASE_URL) {
@@ -316,7 +315,7 @@ $(document).ready(function () {
     }
     initMap();
 
-    // ─── Вибір локації ────────────────────────────────────────────────────────
+    // ─── Location selection ────────────────────────────────────────────────────────
     function selectLocation(locationId) {
         $('#location-select').val(locationId).trigger('change');
     }
@@ -339,7 +338,7 @@ $(document).ready(function () {
         $('#upload-btn').prop('disabled', !(hasLoc && hasFiles));
     }
 
-    // ─── Фільтр установ ───────────────────────────────────────────────────────
+    // ─── Institution filter ───────────────────────────────────────────────────────
     $('#institution-select').on('change', function () {
         const instId       = $(this).val();
         const currentLocId = $('#location-select').val();
@@ -367,7 +366,7 @@ $(document).ready(function () {
             map.fitBounds(L.featureGroup(visibleMarkers).getBounds().pad(0.1), { animate: false });
         }
 
-        // Відновлюємо попередній вибір, якщо він ще видимий
+        // Restore the previous selection if still visible.
         if ($('#location-select').find(`option[value="${currentLocId}"]`).length > 0) {
             $('#location-select').val(currentLocId).trigger('change.select2');
         } else {
@@ -385,7 +384,7 @@ $(document).ready(function () {
         $('#upload-success-message,#error-alert').hide();
 
         if (val === '0') {
-            // Форма нової локації
+            // New location form.
             $('#new-location-fields').show();
             $('#new-loc-name,#new-loc-description,#new-loc-lat,#new-loc-lon').val('');
             $('#location-feedback').empty();
@@ -400,17 +399,17 @@ $(document).ready(function () {
             return;
         }
 
-        // Зворотна залежність: якщо вибрана локація — підставляємо її установу у фільтр
+        // Reverse dependency: if a location is selected, sync its institution to the filter.
         const loc = locationsData.find(l => String(l.id) === String(val));
         if (loc && loc.institution_ids && loc.institution_ids.length > 0) {
             const currentInst = $('#institution-select').val();
             if (!currentInst || !loc.institution_ids.includes(parseInt(currentInst))) {
-                // Синхронно оновлює фільтр установ, потім handler продовжується
+                // Synchronously updates the institution filter, then the handler continues.
                 $('#institution-select').val(loc.institution_ids[0]).trigger('change');
             }
         }
 
-        // Завантажуємо деталі локації
+        // Load location details.
         $('#location-id').val(val);
         updateMapMarker(parseInt(val));
         $.get(locationApiUrlBase + val)
@@ -424,7 +423,7 @@ $(document).ready(function () {
         checkReady();
     });
 
-    // ─── Нова локація ─────────────────────────────────────────────────────────
+    // ─── New location ─────────────────────────────────────────────────────────
     $('#cancel-create-loc').on('click', function () {
         $('#location-select').val('-1').trigger('change');
     });
@@ -468,7 +467,7 @@ $(document).ready(function () {
         });
     });
 
-    // ─── Файли ────────────────────────────────────────────────────────────────
+    // ─── Files ────────────────────────────────────────────────────────────────
     function displayFileList() {
         if (!selectedFiles.length) {
             $('#file-list').hide();
@@ -526,7 +525,7 @@ $(document).ready(function () {
         checkReady();
     });
 
-    // ─── Завантаження ─────────────────────────────────────────────────────────
+    // ─── Upload ─────────────────────────────────────────────────────────
     function uploadFiles(files, locationId) {
         let currentIndex = 0, successCount = 0, errorCount = 0, batchId = null;
 
@@ -612,7 +611,7 @@ $(document).ready(function () {
             });
         }
 
-        // Ініціалізація завантаження
+        // Upload initialisation.
         $('#upload-btn').prop('disabled', true).text('{{ _("Завантаження...") }}');
         $('#upload-progress').show();
         $('#error-alert').hide();
@@ -652,7 +651,7 @@ $(document).ready(function () {
         checkReady();
     });
 
-    // ─── Ініціалізація ────────────────────────────────────────────────────────
+    // ─── Initialisation ────────────────────────────────────────────────────────
     const initial = $('#location-select').val();
     if (initial && initial !== '-1' && initial !== '0') {
         $('#location-select').trigger('change');

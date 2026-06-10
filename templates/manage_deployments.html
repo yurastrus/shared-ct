@@ -35,7 +35,7 @@
   .qc-fieldset > legend { font-size: .82rem; font-weight: 600; color: #6c757d; float: none; width: auto; margin: 0 0 6px; padding: 0; }
   .qc-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 3px 18px; }
   .qc-grid .form-check { margin-bottom: 0; }
-  /* Tri-state QC button: null (порожня) / false (зелена ✓) / true (червона ✗) */
+  /* Tri-state QC button: null (empty) / false (green ✓) / true (red ✗) */
   .qc-row { display: flex; align-items: center; gap: 6px; }
   .qc-tri { width: 18px; height: 18px; padding: 0; border: 1px solid #adb5bd; border-radius: 3px;
             background: #fff; color: transparent; font-size: 11px; line-height: 1; font-weight: 700;
@@ -51,7 +51,7 @@
   .qc-tri-legend::after { font-size: 8px; }
   .dep-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; }
 
-  /* Власна сітка полів форми (не залежить від Bootstrap row/col) */
+  /* Custom form field grid (independent of Bootstrap row/col) */
   .dep-edit-body { max-width: 1150px; }
   .dep-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 12px; }
   .dep-grid .fld { display: flex; flex-direction: column; min-width: 0; }
@@ -151,13 +151,13 @@
     </div>
 
     <div class="dep-layout">
-        <!-- Карта -->
+        <!-- Map -->
         <div class="dep-map-col">
             <div id="dep-map"></div>
             <small class="text-muted d-block mt-1">{{ _('Клацніть локацію, щоб відфільтрувати деплойменти.') }}</small>
         </div>
 
-        <!-- Таблиця + форма -->
+        <!-- Table + form -->
         <div>
             <div class="dep-card">
                 <div class="dep-card-head">
@@ -192,7 +192,7 @@
                 </div>
             </div>
 
-            <!-- Форма редагування -->
+            <!-- Edit form -->
             <div id="dep-edit-panel" class="dep-edit-card">
                 <div class="dep-edit-head" id="dep-edit-title"></div>
                 <div class="dep-edit-body">
@@ -335,7 +335,7 @@ $(document).ready(function() {
     let activeDepId = null;
     let formMode = 'edit'; // 'edit' | 'create'
 
-    // ── Карта ───────────────────────────────────────────────────────────────
+    // ── Map ───────────────────────────────────────────────────────────────
     const iconOpts = { iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34],
         shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png' };
     const CM='https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
@@ -345,16 +345,16 @@ $(document).ready(function() {
     const noDepIcon = L.icon({ iconUrl:CM+'marker-icon-gold.png', iconRetinaUrl:CM+'marker-icon-2x-gold.png', ...iconOpts });
     const badIcon  = L.icon({ iconUrl:CM+'marker-icon-red.png',  iconRetinaUrl:CM+'marker-icon-2x-red.png',  ...iconOpts });
 
-    // Чи має локація хоч один придатний деплоймент
+    // Whether the location has at least one valid deployment.
     function locUsable(locId){
         return deploymentsData.some(d => d.location_id == locId && !d.qc_data_not_usable);
     }
 
     function iconFor(loc){
         if (loc.id == activeLocId) return selectedIcon;
-        if (!loc.deployment_count) return noDepIcon;   // жовтий — немає даних про деплоймент
-        if (!locUsable(loc.id))    return badIcon;      // червоний — немає придатних деплойментів
-        return defaultIcon;                              // синій — є придатні дані
+        if (!loc.deployment_count) return noDepIcon;   // yellow — no deployment data
+        if (!locUsable(loc.id))    return badIcon;      // red — no valid deployments
+        return defaultIcon;                              // blue — has valid data
     }
 
     map = L.map('dep-map').setView([49.8,23.6], 7);
@@ -363,7 +363,7 @@ $(document).ready(function() {
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19})
     ]);
-    osm.addTo(map);  // #45: OSM — дефолт
+    osm.addTo(map);  // #45: OSM — default
     L.control.layers({ "{{ _('OSM') }}": osm, "{{ _('Супутник') }}": satellite }).addTo(map);
 
     markersGroup = L.featureGroup();
@@ -377,7 +377,7 @@ $(document).ready(function() {
     markersGroup.addTo(map);
     if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
 
-    // ── Фільтр локацій (доповнює карту) ──────────────────────────────────────
+    // ── Location filter (supplements the map) ──────────────────────────────────────
     function rebuildLocFilter(visibleLocs){
         const sel = $('#dep-loc-filter');
         const cur = sel.val();
@@ -446,7 +446,7 @@ $(document).ready(function() {
         updateNewBtn();
     }
 
-    // ── Таблиця деплойментів ─────────────────────────────────────────────────
+    // ── Deployments table ─────────────────────────────────────────────────
     function currentDeployments(){
         const visible = new Set(visibleByInstitution().map(l=>l.id));
         const q = ($('#dep-search').val() || '').trim().toLowerCase();
@@ -467,7 +467,7 @@ $(document).ready(function() {
     $('#dep-search').on('input', renderTable);
     $('#dep-year-filter').on('change', renderTable);
 
-    // ── Експорт у Ексель (з урахуванням фільтрів установи та року) ─────────────
+    // ── Excel export (respecting institution and year filters) ─────────────
     $('#dep-export-btn').on('click', function(){
         const params = new URLSearchParams();
         const inst = $('#dep-inst-filter').val();
@@ -502,7 +502,7 @@ $(document).ready(function() {
         openEditForm(depId);
     });
 
-    // ── Форма ─────────────────────────────────────────────────────────────────
+    // ── Form ─────────────────────────────────────────────────────────────────
     function clearForm(){
         $('#dep-id').val('');
         strFields.concat(intFields, dateFields, timeFields, textFields).forEach(f=>$('#f-'+f).val(''));
@@ -619,7 +619,7 @@ $(document).ready(function() {
                 const idx = deploymentsData.findIndex(x=>x.id==d.id);
                 if (idx>-1) Object.assign(deploymentsData[idx], tableFieldsFrom(d));
             }
-            // Колір маркера може змінитись (придатність) — перемальовуємо
+            // Marker colour may change (validity) — redraw.
             const loc = locById(d.location_id);
             if (loc && markers[d.location_id]) markers[d.location_id].setIcon(iconFor(loc));
             renderTable();
@@ -648,8 +648,8 @@ $(document).ready(function() {
         .catch(err=>alert('{{ _("Помилка видалення:") }} ' + err.message));
     });
 
-    // Tri-state QC: клік на кнопці циклічно null -> true -> false -> null
-    // Клік на лейблі QC робить теж саме (зручніше попадати).
+    // Tri-state QC: click cycles null -> true -> false -> null.
+    // Clicking the QC label does the same (easier to hit).
     const _qcCycle = { 'null': 'true', 'true': 'false', 'false': 'null' };
     $('#dep-edit-form').on('click', '.qc-tri', function(){
         const cur = $(this).attr('data-value') || 'null';
@@ -662,7 +662,7 @@ $(document).ready(function() {
     // init
     applyInstitutionFilter();
 
-    // Глибоке посилання: ?location_id=&deployment_id= — вибрати локацію й відкрити форму
+    // Deep link: ?location_id=&deployment_id= — select location and open form. — вибрати локацію й відкрити форму
     (function(){
         const params = new URLSearchParams(window.location.search);
         const pLoc = params.get('location_id');

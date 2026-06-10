@@ -16,7 +16,7 @@
             <h4>{{ _('Загальна статистика, мапа локацій та топ-види за вибраний період.') }}</h4>
         </div>
 
-        <!-- Панель фільтрів -->
+        <!-- Filter panel -->
         <form id="filters-form" method="GET" class="filters-panel">
             <div class="filter-group">
                 <label for="start-date-input">{{ _('Початкова дата:') }}</label>
@@ -58,15 +58,14 @@
                     {% endfor %}
                 </select>
             </div>
-            <!-- Приховане поле для ID локацій буде додано сюди за допомогою JS -->
+            <!-- Hidden location-ID field will be injected here by JS -->
             <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
             </div>
         </form>
         
-        <!-- ВІДНОВЛЕНА ДВОКОЛОНКОВА СТРУКТУРА -->
         <div class="dashboard-layout">
-            <!-- Ліва колонка -->
+            <!-- Left column -->
             <div class="dashboard-sidebar">
                 <div class="dashboard-section">
                     <h2 class="section-title">{{ _('Загальна статистика') }}</h2>
@@ -104,7 +103,7 @@
                     </p>
                 </div>
             </div>
-            <!-- Права колонка -->
+            <!-- Right column -->
             <div class="dashboard-main">
                 <div class="dashboard-section">
                     <h2 class="section-title">{{ _('Статистика детекцій видів') }}</h2>
@@ -131,12 +130,12 @@
 <script>
 $(document).ready(function() {
 
-    // --- ГЛОБАЛЬНІ ЗМІННІ ---
+    // --- GLOBAL VARIABLES ---
     const urlParams = new URLSearchParams(window.location.search);
-    // Резолвлені сервером ID установ для scope (institution або ecoregion).
+    // Server-resolved institution IDs for the scope (institution or ecoregion).
     const EFFECTIVE_INST_IDS = {{ effective_inst_ids|default([])|tojson }};
 
-    // Параметри для map/chart API: scope → institution_id (як очікують ендпоінти).
+    // Map/chart API params: scope → institution_id (as the endpoints expect).
     function buildApiParams() {
         const p = new URLSearchParams(window.location.search);
         p.delete('scope');
@@ -149,24 +148,24 @@ $(document).ready(function() {
     const markers = {};
     window.map = null;
 
-    // ВИПРАВЛЕННЯ ФІЛЬТРАЦІЇ: Створюємо input і додаємо його В СЕРЕДИНУ форми
+    // Filtering fix: create an input and insert it INSIDE the form.
     let locationsInput = $('<input type="hidden" id="locations-input" name="locations">');
     $('#filters-form').append(locationsInput);
     
-    // Ініціалізуємо `selectedLocationIds` з URL, якщо є параметр
+    // Initialise `selectedLocationIds` from URL if the parameter is present.
     const preselectedStr = urlParams.get('locations');
     if (preselectedStr && preselectedStr.trim() !== "") {
         selectedLocationIds = new Set(
             preselectedStr.split(',')
             .map(Number)
-            .filter(n => n > 0) // прибираємо некоректні ID
+            .filter(n => n > 0) // strip invalid IDs.
         );
     }
 
-    // --- ЗАПУСК ---
+    // --- STARTUP ---
     initializeDashboard();
 
-    // --- ОСНОВНІ ФУНКЦІЇ ---
+    // --- CORE FUNCTIONS ---
     function initializeDashboard() {
         $('#biotope-select').select2({
             placeholder: '{{ _("-- Всі біотопи --") }}',
@@ -203,7 +202,7 @@ $(document).ready(function() {
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        osm.addTo(window.map);  // #45: OSM — дефолт
+        osm.addTo(window.map);  // #45: OSM — default
         L.control.layers({ "{{ _('OSM') }}": osm, "{{ _('Супутник') }}": satellite }).addTo(window.map);
 
         addMapControls(window.map);
@@ -262,13 +261,13 @@ $(document).ready(function() {
                 if (locations && locations.length > 0) {
                     const markersGroup = L.featureGroup();
                     
-                    // Перевіряємо, чи був реально застосований фільтр по локаціях (не порожній)
+                    // Check whether a non-empty location filter was actually applied.
                     const wasFiltered = (urlParams.get('locations') && urlParams.get('locations').trim() !== "");
 
                     locations.forEach(loc => {
                         allVisibleLocationIds.add(loc.id);
                         
-                        // Якщо фільтр не був заданий в URL, то за замовчуванням вибираємо ВСІ видимі точки
+                        // If no filter was set in the URL, select ALL visible markers by default.
                         if (!wasFiltered) {
                             selectedLocationIds.add(loc.id);
                         }
@@ -296,7 +295,7 @@ $(document).ready(function() {
                         window.map.fitBounds(markersGroup.getBounds().pad(0.1));
                     }
                     
-                    // ОНОВЛЕНО: Синхронізуємо стан після завантаження всіх маркерів
+                    // Synchronise state after all markers are loaded.
                     syncSelectionState();
                 }
             })
@@ -374,9 +373,9 @@ $(document).ready(function() {
         if (!marker || !marker._icon) return;
         const iconElement = marker._icon;
         if (selectedLocationIds.has(locationId)) {
-            iconElement.style.filter = ''; // Скидаємо фільтри для вибраного
+            iconElement.style.filter = ''; // Reset filters for the selection.
         } else {
-            iconElement.style.filter = 'grayscale(100%) opacity(0.6)'; // Робимо невибраний сірим
+            iconElement.style.filter = 'grayscale(100%) opacity(0.6)'; // Grey out unselected markers.
         }
     }
     

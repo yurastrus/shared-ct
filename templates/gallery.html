@@ -16,7 +16,7 @@
         </p>
     </div>
 
-    <!-- Панель фільтрів -->
+    <!-- Filter panel -->
     <div class="filters-panel">
         <div class="filter-group filter-group-select">
             <label for="species-select">{{ _('Виберіть вид:') }}</label>
@@ -31,7 +31,7 @@
             <button id="load-photos-btn" class="btn btn-primary" disabled>{{ _('Показати фото') }}</button>
         </div>
         
-        <!-- Переключення теми -->
+        <!-- Theme toggle -->
         <div class="theme-toggle">
             <div class="theme-toggle-option active" data-theme="light">
                 <span>☀️</span>
@@ -42,17 +42,17 @@
         </div>
     </div>
 
-    <!-- Контейнер для галереї -->
+    <!-- Gallery container -->
     <div id="gallery-content">
         <div class="no-photos-message">
             {{ _('Будь ласка, виберіть вид та натисніть "Показати фото" для перегляду галереї.') }}
         </div>
     </div>
 
-    <!-- Основна галерея (схована до завантаження) -->
+    <!-- Main gallery (hidden until loaded) -->
     <div id="gallery-wrapper" style="display: none;">
         <div class="gallery-layout">
-            <!-- Ліва колонка: переглядач фото -->
+            <!-- Left column: photo viewer -->
             <div class="photo-viewer">
                 <button type="button" id="prev-btn" class="nav-arrow">&lt;</button>
                 <img id="photo-display" src="" alt="{{ _('Фото з галереї') }}">
@@ -61,10 +61,10 @@
                 <div id="photo-info" class="photo-info"></div>
             </div>
 
-            <!-- Права колонка: інформація та контроли -->
+            <!-- Right column: info and controls -->
             <div class="photo-sidebar">
                 {% if can_manage_favorites %}
-                <!-- Контроли для модераторів -->
+                <!-- Moderator controls -->
                 <div class="photo-controls">
                     <h4>{{ _('Управління') }}</h4>
                     <button id="remove-favorite-btn" class="btn btn-danger btn-sm" disabled>
@@ -74,11 +74,11 @@
                 </div>
                 {% endif %}
 
-                <!-- Деталі фото -->
+                <!-- Photo details -->
                 <div class="photo-details">
                     <h4>{{ _('Інформація про фото') }}</h4>
                     <div id="photo-details-content">
-                        <!-- Буде заповнено через JavaScript -->
+                        <!-- Populated via JavaScript -->
                     </div>
                 </div>
             </div>
@@ -92,7 +92,7 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
-    // === СИСТЕМА ТЕМИ (як в identification.html) ===
+    // === THEME SYSTEM (mirrors identification.html) ===
     function initializeTheme() {
         const savedTheme = localStorage.getItem('camera-traps-theme') || 'light';
         applyTheme(savedTheme);
@@ -119,10 +119,10 @@ $(document).ready(function() {
         updateThemeToggle(selectedTheme);
     });
 
-    // Ініціалізація теми
+    // Theme initialisation.
     initializeTheme();
 
-    // === ОСНОВНА ЛОГІКА ГАЛЕРЕЇ ===
+    // === GALLERY MAIN LOGIC ===
     const speciesSelect = $('#species-select');
     const loadPhotosBtn = $('#load-photos-btn');
     const galleryContent = $('#gallery-content');
@@ -138,19 +138,19 @@ $(document).ready(function() {
     let currentPhotoIndex = 0;
     const canManageFavorites = {{ 'true' if can_manage_favorites else 'false' }};
 
-    // Ініціалізація Select2
+    // Select2 initialisation.
     speciesSelect.select2({
         placeholder: '{{ _("-- Пошук та вибір виду --") }}',
         allowClear: true,
         width: '100%'
     });
 
-    // Активація кнопки при виборі виду
+    // Activate the button when a species is selected.
     speciesSelect.on('change', function() {
         loadPhotosBtn.prop('disabled', !$(this).val());
     });
 
-    // Завантаження фото
+    // Load photos.
     loadPhotosBtn.on('click', function() {
         const speciesId = speciesSelect.val();
         if (!speciesId) {
@@ -204,17 +204,17 @@ $(document).ready(function() {
         const photo = currentPhotos[currentPhotoIndex];
         const photoCount = currentPhotos.length;
 
-        // Оновлення зображення
+        // Update the image.
         photoDisplay.attr('src', photo.raw_url);
         
-        // Оновлення інформації під фото
+        // Update the info below the photo.
         photoInfo.html(`
             <strong>{{ _('Локація:') }}</strong> ${photo.location_name} | 
             <strong>{{ _('Час:') }}</strong> ${photo.captured_at} | 
             <strong>{{ _('Фото') }}</strong> ${currentPhotoIndex + 1} / ${photoCount}
         `);
 
-        // Оновлення детальної інформації
+        // Update detailed info.
         photoDetailsContent.html(`
             <div class="detail-row">
                 <span class="detail-label">{{ _('Вид:') }}</span>
@@ -248,17 +248,17 @@ $(document).ready(function() {
             ` : ''}
         `);
 
-        // Управління навігацією
+        // Navigation control.
         prevBtn.toggle(currentPhotoIndex > 0);
         nextBtn.toggle(currentPhotoIndex < photoCount - 1);
 
-        // Управління кнопкою видалення (тільки для модераторів)
+        // Delete button control (moderators only).
         if (canManageFavorites) {
             removeFavoriteBtn.prop('disabled', false).data('photo-id', photo.id);
         }
     }
 
-    // Навігація
+    // Navigation.
     nextBtn.on('click', function() {
         if (currentPhotoIndex < currentPhotos.length - 1) {
             currentPhotoIndex++;
@@ -273,7 +273,7 @@ $(document).ready(function() {
         }
     });
 
-    // Клавіатурна навігація
+    // Keyboard navigation.
     $(document).on('keydown', function(e) {
         if (galleryWrapper.is(':visible')) {
             if (e.key === 'ArrowRight') nextBtn.click();
@@ -281,7 +281,7 @@ $(document).ready(function() {
         }
     });
 
-    // Видалення з вибраного (тільки для модераторів)
+    // Remove from selected (moderators only).
     if (canManageFavorites) {
         removeFavoriteBtn.on('click', function() {
             const photoId = $(this).data('photo-id');
@@ -308,7 +308,7 @@ $(document).ready(function() {
                 return response.json();
             })
             .then(data => {
-                // Видаляємо фото з поточного списку
+                // Remove the photo from the current list.
                 currentPhotos.splice(currentPhotoIndex, 1);
                 
                 if (currentPhotos.length === 0) {
@@ -316,14 +316,14 @@ $(document).ready(function() {
                     return;
                 }
                 
-                // Коректуємо індекс якщо потрібно
+                // Adjust the index if needed.
                 if (currentPhotoIndex >= currentPhotos.length) {
                     currentPhotoIndex = currentPhotos.length - 1;
                 }
                 
                 displayCurrentPhoto();
                 
-                // Показуємо повідомлення про успіх
+                // Show the success message.
                 alert(data.message || '{{ _("Фото успішно видалено з вибраного") }}');
             })
             .catch(error => {

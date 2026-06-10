@@ -20,7 +20,7 @@
         </div>
     </div>
 
-    <!-- Верхня панель: фільтр установ + перемикач режиму карти -->
+    <!-- Top panel: institution filter + map-mode toggle -->
     <div class="top-filter-bar">
         {% if filter_institutions %}
         <label for="global-inst-filter" style="font-weight:500; margin:0; white-space:nowrap;">
@@ -58,7 +58,7 @@
     </div>
 
     <div class="page-layout">
-        <!-- Ліва панель: Список локацій -->
+        <!-- Left panel: locations list -->
         <div class="locations-list-panel">
             <ul class="locations-list">
                 {% for loc in locations %}
@@ -74,12 +74,12 @@
             </ul>
         </div>
 
-        <!-- Центральна панель: Карта -->
+        <!-- Centre panel: map -->
         <div class="map-panel">
             <div id="map"></div>
         </div>
 
-        <!-- Права панель -->
+        <!-- Right panel -->
         <div class="right-panel">
             <div id="placeholder">
                 <p class="text-muted text-center small">{{ _('Виберіть локацію зі списку або на карті.') }}</p>
@@ -88,7 +88,7 @@
             <div id="panel-content" class="panel-body">
 
                 {% if can_edit %}
-                <!-- ── Редагування локації ── -->
+                <!-- ── Location editing ── -->
                 <h6 id="edit-form-title" class="text-primary mb-2 panel-subtitle"></h6>
                 <form id="edit-form">
                     <input type="hidden" id="location-id">
@@ -140,7 +140,7 @@
                 <hr class="my-3">
                 {% endif %}
 
-                <!-- ── Журнал обслуговування ── -->
+                <!-- ── Service log ── -->
                 <h6 id="service-form-title" class="text-muted mb-2 section-label">
                     <i class="fas fa-plus-circle me-1"></i>{{ _('Новий запис') }}
                 </h6>
@@ -217,7 +217,7 @@
 
                 <hr class="my-3">
 
-                <!-- ── Історія ── -->
+                <!-- ── History ── -->
                 <h6 class="text-muted mb-2 section-label">
                     <i class="fas fa-history me-1"></i>{{ _('Історія') }}
                 </h6>
@@ -236,9 +236,8 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Coord inputs: дозволяємо як крапку, так і кому як десятковий
-    // розділювач (Ukrainian Excel використовує кому). На input — одразу
-    // нормалізуємо до крапки.
+    // Coord inputs: allow both period and comma as the decimal separator
+    // (Ukrainian Excel uses comma). Normalise to period on input.
     document.querySelectorAll('input[inputmode="decimal"]').forEach(el => {
         el.addEventListener('input', e => {
             if (e.target.value.includes(',')) {
@@ -253,7 +252,7 @@ $(document).ready(function() {
     {% endif %}
     $('#visit-purpose, #battery-type').select2({ placeholder: "{{ _('-- Виберіть --') }}", width: '100%' });
 
-    // ─── ДАНІ ─────────────────────────────────────────────────────────────
+    // ─── DATA ─────────────────────────────────────────────────────────────
     const locationsData = {{ locations|tojson }};
     let markers = {};
     let markersGroup;
@@ -271,7 +270,7 @@ $(document).ready(function() {
     const singleInstitutionId = null;
     {% endif %}
 
-    // ─── ІКОНКИ ───────────────────────────────────────────────────────────
+    // ─── ICONS ───────────────────────────────────────────────────────────
     const CM = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
     const shadow = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
     const iconOpts = { iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowUrl: shadow };
@@ -323,7 +322,7 @@ $(document).ready(function() {
         });
     }
 
-    // ─── КАРТА ────────────────────────────────────────────────────────────
+    // ─── MAP ────────────────────────────────────────────────────────────
     function initMap() {
         const wmsUrl = `{{ geoserver_url }}/wms`;
         const wdpaLayerData = [
@@ -345,7 +344,7 @@ $(document).ready(function() {
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }),
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
         ]);
-        osmLayer.addTo(map);  // #45: OSM — дефолт
+        osmLayer.addTo(map);  // #45: OSM — default
 
         const overlayMaps = {};
         wdpaLayerData.forEach(item => {
@@ -354,7 +353,7 @@ $(document).ready(function() {
         });
         L.control.layers({ "{{ _('OSM') }}": osmLayer, "{{ _('Супутник') }}": hybridLayer }, overlayMaps).addTo(map);
 
-        // Динамічна легенда ПЗФ
+        // Dynamic PPA legend.
         const WdpaLegendControl = L.Control.extend({
             onAdd: function() {
                 this._div = L.DomUtil.create('div', 'info legend');
@@ -392,7 +391,7 @@ $(document).ready(function() {
         markersGroup.addTo(map);
         if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
 
-        // Клік по карті — координати при створенні
+        // Map click — set coordinates when creating a location.
         map.on('click', function(e) {
             if (mode !== 'create') return;
             const lat = parseFloat(e.latlng.lat.toFixed(5));
@@ -405,7 +404,7 @@ $(document).ready(function() {
     }
     initMap();
 
-    // Ручний ввід координат
+    // Manual coordinate input.
     function updateTempMarkerFromInputs() {
         if (mode !== 'create') return;
         const lat = parseFloat($('#location-lat').val());
@@ -418,7 +417,7 @@ $(document).ready(function() {
     }
     $('#location-lat, #location-lon').on('change', updateTempMarkerFromInputs);
 
-    // ─── ПЕРЕМИКАЧ РЕЖИМУ МАРКЕРІВ ────────────────────────────────────────
+    // ─── MARKER MODE TOGGLE ────────────────────────────────────────
     function setMapMode(newMode) {
         if (newMode === mapMode) return;
         mapMode = newMode;
@@ -432,7 +431,7 @@ $(document).ready(function() {
     $('#mode-btn-data').on('click', () => setMapMode('data'));
     $('#mode-btn-service').on('click', () => setMapMode('service'));
 
-    // ─── ФІЛЬТР УСТАНОВ ───────────────────────────────────────────────────
+    // ─── INSTITUTION FILTER ───────────────────────────────────────────────────
     $('#global-inst-filter').on('change', function() {
         const selectedId = $(this).val();
         locationsData.forEach(loc => {
@@ -465,7 +464,7 @@ $(document).ready(function() {
         }
     }
 
-    // ─── ВИБІР ЛОКАЦІЇ ────────────────────────────────────────────────────
+    // ─── LOCATION SELECTION ────────────────────────────────────────────────────
     $('.locations-list').on('click', 'li', function() {
         selectLocation($(this).data('location-id'));
     });
@@ -474,7 +473,7 @@ $(document).ready(function() {
         if (mode === 'create') deselectAll();
         if (activeLocationId === locationId) return;
 
-        // Скидаємо попередню іконку
+        // Reset the previous marker icon.
         if (activeLocationId && markers[activeLocationId]) {
             const prevId = activeLocationId;
             activeLocationId = null;
@@ -502,7 +501,7 @@ $(document).ready(function() {
             .catch(() => {});
         {% endif %}
 
-        // Журнал
+        // Service log.
         $('#service-form-placeholder').hide();
         $('#service-log-form').show();
         $('#service-location-id').val(locationId);
@@ -517,7 +516,7 @@ $(document).ready(function() {
         $('#panel-content').show().scrollTop(0);
     }
 
-    // ─── ФОРМА РЕДАГУВАННЯ ────────────────────────────────────────────────
+    // ─── EDIT FORM ────────────────────────────────────────────────
     {% if can_edit %}
     function populateEditForm(data) {
         $('#location-id').val(data.id);
@@ -643,7 +642,7 @@ $(document).ready(function() {
     $('#cancel-btn').on('click', deselectAll);
     {% endif %}
 
-    // ─── ЖУРНАЛ ОБСЛУГОВУВАННЯ ────────────────────────────────────────────
+    // ─── SERVICE LOG ────────────────────────────────────────────
     function loadHistory(locationId) {
         $('#history-content').html('<div class="text-center text-muted small py-2">{{ _("Завантаження...") }}</div>');
         $('#history-placeholder').hide();
@@ -690,7 +689,7 @@ $(document).ready(function() {
             });
     }
 
-    // Клік на кнопку редагування запису
+    // Click on the record edit button.
     $('#history-content').on('click', '.edit-visit-btn', function() {
         const v = JSON.parse($(this).attr('data-visit'));
         $('#service-form-title').html('<i class="fas fa-pen me-1"></i>{{ _("Редагування запису") }}');
@@ -769,7 +768,7 @@ $(document).ready(function() {
         .finally(() => btn.prop('disabled', false).html(origText));
     });
 
-    // ─── СКИДАННЯ ВИБОРУ ──────────────────────────────────────────────────
+    // ─── RESET SELECTION ──────────────────────────────────────────────────
     function deselectAll() {
         mode = 'edit';
         if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }

@@ -16,7 +16,7 @@
         {{ _('Накладає результати локального прогону (CSV) на вже завантажені фото обраної локації. Серверні прогнози не змінюються — імпорт зберігається окремою моделлю (рівень MDR).') }}
     </p>
 
-    <!-- STEP 1: локація -->
+    <!-- STEP 1: location -->
     <div class="card mb-3">
         <div class="card-body">
             <h6 class="card-title">{{ _('1. Локація') }}</h6>
@@ -41,7 +41,7 @@
         </div>
     </div>
 
-    <!-- Рівень моделі (обов'язково) -->
+    <!-- Model level (required) -->
     <div class="card mb-3">
         <div class="card-body">
             <h6 class="card-title">{{ _('2. Рівень моделі (детектор)') }} *</h6>
@@ -55,7 +55,7 @@
         </div>
     </div>
 
-    <!-- STEP 2: файл -->
+    <!-- STEP 2: file -->
     <div class="card mb-3">
         <div class="card-body">
             <h6 class="card-title">{{ _('3. CSV-файл DeepFaune') }}</h6>
@@ -64,7 +64,7 @@
         </div>
     </div>
 
-    <!-- STEP 3: дії -->
+    <!-- STEP 3: actions -->
     <div class="d-flex gap-2 mb-3">
         <button id="btn-preview" class="btn btn-outline-primary">{{ _('Прев’ю (без запису)') }}</button>
         <button id="btn-run" class="btn btn-success" disabled>{{ _('Імпортувати') }}</button>
@@ -83,7 +83,7 @@
     const locSelect = document.getElementById('location-select');
     const levelSelect = document.getElementById('level-select');
     const csvInput = document.getElementById('csv-input');
-    let lastMatched = null;   // к-сть збігів останнього прев'ю (null = прев'ю не робили)
+    let lastMatched = null;   // match count from the last preview (null = no preview yet).
     const btnPreview = document.getElementById('btn-preview');
     const btnRun = document.getElementById('btn-run');
     const spinner = document.getElementById('spinner');
@@ -93,7 +93,7 @@
         value: o.value, text: o.text
     }));
 
-    // Фільтр локацій за установою
+    // Filter locations by institution.
     instSelect.addEventListener('change', function () {
         const instId = this.value ? parseInt(this.value, 10) : null;
         const allowed = instId
@@ -111,7 +111,7 @@
         invalidate();
     });
 
-    // Import дозволено лише коли є збіги в прев'ю І обрано рівень моделі.
+    // Import allowed only when preview has matches AND model level is selected.
     function updateRunGate() {
         btnRun.disabled = !(lastMatched > 0 && levelSelect.value);
     }
@@ -122,7 +122,7 @@
     }
     locSelect.addEventListener('change', invalidate);
     csvInput.addEventListener('change', invalidate);
-    levelSelect.addEventListener('change', updateRunGate);   // рівень не скидає прев'ю
+    levelSelect.addEventListener('change', updateRunGate);   // changing level does not reset the preview.
 
     function currentForm(includeLevel) {
         const locId = parseInt(locSelect.value, 10);

@@ -2,7 +2,7 @@
 
 {% block title %}{{ _('Оцінка якості даних') }}{% endblock %}
 
-{# Визначаємо на верхньому рівні, щоб мітки були доступні і в ct_content, і в scripts #}
+{# Define at the top level so labels are accessible in both ct_content and scripts. #}
 {% set qc_labels = {
   'qc_summary': _('Зведена проблема'),
   'qc_data_not_usable': _('Дані непридатні'),
@@ -90,7 +90,7 @@
         <div class="dq-kpi"><div class="v" id="kpi-days">0</div><div class="l">{{ _('Сер. днів роботи') }}</div></div>
     </div>
 
-    <!-- Категоріальні фільтри -->
+    <!-- Categorical filters -->
     <div class="dq-filters">
         <div class="row-sel">
             {% for key, label, w in [('region', _('Регіон'), 140), ('study_area', _('Установа'), 230), ('study_year', _('Рік'), 95), ('study_season', _('Сезон'), 120), ('study_design', _('Дизайн'), 210), ('camera_model', _('Модель камери'), 210)] %}
@@ -114,7 +114,7 @@
     </div>
 
     <div class="dq-layout">
-        <!-- Ряд 1, ліворуч: Карта -->
+        <!-- Row 1, left: Map -->
         <div class="dq-mapcell">
             <div id="dq-map"></div>
             <div class="dq-legend">
@@ -124,13 +124,13 @@
             </div>
         </div>
 
-        <!-- Ряд 1, праворуч: великий QC-графік -->
+        <!-- Row 1, right: main QC chart -->
         <div class="dq-card">
             <h6>{{ _('Параметри якості (кількість деплойментів)') }}</h6>
             <div class="dq-chart-wrap qc"><canvas id="chart-qc"></canvas></div>
         </div>
 
-        <!-- Ряд 2, ліворуч: QC-чекбокси -->
+        <!-- Row 2, left: QC checkboxes -->
         <div class="qc-checks">
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
                 <strong class="small">{{ _('Показати на карті точки з проблемою:') }}</strong>
@@ -146,7 +146,7 @@
             </div>
         </div>
 
-        <!-- Ряд 2, праворуч: нижні графіки -->
+        <!-- Row 2, right: bottom charts -->
         <div class="dq-row2">
             <div class="dq-card">
                 <h6>{{ _('Розподіл за статусом') }}</h6>
@@ -171,7 +171,7 @@ $(document).ready(function() {
     const qcOrder = {{ qc_fields|tojson }};
     const qcLabels = {{ qc_labels|tojson }};
 
-    // ── Карта ───────────────────────────────────────────────────────────────
+    // ── Map ───────────────────────────────────────────────────────────────
     const iconOpts = { iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34],
         shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png' };
     const CM='https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
@@ -184,7 +184,7 @@ $(document).ready(function() {
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19})
     ]);
-    osm.addTo(map);  // #45: OSM — дефолт
+    osm.addTo(map);  // #45: OSM — default
     L.control.layers({ "{{ _('OSM') }}": osm, "{{ _('Супутник') }}": satellite }).addTo(map);
     const markerLayer = L.featureGroup().addTo(map);
 
@@ -208,7 +208,7 @@ $(document).ready(function() {
         if (markerLayer.getBounds().isValid()) map.fitBounds(markerLayer.getBounds().pad(0.1));
     }
 
-    // ── Фільтрація ────────────────────────────────────────────────────────────
+    // ── Filtering ────────────────────────────────────────────────────────────
     function catFilters(){
         const f = {};
         $('.dq-cat').each(function(){ const v=$(this).val(); if(v) f[$(this).data('field')]=v; });
@@ -245,7 +245,7 @@ $(document).ready(function() {
         $('#dq-count').text(`{{ _('Показано') }}: ${total} {{ _('з') }} ${records.length}`);
     }
 
-    // ── Графіки ───────────────────────────────────────────────────────────────
+    // ── Charts ───────────────────────────────────────────────────────────────
     let qcChart, statusChart, yearChart;
 
     function buildQcData(rows){
@@ -279,7 +279,7 @@ $(document).ready(function() {
                 plugins: { legend: { position: 'bottom' } } }
         });
 
-        // Статус doughnut
+        // Status doughnut.
         const st = { issue:0, normal_summer:0, normal_winter:0 };
         rows.forEach(r => { st[r.status] = (st[r.status]||0)+1; });
         if (statusChart) statusChart.destroy();
@@ -291,7 +291,7 @@ $(document).ready(function() {
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
         });
 
-        // За роками
+        // By year.
         const byYear = {};
         rows.forEach(r => { if(r.study_year){ byYear[r.study_year]=(byYear[r.study_year]||0)+1; } });
         const ys = Object.keys(byYear).sort();
