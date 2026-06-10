@@ -4864,8 +4864,17 @@ _species_list_cache = {
     'timestamp': None
 }
 
+# Minimum number of verified registrations a species must have to appear in the
+# daily-activity filter dropdown. Species below this threshold never yield a
+# meaningful activity curve, so they are hidden from the list.
+MIN_DETECTIONS_FOR_ACTIVITY = 30
+
 def get_cached_species_for_filter():
-    """Return the species list for filter dropdowns, cached for 7 days."""
+    """Return the species list for filter dropdowns, cached for 7 days.
+
+    Only species with at least MIN_DETECTIONS_FOR_ACTIVITY verified registrations
+    are included, so the dropdown lists species the activity chart can plot.
+    """
     global _species_list_cache
     now = datetime.now()
     CACHE_TTL_DAYS = 7
@@ -4879,6 +4888,41 @@ def get_cached_species_for_filter():
     # Cache is absent or stale — query the database.
     ct_session = get_ct_session()
     try:
+        # Species ids with at least MIN_DETECTIONS_FOR_ACTIVITY verified
+        # registrations. A registration is the consensus-winning species of a
+        # completed/archived observation — the same definition used by
+        # fetch_raw_daily_data, so the dropdown matches what the chart plots.
+        count_sql = text("""
+            WITH ObservationConsensus AS (
+                SELECT
+                    p.observation_id, i.species_id,
+                    COUNT(DISTINCT i.user_id) AS vote_count,
+                    MAX(i.quantity) AS max_quantity
+                FROM identifications i JOIN photos p ON i.photo_id = p.id
+                GROUP BY p.observation_id, i.species_id
+            ),
+            RankedConsensus AS (
+                SELECT
+                    observation_id, species_id,
+                    ROW_NUMBER() OVER(
+                        PARTITION BY observation_id
+                        ORDER BY vote_count DESC, max_quantity DESC
+                    ) AS rn
+                FROM ObservationConsensus
+            )
+            SELECT rc.species_id
+            FROM observations o
+            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+            WHERE o.status IN ('completed', 'archived')
+            GROUP BY rc.species_id
+            HAVING COUNT(*) >= :min_detections
+        """)
+        eligible_ids = {
+            row[0] for row in ct_session.execute(
+                count_sql, {'min_detections': MIN_DETECTIONS_FOR_ACTIVITY}
+            ).fetchall()
+        }
+
         # Select only species that actually occur (id > 0),
         # ordered by Ukrainian common name if available, otherwise by Latin name.
         species_query = ct_session.query(Species)\
@@ -4888,6 +4932,10 @@ def get_cached_species_for_filter():
 
         species_list = []
         for s in species_query:
+            # Skip species without enough verified registrations to plot a curve.
+            if s.id not in eligible_ids:
+                continue
+
             # Build the display name from available translations.
             name_ua = s.common_name_ua if s.common_name_ua else s.scientific_name
             name_en = s.common_name_en if s.common_name_en else s.scientific_name
