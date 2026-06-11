@@ -147,6 +147,8 @@ All routes are prefixed with `/<lang>/camera-traps`. `<lang>` is a two-letter lo
 | `POST` | `/observation/<id>/flag` | Flag a series for re-review |
 | `POST` | `/observation/<id>/unflag` | Unflag a series |
 
+The identification view and the photo viewer (`/photo/<photo_id>`) each include a client-side colour-invert toggle (☀ button). State persists across photo navigation via `sessionStorage`.
+
 ### Photos and gallery
 
 | Method | Path | Description |
@@ -166,6 +168,8 @@ All routes are prefixed with `/<lang>/camera-traps`. `<lang>` is a two-letter lo
 | `GET` | `/analysis/comparison` | Multi-species comparison |
 | `GET` | `/analysis/behavior` | Behaviour tag analysis |
 | `GET` | `/analysis/daily-activity` | Daily activity curves (KDE) |
+| `GET` | `/analysis/activity-heatmap` | 24 h × 12-month activity heatmap per species |
+| `GET` | `/api/stats/activity-heatmap` | Heatmap data (JSON) |
 | `GET` | `/data-export` | Occurrence data export with QC filters |
 | `GET` | `/data-quality` | QC metrics and deployment health |
 | `POST` | `/api/stats/top-species` | Species list with detection counts |
@@ -226,6 +230,37 @@ All routes are prefixed with `/<lang>/camera-traps`. `<lang>` is a two-letter lo
 | `POST` | `/admin/run-analytics` | Trigger analytics recalculation |
 | `GET` | `/admin/analytics/status` | Analytics job status |
 | `POST` | `/admin/recalculate-consensus` | Re-run consensus calculation |
+
+## Translations / i18n
+
+The module ships an autonomous Babel domain — `camera_traps` — independent of the host application's `messages` domain.
+
+| Item | Value |
+|---|---|
+| Domain name | `camera_traps` |
+| Catalog files | `translations/<locale>/LC_MESSAGES/camera_traps.po/.mo` |
+| Extraction config | `babel.cfg` (covers this directory only) |
+| Runtime lookup | `domain.py` — `flask_babel.Domain`; falls back to the host `messages` domain when a string is not found |
+
+The blueprint's `__init__.py` injects `_` / `gettext` / `ngettext` into every template via a context processor, so templates use the standard `{{ _('…') }}` syntax without changes.
+
+To update translations (run from the **biomon repo root**):
+
+```bash
+# 1. Extract
+venv/Scripts/pybabel extract -F app/camera_traps/babel.cfg -k _l -k lazy_gettext -D camera_traps -o app/camera_traps/messages.pot .
+
+# 2. Merge
+venv/Scripts/pybabel update -i app/camera_traps/messages.pot -d app/camera_traps/translations -D camera_traps
+
+# 3. Translate new msgstr in translations/en/LC_MESSAGES/camera_traps.po and remove #, fuzzy markers.
+#    The uk catalog needs no changes (msgids are already in Ukrainian).
+
+# 4. Compile (-f required)
+venv/Scripts/pybabel compile -f -d app/camera_traps/translations -D camera_traps
+```
+
+Replace `venv/Scripts/` with `venv/bin/` on Linux.
 
 ## Integration with biomon
 
