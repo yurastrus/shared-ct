@@ -34,6 +34,12 @@
                 <span class="hub-card__desc">{{ _('Хронограма активності видів протягом доби.') }}</span>
             </a>
 
+            <a class="hub-card" href="{{ url_for('camera_traps.activity_heatmap_page', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🟦</span>
+                <span class="hub-card__title">{{ _('Теплова карта') }}</span>
+                <span class="hub-card__desc">{{ _('Активність виду по годинах доби та місяцях року.') }}</span>
+            </a>
+
             <a class="hub-card" href="{{ url_for('camera_traps.species_detailed', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🗺️</span>
                 <span class="hub-card__title">{{ _('Мапа') }}</span>

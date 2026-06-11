@@ -1,0 +1,226 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Теплова карта активності') }}{% endblock %}
+
+{% block ct_head_extra %}
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .heatmap-wrap { overflow-x: auto; margin-top: 1.5rem; }
+        .heatmap-table { border-collapse: collapse; min-width: 520px; }
+        .heatmap-table th, .heatmap-table td {
+            padding: 4px 6px;
+            text-align: center;
+            font-size: 0.78rem;
+            border: 1px solid #dee2e6;
+            white-space: nowrap;
+        }
+        .heatmap-table thead th { background: #f8f9fa; font-weight: 600; }
+        .heatmap-table .row-label { background: #f8f9fa; font-weight: 600; width: 50px; }
+        .heatmap-cell { min-width: 38px; cursor: default; }
+        .heatmap-legend {
+            display: flex; align-items: center; gap: 8px;
+            margin-top: 0.75rem; font-size: 0.8rem;
+        }
+        .legend-gradient {
+            width: 140px; height: 14px;
+            background: linear-gradient(to right, #e8f0fe, #0d47a1);
+            border-radius: 3px; border: 1px solid #dee2e6;
+        }
+    </style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="page-container">
+    <div class="page-header mb-4">
+        <h1>{{ _('Теплова карта активності') }}</h1>
+        <p class="text-muted">{{ _('Кількість верифікованих реєстрацій по годинах доби та місяцях року.') }}</p>
+    </div>
+
+    <div class="filters-panel">
+        <!-- ROW 1: Species (mandatory, single) -->
+        <div class="filter-row">
+            <div class="filter-group full-width">
+                <label>{{ _('Вид:') }}</label>
+                <select id="species-select" class="form-control" style="width: 100%;">
+                    <option value=""></option>
+                    {% for s in species_list %}
+                        <option value="{{ s.id }}">
+                            {% if g.lang_code == 'uk' %}{{ s.name_ua }}{% else %}{{ s.name_en }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- ROW 2: Scope filter -->
+        {% if institutions or ecoregions %}
+        <div class="filter-row">
+            <div class="filter-group">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" class="form-control" style="width: 220px; max-width: 100%;">
+                    {% if is_admin %}
+                    <option value="global:">{{ _('Всі дані') }}</option>
+                    {% else %}
+                    <option value="global:">{{ _('Всі доступні мені') }}</option>
+                    {% endif %}
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}">
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}">{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ROW 3: Button -->
+        <div class="filter-row">
+            <div class="filter-group">
+                <button id="apply-btn" class="btn btn-primary">
+                    <i class="fas fa-th"></i> {{ _('Побудувати') }}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result block (hidden until data arrives) -->
+    <div id="result-section" style="display: none;">
+        <h5 id="species-title" class="mt-3 mb-1"></h5>
+        <p id="total-display" class="text-muted small mb-2"></p>
+
+        <div class="heatmap-wrap">
+            <table class="heatmap-table" id="heatmap-table">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="heatmap-legend">
+            <span>0</span>
+            <div class="legend-gradient"></div>
+            <span id="legend-max"></span>
+        </div>
+    </div>
+
+    <div id="no-data-msg" class="alert alert-info mt-3" style="display: none;">
+        {{ _('Немає верифікованих реєстрацій для обраного виду.') }}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    const MONTH_LABELS = [
+        '{{ _("Січ") }}','{{ _("Лют") }}','{{ _("Бер") }}','{{ _("Кві") }}',
+        '{{ _("Тра") }}','{{ _("Чер") }}','{{ _("Лип") }}','{{ _("Сер") }}',
+        '{{ _("Вер") }}','{{ _("Жов") }}','{{ _("Лис") }}','{{ _("Гру") }}'
+    ];
+
+    $('#species-select').select2({
+        placeholder: "{{ _('-- Виберіть вид --') }}",
+        width: 'style',
+        allowClear: true
+    });
+
+    $('#apply-btn').click(function() {
+        const speciesId = $('#species-select').val();
+        if (!speciesId) {
+            alert("{{ _('Будь ласка, виберіть вид.') }}");
+            return;
+        }
+
+        const scopeVal = ($('#scope-select').val() || 'global:');
+        const colonIdx = scopeVal.indexOf(':');
+        const scopeType = scopeVal.substring(0, colonIdx);
+        const scopeId   = scopeVal.substring(colonIdx + 1);
+
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ _("Зачекайте...") }}');
+
+        const url = '{{ url_for("camera_traps.api_activity_heatmap", lang_code=g.lang_code) }}'
+            + '?species_id=' + speciesId
+            + '&scope_type=' + encodeURIComponent(scopeType || 'global')
+            + '&scope_id='   + encodeURIComponent(scopeId || '');
+
+        $.getJSON(url)
+            .done(function(data) {
+                if (data.error) { alert(data.error); return; }
+                renderHeatmap(data);
+            })
+            .fail(function() {
+                alert("{{ _('Помилка завантаження даних.') }}");
+            })
+            .always(function() {
+                btn.prop('disabled', false).html('<i class="fas fa-th"></i> {{ _("Побудувати") }}');
+            });
+    });
+
+    function cellColor(count, maxCount) {
+        if (maxCount === 0 || count === 0) return '#f0f4ff';
+        const ratio = count / maxCount;
+        // Interpolate from #e8f0fe (light blue) to #0d47a1 (dark blue).
+        const r = Math.round(232 - ratio * (232 - 13));
+        const g = Math.round(240 - ratio * (240 - 71));
+        const b = Math.round(254 - ratio * (254 - 161));
+        return `rgb(${r},${g},${b})`;
+    }
+
+    function renderHeatmap(data) {
+        const matrix   = data.matrix;   // 24 × 12
+        const maxCount = data.max_count;
+        const total    = data.total;
+
+        $('#result-section').hide();
+        $('#no-data-msg').hide();
+
+        if (total === 0) {
+            $('#no-data-msg').show();
+            return;
+        }
+
+        // Build thead.
+        const $thead = $('#heatmap-table thead').empty();
+        let headerHtml = '<tr><th>{{ _("год") }}</th>';
+        MONTH_LABELS.forEach(function(m) { headerHtml += `<th>${m}</th>`; });
+        headerHtml += '</tr>';
+        $thead.html(headerHtml);
+
+        // Build tbody.
+        const $tbody = $('#heatmap-table tbody').empty();
+        for (let h = 0; h < 24; h++) {
+            let rowHtml = `<td class="row-label">${String(h).padStart(2,'0')}:00</td>`;
+            for (let m = 0; m < 12; m++) {
+                const count = matrix[h][m];
+                const bg    = cellColor(count, maxCount);
+                const textClr = count / maxCount > 0.6 ? '#fff' : '#212529';
+                const title = `${String(h).padStart(2,'0')}:00 – ${MONTH_LABELS[m]}: ${count}`;
+                rowHtml += `<td class="heatmap-cell" style="background:${bg};color:${textClr};" title="${title}">${count > 0 ? count : ''}</td>`;
+            }
+            $tbody.append(`<tr>${rowHtml}</tr>`);
+        }
+
+        // Update header info.
+        $('#species-title').text(data.species_name || '');
+        $('#total-display').text('{{ _("Всього реєстрацій:") }} ' + total);
+        $('#legend-max').text(maxCount);
+
+        $('#result-section').show();
+    }
+});
+</script>
+{% endblock %}

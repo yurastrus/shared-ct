@@ -21,6 +21,7 @@ from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
+from .activity_heatmap import fetch_heatmap_data
 
 #
 # --- MODULE STATIC FILES ---
@@ -5473,5 +5474,115 @@ def daily_activity_page(lang_code):
         )
     except Exception as e:
         current_app.logger.error(f"Error loading daily activity page: {e}", exc_info=True)
+        flash(_("Помилка завантаження сторінки."), 'danger')
+        return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
+
+
+@camera_traps_bp.route('/api/stats/activity-heatmap')
+def api_activity_heatmap(lang_code):
+    """JSON API: 24-hour × 12-month activity heatmap for one species."""
+    ct_session = get_ct_session()
+    try:
+        species_id_str = request.args.get('species_id', '')
+        scope_type = request.args.get('scope_type', 'global')
+        scope_id = request.args.get('scope_id', '')
+
+        if not species_id_str or not species_id_str.isdigit():
+            return jsonify({'error': 'Missing or invalid species_id'}), 400
+
+        species_id = int(species_id_str)
+
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+
+        # Access control mirrors api_daily_activity.
+        if not is_admin:
+            if scope_type == 'institution':
+                if not scope_id or int(scope_id) not in user_inst_ids:
+                    return jsonify({'error': 'Access denied'}), 403
+            elif scope_type == 'ecoregion':
+                user_ecoregions = {
+                    inst.ecoregion_uk for inst in current_user.institutions
+                    if inst.ecoregion_uk
+                } if current_user.is_authenticated else set()
+                if scope_id not in user_ecoregions:
+                    return jsonify({'error': 'Access denied'}), 403
+
+        location_ids = None
+        if scope_type == 'institution' and scope_id:
+            loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id == int(scope_id)
+            ).distinct().all()
+            location_ids = [row[0] for row in loc_subq]
+        elif scope_type == 'ecoregion' and scope_id:
+            eco_inst_ids = [i.id for i in Institution.query.filter_by(ecoregion_uk=scope_id).all()]
+            if eco_inst_ids:
+                loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                    location_institutions.c.institution_id.in_(eco_inst_ids)
+                ).distinct().all()
+                location_ids = [row[0] for row in loc_subq]
+        elif scope_type == 'global' and not is_admin and user_inst_ids:
+            loc_subq = ct_session.query(location_institutions.c.location_id).filter(
+                location_institutions.c.institution_id.in_(user_inst_ids)
+            ).distinct().all()
+            location_ids = [row[0] for row in loc_subq]
+
+        if location_ids is not None and not location_ids:
+            empty = [[0] * 12 for _ in range(24)]
+            return jsonify({'matrix': empty, 'max_count': 0, 'total': 0, 'species_name': ''})
+
+        species = ct_session.query(Species).get(species_id)
+        if not species:
+            return jsonify({'error': 'Species not found'}), 404
+
+        if g.lang_code == 'uk' and species.common_name_ua:
+            species_name = species.common_name_ua
+        elif g.lang_code == 'en' and species.common_name_en:
+            species_name = species.common_name_en
+        else:
+            species_name = species.scientific_name
+
+        result = fetch_heatmap_data(ct_session, species_id, location_ids=location_ids)
+        result['species_name'] = species_name
+
+        return jsonify(result)
+
+    except Exception as e:
+        current_app.logger.error(f"Error in activity heatmap API: {e}", exc_info=True)
+        return jsonify({'error': 'Server error'}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/analysis/activity-heatmap')
+def activity_heatmap_page(lang_code):
+    """Activity heatmap page: 24-hour × 12-month grid per species."""
+    try:
+        species_list = get_cached_species_for_filter()
+
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        if is_admin:
+            institutions = Institution.query.order_by(Institution.name_uk).all()
+        elif current_user.is_authenticated:
+            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+        else:
+            institutions = []
+
+        lang = g.lang_code
+        ecoregions = {}
+        for inst in institutions:
+            if inst.ecoregion_uk:
+                display = inst.ecoregion_uk if lang != 'en' else (inst.ecoregion_en or inst.ecoregion_uk)
+                ecoregions[inst.ecoregion_uk] = display
+
+        return render_template(
+            'activity_heatmap.html',
+            species_list=species_list,
+            institutions=institutions,
+            ecoregions=ecoregions,
+            is_admin=is_admin,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error loading activity heatmap page: {e}", exc_info=True)
         flash(_("Помилка завантаження сторінки."), 'danger')
         return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
