@@ -23,6 +23,8 @@
                     <span id="zoom-level"></span>
                     <button type="button" class="zoom-btn" onclick="zoomIn()">+</button>
                     <button type="button" class="zoom-btn" onclick="resetZoom()">{{ _('Скинути') }}</button>
+                    <span class="zoom-separator">|</span>
+                    <button type="button" class="zoom-btn" id="invert-btn" onclick="toggleInvert()" title="{{ _('Інвертувати кольори') }}">☀</button>
                 </div>
                 
                 <img id="photo-img"
@@ -368,5 +370,24 @@ updateZoomLevel();
 window.zoomIn = zoomIn;
 window.zoomOut = zoomOut;
 window.resetZoom = resetZoom;
+
+// Colour invert toggle — state persists across photo navigation via sessionStorage.
+const INVERT_KEY = 'ct_photo_invert';
+
+function applyInvert(active) {
+    photoImg.style.filter = active ? 'invert(1)' : '';
+    const btn = document.getElementById('invert-btn');
+    if (btn) btn.classList.toggle('active', active);
+}
+
+function toggleInvert() {
+    const next = sessionStorage.getItem(INVERT_KEY) !== '1';
+    sessionStorage.setItem(INVERT_KEY, next ? '1' : '0');
+    applyInvert(next);
+}
+
+// Restore state on load.
+applyInvert(sessionStorage.getItem(INVERT_KEY) === '1');
+window.toggleInvert = toggleInvert;
 </script>
 {% endblock %}

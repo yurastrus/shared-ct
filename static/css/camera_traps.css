@@ -1490,6 +1490,8 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 }
 .zoom-btn          { padding: 3px 8px; border: 1px solid var(--color-success); background: var(--color-success); color: #fff; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; transition: filter 0.15s; }
 .zoom-btn:hover    { filter: brightness(0.85); }
+.zoom-btn.active   { background: rgba(255, 220, 0, 0.9); border-color: rgba(200, 170, 0, 0.9); color: #000; }
+.zoom-separator    { color: rgba(255,255,255,0.4); font-size: 12px; }
 #zoom-level        { color: #fff; font-size: 12px; min-width: 40px; text-align: center; }
 
 .photo-meta {
