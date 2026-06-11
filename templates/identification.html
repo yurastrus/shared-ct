@@ -122,6 +122,11 @@
                         <button type="button" id="fullsize-btn" class="fullsize-btn" title="{{ _('Відкрити у повному розмірі') }}">
                             🔍
                         </button>
+
+                        <!-- Invert colours toggle -->
+                        <button type="button" id="invert-btn" class="invert-btn" title="{{ _('Інвертувати кольори') }}">
+                            ☀
+                        </button>
                         
                         <div id="photo-info" class="photo-info"></div>
                     </div>
@@ -562,13 +567,22 @@ $(document).ready(function() {
         }
     }
 
+    let invertActive = false;
+
+    $('#invert-btn').on('click', function() {
+        invertActive = !invertActive;
+        $(this).toggleClass('active', invertActive);
+        photoDisplay.css('filter', invertActive ? 'invert(1)' : '');
+    });
+
     function displayCurrentPhoto() {
         if (!currentObservation || !currentObservation.photos || !currentObservation.photos[currentPhotoIndex]) return;
-        
+
         const photo = currentObservation.photos[currentPhotoIndex];
         const photoCount = currentObservation.photos.length;
 
         photoDisplay.attr('src', photo.thumbnail_url);
+        photoDisplay.css('filter', invertActive ? 'invert(1)' : '');
         photoInfo.text(
             `${translations.location}: ${currentObservation.location_name} | ` +
             `${translations.time}: ${photo.captured_at} | ` +
