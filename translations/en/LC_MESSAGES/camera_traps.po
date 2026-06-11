@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-11 16:12+0300\n"
+"POT-Creation-Date: 2026-06-11 16:47+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -608,27 +608,43 @@ msgstr "Statistics recalculated successfully! The map will be updated."
 msgid "Під час перерахунку сталася помилка."
 msgstr "An error occurred during recalculation."
 
-#: app/camera_traps/routes.py:5477 app/camera_traps/routes.py:5587
+#: app/camera_traps/routes.py:5513 app/camera_traps/routes.py:5646
 msgid "Помилка завантаження сторінки."
 msgstr "Error loading page."
 
 #: app/camera_traps/templates/activity_heatmap.html:3
-#: app/camera_traps/templates/activity_heatmap.html:35
+#: app/camera_traps/templates/activity_heatmap.html:193
 msgid "Теплова карта активності"
 msgstr "Activity Heatmap"
 
-#: app/camera_traps/templates/activity_heatmap.html:36
+#: app/camera_traps/templates/activity_heatmap.html:195
 msgid "Кількість верифікованих реєстрацій по годинах доби та місяцях року."
 msgstr "Verified registration counts by hour of day and month of year."
 
-#: app/camera_traps/templates/activity_heatmap.html:43
+#: app/camera_traps/templates/activity_heatmap.html:203
+msgid "Параметри"
+msgstr "Parameters"
+
+#: app/camera_traps/templates/activity_heatmap.html:207
 #: app/camera_traps/templates/gallery.html:220
 #: app/camera_traps/templates/identification.html:83
 #, fuzzy
 msgid "Вид:"
 msgstr "From:"
 
-#: app/camera_traps/templates/activity_heatmap.html:59
+#: app/camera_traps/templates/activity_heatmap.html:219
+#: app/camera_traps/templates/daily_activity.html:20
+#: app/camera_traps/templates/species_detailed.html:21
+msgid "Період з:"
+msgstr "Period from:"
+
+#: app/camera_traps/templates/activity_heatmap.html:224
+#: app/camera_traps/templates/daily_activity.html:24
+#: app/camera_traps/templates/species_detailed.html:25
+msgid "до:"
+msgstr "to:"
+
+#: app/camera_traps/templates/activity_heatmap.html:231
 #: app/camera_traps/templates/contributors.html:34
 #: app/camera_traps/templates/daily_activity.html:29
 #: app/camera_traps/templates/dashboard.html:30
@@ -636,7 +652,7 @@ msgstr "From:"
 msgid "Установа / Екорегіон:"
 msgstr "Institution / Ecoregion:"
 
-#: app/camera_traps/templates/activity_heatmap.html:62
+#: app/camera_traps/templates/activity_heatmap.html:234
 #: app/camera_traps/templates/contributors.html:36
 #: app/camera_traps/templates/daily_activity.html:32
 #: app/camera_traps/templates/dashboard.html:32
@@ -644,7 +660,7 @@ msgstr "Institution / Ecoregion:"
 msgid "Всі дані"
 msgstr "All data"
 
-#: app/camera_traps/templates/activity_heatmap.html:64
+#: app/camera_traps/templates/activity_heatmap.html:236
 #: app/camera_traps/templates/daily_activity.html:34
 #: app/camera_traps/templates/manage_deployments.html:116
 #: app/camera_traps/templates/manage_locations.html:30
@@ -653,7 +669,7 @@ msgstr "All data"
 msgid "Всі доступні мені"
 msgstr "All available data"
 
-#: app/camera_traps/templates/activity_heatmap.html:67
+#: app/camera_traps/templates/activity_heatmap.html:239
 #: app/camera_traps/templates/behavior_analysis.html:52
 #: app/camera_traps/templates/comparison.html:44
 #: app/camera_traps/templates/comparison.html:70
@@ -667,7 +683,7 @@ msgstr "All available data"
 msgid "Установи"
 msgstr "New"
 
-#: app/camera_traps/templates/activity_heatmap.html:76
+#: app/camera_traps/templates/activity_heatmap.html:248
 #: app/camera_traps/templates/behavior_analysis.html:61
 #: app/camera_traps/templates/comparison.html:53
 #: app/camera_traps/templates/comparison.html:79
@@ -679,106 +695,106 @@ msgstr "New"
 msgid "Екорегіони"
 msgstr "Ecoregions"
 
-#: app/camera_traps/templates/activity_heatmap.html:91
-#: app/camera_traps/templates/activity_heatmap.html:169
+#: app/camera_traps/templates/activity_heatmap.html:259
+#: app/camera_traps/templates/activity_heatmap.html:356
 #: app/camera_traps/templates/behavior_analysis.html:84
 #: app/camera_traps/templates/daily_activity.html:117
 msgid "Побудувати"
 msgstr "Generate"
 
-#: app/camera_traps/templates/activity_heatmap.html:117
+#: app/camera_traps/templates/activity_heatmap.html:269
+#, fuzzy
+msgid "Виберіть вид і натисніть «Побудувати»"
+msgstr "Select left and right and click \"Compare\"."
+
+#: app/camera_traps/templates/activity_heatmap.html:294
 msgid "Немає верифікованих реєстрацій для обраного виду."
 msgstr "No verified registrations for the selected species."
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Січ"
 msgstr "Jan"
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лют"
 msgstr "Feb"
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Бер"
 msgstr "Mar"
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Кві"
 msgstr "Apr"
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Тра"
 msgstr "May"
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Чер"
 msgstr "Jun"
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лип"
 msgstr "Jul"
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Сер"
 msgstr "Aug"
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Вер"
 msgstr "Sep"
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Жов"
 msgstr "Oct"
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лис"
 msgstr "Nov"
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Гру"
 msgstr "Dec"
 
-#: app/camera_traps/templates/activity_heatmap.html:135
+#: app/camera_traps/templates/activity_heatmap.html:315
 #: app/camera_traps/templates/species_detailed.html:78
 msgid "-- Виберіть вид --"
 msgstr "-- Select species --"
 
-#: app/camera_traps/templates/activity_heatmap.html:143
+#: app/camera_traps/templates/activity_heatmap.html:324
 #: app/camera_traps/templates/gallery.html:157
 #: app/camera_traps/templates/species_dashboard.html:147
 msgid "Будь ласка, виберіть вид."
 msgstr "Please select a species."
 
-#: app/camera_traps/templates/activity_heatmap.html:153
+#: app/camera_traps/templates/activity_heatmap.html:334
 #: app/camera_traps/templates/daily_activity.html:217
 msgid "Зачекайте..."
 msgstr "Wait..."
 
-#: app/camera_traps/templates/activity_heatmap.html:166
+#: app/camera_traps/templates/activity_heatmap.html:352
 #: app/camera_traps/templates/behavior_analysis.html:232
 #: app/camera_traps/templates/daily_activity.html:255
 #, fuzzy
 msgid "Помилка завантаження даних."
 msgstr "Error loading page."
 
-#: app/camera_traps/templates/activity_heatmap.html:198
-#: app/camera_traps/templates/admin.html:178
-msgid "год"
-msgstr "hr"
-
-#: app/camera_traps/templates/activity_heatmap.html:219
+#: app/camera_traps/templates/activity_heatmap.html:405
 msgid "Всього реєстрацій:"
 msgstr "Total detections:"
 
@@ -945,6 +961,10 @@ msgstr "Estimated to be freed"
 #: app/camera_traps/templates/admin.html:174
 msgid "Фото без серій (сироти)"
 msgstr "Photos without series (orphans)"
+
+#: app/camera_traps/templates/admin.html:178
+msgid "год"
+msgstr "hr"
 
 #: app/camera_traps/templates/admin.html:179
 msgid "Вік найстарішого незавершеного батчу"
@@ -2052,16 +2072,6 @@ msgstr "not working"
 #: app/camera_traps/templates/daily_activity.html:12
 msgid "Добова активність видів"
 msgstr "Daily activity of species"
-
-#: app/camera_traps/templates/daily_activity.html:20
-#: app/camera_traps/templates/species_detailed.html:21
-msgid "Період з:"
-msgstr "Period from:"
-
-#: app/camera_traps/templates/daily_activity.html:24
-#: app/camera_traps/templates/species_detailed.html:25
-msgid "до:"
-msgstr "to:"
 
 #: app/camera_traps/templates/daily_activity.html:56
 msgid "Тип даних:"

@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-11 16:12+0300\n"
+"POT-Creation-Date: 2026-06-11 16:47+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: uk\n"
@@ -599,26 +599,42 @@ msgstr ""
 msgid "Під час перерахунку сталася помилка."
 msgstr ""
 
-#: app/camera_traps/routes.py:5477 app/camera_traps/routes.py:5587
+#: app/camera_traps/routes.py:5513 app/camera_traps/routes.py:5646
 msgid "Помилка завантаження сторінки."
 msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:3
-#: app/camera_traps/templates/activity_heatmap.html:35
+#: app/camera_traps/templates/activity_heatmap.html:193
 msgid "Теплова карта активності"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:36
+#: app/camera_traps/templates/activity_heatmap.html:195
 msgid "Кількість верифікованих реєстрацій по годинах доби та місяцях року."
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:43
+#: app/camera_traps/templates/activity_heatmap.html:203
+msgid "Параметри"
+msgstr ""
+
+#: app/camera_traps/templates/activity_heatmap.html:207
 #: app/camera_traps/templates/gallery.html:220
 #: app/camera_traps/templates/identification.html:83
 msgid "Вид:"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:59
+#: app/camera_traps/templates/activity_heatmap.html:219
+#: app/camera_traps/templates/daily_activity.html:20
+#: app/camera_traps/templates/species_detailed.html:21
+msgid "Період з:"
+msgstr ""
+
+#: app/camera_traps/templates/activity_heatmap.html:224
+#: app/camera_traps/templates/daily_activity.html:24
+#: app/camera_traps/templates/species_detailed.html:25
+msgid "до:"
+msgstr ""
+
+#: app/camera_traps/templates/activity_heatmap.html:231
 #: app/camera_traps/templates/contributors.html:34
 #: app/camera_traps/templates/daily_activity.html:29
 #: app/camera_traps/templates/dashboard.html:30
@@ -626,7 +642,7 @@ msgstr ""
 msgid "Установа / Екорегіон:"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:62
+#: app/camera_traps/templates/activity_heatmap.html:234
 #: app/camera_traps/templates/contributors.html:36
 #: app/camera_traps/templates/daily_activity.html:32
 #: app/camera_traps/templates/dashboard.html:32
@@ -634,7 +650,7 @@ msgstr ""
 msgid "Всі дані"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:64
+#: app/camera_traps/templates/activity_heatmap.html:236
 #: app/camera_traps/templates/daily_activity.html:34
 #: app/camera_traps/templates/manage_deployments.html:116
 #: app/camera_traps/templates/manage_locations.html:30
@@ -642,7 +658,7 @@ msgstr ""
 msgid "Всі доступні мені"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:67
+#: app/camera_traps/templates/activity_heatmap.html:239
 #: app/camera_traps/templates/behavior_analysis.html:52
 #: app/camera_traps/templates/comparison.html:44
 #: app/camera_traps/templates/comparison.html:70
@@ -655,7 +671,7 @@ msgstr ""
 msgid "Установи"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:76
+#: app/camera_traps/templates/activity_heatmap.html:248
 #: app/camera_traps/templates/behavior_analysis.html:61
 #: app/camera_traps/templates/comparison.html:53
 #: app/camera_traps/templates/comparison.html:79
@@ -667,105 +683,104 @@ msgstr ""
 msgid "Екорегіони"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:91
-#: app/camera_traps/templates/activity_heatmap.html:169
+#: app/camera_traps/templates/activity_heatmap.html:259
+#: app/camera_traps/templates/activity_heatmap.html:356
 #: app/camera_traps/templates/behavior_analysis.html:84
 #: app/camera_traps/templates/daily_activity.html:117
 msgid "Побудувати"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:117
+#: app/camera_traps/templates/activity_heatmap.html:269
+msgid "Виберіть вид і натисніть «Побудувати»"
+msgstr ""
+
+#: app/camera_traps/templates/activity_heatmap.html:294
 msgid "Немає верифікованих реєстрацій для обраного виду."
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Січ"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лют"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Бер"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:129
+#: app/camera_traps/templates/activity_heatmap.html:309
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Кві"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Тра"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Чер"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лип"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:130
+#: app/camera_traps/templates/activity_heatmap.html:310
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Сер"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Вер"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Жов"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Лис"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:131
+#: app/camera_traps/templates/activity_heatmap.html:311
 #: app/camera_traps/templates/species_dashboard.html:211
 msgid "Гру"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:135
+#: app/camera_traps/templates/activity_heatmap.html:315
 #: app/camera_traps/templates/species_detailed.html:78
 msgid "-- Виберіть вид --"
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:143
+#: app/camera_traps/templates/activity_heatmap.html:324
 #: app/camera_traps/templates/gallery.html:157
 #: app/camera_traps/templates/species_dashboard.html:147
 msgid "Будь ласка, виберіть вид."
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:153
+#: app/camera_traps/templates/activity_heatmap.html:334
 #: app/camera_traps/templates/daily_activity.html:217
 msgid "Зачекайте..."
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:166
+#: app/camera_traps/templates/activity_heatmap.html:352
 #: app/camera_traps/templates/behavior_analysis.html:232
 #: app/camera_traps/templates/daily_activity.html:255
 msgid "Помилка завантаження даних."
 msgstr ""
 
-#: app/camera_traps/templates/activity_heatmap.html:198
-#: app/camera_traps/templates/admin.html:178
-msgid "год"
-msgstr ""
-
-#: app/camera_traps/templates/activity_heatmap.html:219
+#: app/camera_traps/templates/activity_heatmap.html:405
 msgid "Всього реєстрацій:"
 msgstr ""
 
@@ -920,6 +935,10 @@ msgstr ""
 
 #: app/camera_traps/templates/admin.html:174
 msgid "Фото без серій (сироти)"
+msgstr ""
+
+#: app/camera_traps/templates/admin.html:178
+msgid "год"
 msgstr ""
 
 #: app/camera_traps/templates/admin.html:179
@@ -1973,16 +1992,6 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:3
 #: app/camera_traps/templates/daily_activity.html:12
 msgid "Добова активність видів"
-msgstr ""
-
-#: app/camera_traps/templates/daily_activity.html:20
-#: app/camera_traps/templates/species_detailed.html:21
-msgid "Період з:"
-msgstr ""
-
-#: app/camera_traps/templates/daily_activity.html:24
-#: app/camera_traps/templates/species_detailed.html:25
-msgid "до:"
 msgstr ""
 
 #: app/camera_traps/templates/daily_activity.html:56

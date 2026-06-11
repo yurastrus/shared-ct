@@ -21,7 +21,7 @@ from app.models import User, Institution
 from .decorators import role_required
 from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
-from .activity_heatmap import fetch_heatmap_data
+from .activity_heatmap import fetch_heatmap_data, fetch_date_range
 
 #
 # --- MODULE STATIC FILES ---
@@ -4867,6 +4867,42 @@ _species_list_cache = {
     'timestamp': None
 }
 
+# Cache for the observed date range (min/max series_start_time).
+# The query is fast but runs on every page load, so cache for 24 h.
+_heatmap_date_range_cache = {
+    'data': None,   # (min_date_str, max_date_str) or None
+    'timestamp': None
+}
+
+
+def get_cached_heatmap_date_range():
+    """Return (min_date_str, max_date_str) of verified observations, cached 24 h."""
+    global _heatmap_date_range_cache
+    now = datetime.now()
+    cached = _heatmap_date_range_cache
+
+    if (cached['data'] is not None and
+            cached['timestamp'] is not None and
+            (now - cached['timestamp']).total_seconds() < 86400):
+        return cached['data']
+
+    ct_session = get_ct_session()
+    try:
+        min_d, max_d = fetch_date_range(ct_session)
+        if min_d and max_d:
+            result = (str(min_d), str(max_d))
+        else:
+            today = date.today()
+            result = (
+                (today.replace(year=today.year - 1)).strftime('%Y-%m-%d'),
+                today.strftime('%Y-%m-%d'),
+            )
+        _heatmap_date_range_cache['data'] = result
+        _heatmap_date_range_cache['timestamp'] = now
+        return result
+    finally:
+        close_ct_session()
+
 # Minimum number of verified registrations a species must have to appear in the
 # daily-activity filter dropdown. Species below this threshold never yield a
 # meaningful activity curve, so they are hidden from the list.
@@ -5486,6 +5522,21 @@ def api_activity_heatmap(lang_code):
         species_id_str = request.args.get('species_id', '')
         scope_type = request.args.get('scope_type', 'global')
         scope_id = request.args.get('scope_id', '')
+        start_date_str = request.args.get('start_date', '')
+        end_date_str = request.args.get('end_date', '')
+
+        start_date = None
+        end_date = None
+        if start_date_str:
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        if end_date_str:
+            try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
 
         if not species_id_str or not species_id_str.isdigit():
             return jsonify({'error': 'Missing or invalid species_id'}), 400
@@ -5542,7 +5593,12 @@ def api_activity_heatmap(lang_code):
         else:
             species_name = species.scientific_name
 
-        result = fetch_heatmap_data(ct_session, species_id, location_ids=location_ids)
+        result = fetch_heatmap_data(
+            ct_session, species_id,
+            location_ids=location_ids,
+            start_date=start_date,
+            end_date=end_date,
+        )
         result['species_name'] = species_name
 
         return jsonify(result)
@@ -5559,6 +5615,7 @@ def activity_heatmap_page(lang_code):
     """Activity heatmap page: 24-hour × 12-month grid per species."""
     try:
         species_list = get_cached_species_for_filter()
+        default_start, default_end = get_cached_heatmap_date_range()
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         if is_admin:
@@ -5581,6 +5638,8 @@ def activity_heatmap_page(lang_code):
             institutions=institutions,
             ecoregions=ecoregions,
             is_admin=is_admin,
+            default_start=default_start,
+            default_end=default_end,
         )
     except Exception as e:
         current_app.logger.error(f"Error loading activity heatmap page: {e}", exc_info=True)
