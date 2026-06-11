@@ -3,6 +3,50 @@ from sqlalchemy import text
 from .database import get_ct_engine
 from app.models import User
 
+# Whitelist of valid QC flag names — prevents SQL injection when building
+# the dynamic NOT EXISTS clause.
+_VALID_QC_BOOL_FLAGS = frozenset({
+    'qc_non_functional', 'qc_stolen', 'qc_hardware_issue', 'qc_firmware_issue',
+    'qc_settings_issue', 'qc_battery_issue', 'qc_sd_issue',
+    'qc_no_data_uploaded_by_pa', 'qc_uploaded_data_is_not_raw',
+    'qc_no_gps_coordinates', 'qc_no_species_captured', 'qc_placement_incorrect',
+    'qc_poor_placement', 'qc_feeding_location', 'qc_installation_incorrect',
+    'qc_lapse_photos_missed', 'qc_installation_photos_missed',
+    'qc_deinstallation_photos_missed', 'qc_distance_reference_photos_missed',
+    'qc_datetime_photos_missed', 'qc_local_datetime_not_set',
+    'qc_data_not_usable', 'qc_used_brf',
+})
+# Text field: treated as "problem present" when the column is not NULL and not empty.
+_QC_TEXT_FLAG = 'qc_local_datetime_issue'
+_VALID_QC_FLAGS = _VALID_QC_BOOL_FLAGS | {_QC_TEXT_FLAG}
+
+
+def _build_qc_exclusion_cond(qc_exclude):
+    """Return a SQL fragment for NOT EXISTS QC exclusion, or empty string.
+
+    qc_exclude: list of flag names (already validated against _VALID_QC_FLAGS).
+    """
+    safe = [f for f in qc_exclude if f in _VALID_QC_FLAGS]
+    if not safe:
+        return ""
+    or_parts = []
+    for flag in safe:
+        if flag == _QC_TEXT_FLAG:
+            or_parts.append(
+                "(d_qc.qc_local_datetime_issue IS NOT NULL"
+                " AND d_qc.qc_local_datetime_issue <> '')"
+            )
+        else:
+            or_parts.append(f"d_qc.{flag} = TRUE")
+    return f"""
+        AND NOT EXISTS (
+            SELECT 1 FROM deployments d_qc
+            WHERE d_qc.location_id = o.location_id
+              AND DATE(o.series_start_time) BETWEEN d_qc.start_date AND d_qc.end_date
+              AND ({' OR '.join(or_parts)})
+        )"""
+
+
 def get_ct_occurrence_data(filters, limit=None):
     """Fetch camera-trap occurrence rows (Darwin Core-style) plus a total count.
 
@@ -21,6 +65,8 @@ def get_ct_occurrence_data(filters, limit=None):
                 'start_date': filters.get('start_date'),
                 'end_date': filters.get('end_date')
             }
+
+            qc_cond = _build_qc_exclusion_cond(filters.get('qc_exclude', []))
 
             taxo_conditions = []
             if filters.get('species_ids'):
@@ -109,6 +155,7 @@ def get_ct_occurrence_data(filters, limit=None):
                         {species_filter_condition}
                         {taxo_where}
                         {inst_cond}
+                        {qc_cond}
                 )
             """
 

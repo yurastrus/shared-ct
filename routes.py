@@ -4375,6 +4375,7 @@ def api_ct_data_preview(lang_code):
             'institution_code': request.args.get('institution_code', 'RSNR'),
             'filter_type': request.args.get('filter_type', 'species_only'),
             'institution_ids': _get_export_institution_ids(),
+            'qc_exclude': [f for f in request.args.get('qc_exclude', '').split(',') if f],
         }
 
         result = get_ct_occurrence_data(filters, limit=20)
@@ -4406,6 +4407,7 @@ def api_ct_data_download(lang_code):
             'institution_code': request.args.get('institution_code', 'WNBO-CT'),
             'filter_type': request.args.get('filter_type', 'species_only'),
             'institution_ids': _get_export_institution_ids(),
+            'qc_exclude': [f for f in request.args.get('qc_exclude', '').split(',') if f],
         }
         
         result = get_ct_occurrence_data(filters, limit=None)
