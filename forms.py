@@ -3,7 +3,7 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, DecimalField, SelectField, SubmitField, HiddenField, IntegerField, BooleanField, RadioField, SelectMultipleField, TextAreaField, widgets
 from wtforms.validators import DataRequired, NumberRange, Optional, Length
-from flask_babel import lazy_gettext as _l
+from app.camera_traps.domain import _l
 
 class UploadForm(FlaskForm):
     """Photo-upload form; also supports creating a new location inline."""

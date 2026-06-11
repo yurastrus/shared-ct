@@ -1,0 +1,3050 @@
+# Ukrainian translations for the camera_traps domain.
+# Copyright (C) 2025 ORGANIZATION
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-06-11 00:00+0300\n"
+"PO-Revision-Date: 2026-06-11 00:00+0300\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: uk\n"
+"Language-Team: uk\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: migrate_ct_sdm_translations.py\n"
+
+#: decorators.py:37
+msgid "У вас недостатньо прав для доступу до цієї сторінки."
+msgstr ""
+
+#: forms.py:10
+msgid "Виберіть місце"
+msgstr ""
+
+#: forms.py:13
+msgid "Назва місця"
+msgstr ""
+
+#: forms.py:17
+msgid "Опис місця"
+msgstr ""
+
+#: forms.py:21
+msgid "Широта (Lat)"
+msgstr ""
+
+#: forms.py:23
+msgid "Широта має бути між -90 та 90."
+msgstr ""
+
+#: forms.py:26
+msgid "Довгота (Lng)"
+msgstr ""
+
+#: forms.py:28
+msgid "Довгота має бути між -180 та 180."
+msgstr ""
+
+#: forms.py:31
+msgid "Створити місце"
+msgstr ""
+
+#: forms.py:32
+msgid "Завантажити фотографії"
+msgstr ""
+
+#: forms.py:36
+msgid "Observation ID"
+msgstr ""
+
+#: forms.py:40
+msgid "Вид тварини"
+msgstr ""
+
+#: forms.py:42
+msgid "Особин"
+msgstr ""
+
+#: forms.py:45
+#: templates/identification.html:131
+msgid "Додаткові теги"
+msgstr ""
+
+#: forms.py:52
+msgid "У вибране"
+msgstr ""
+
+#: forms.py:56
+#: templates/manage_deployments.html:295
+#: templates/upload_fast.html:243
+msgid "Коментар"
+msgstr ""
+
+#: routes.py:139 routes.py:163
+#: routes.py:2413
+msgid "Серію не знайдено."
+msgstr ""
+
+#: routes.py:144
+msgid "Серію позначено на повторний розгляд."
+msgstr ""
+
+#: routes.py:148
+#: templates/identification.html:706
+#: templates/identification.html:707
+msgid "Помилка позначення серії."
+msgstr ""
+
+#: routes.py:168
+msgid "Позначку знято."
+msgstr ""
+
+#: routes.py:172
+msgid "Помилка зняття позначки."
+msgstr ""
+
+#: routes.py:283
+msgid "AI-класифікатор не доступний."
+msgstr ""
+
+#: routes.py:290
+msgid "Некоректна кількість серій."
+msgstr ""
+
+#: routes.py:301
+#, python-format
+msgid "Кількість серій має бути від 1 до %(max)d."
+msgstr ""
+
+#: routes.py:309
+#, python-format
+msgid ""
+"Запит №%(id)d додано в чергу. Worker оброблятиме до %(n)d серій. Перевір "
+"статус нижче через 1-3 хвилини."
+msgstr ""
+
+#: routes.py:315
+msgid "Помилка створення запиту. Перевір логи сервера."
+msgstr ""
+
+#: routes.py:687
+msgid "Помилка завантаження списку учасників."
+msgstr ""
+
+#: routes.py:771
+msgid "Помилка завантаження сторінки аналізу."
+msgstr ""
+
+#: routes.py:810
+msgid "Помилка завантаження сторінки порівняння."
+msgstr ""
+
+#: routes.py:878
+msgid "Помилка завантаження сторінки аналізу поведінки."
+msgstr ""
+
+#: routes.py:1395 routes.py:1574
+#: templates/upload.html:363
+#: templates/upload_fast.html:439
+msgid "*** СТВОРИТИ НОВЕ МІСЦЕ ***"
+msgstr ""
+
+#: routes.py:1442
+msgid "Location ID is required"
+msgstr ""
+
+#: routes.py:1450
+msgid "Batch створено успішно"
+msgstr ""
+
+#: routes.py:1455 templates/upload.html:628
+msgid "Помилка створення batch"
+msgstr ""
+
+#: routes.py:1469
+msgid "Відсутні обов'язкові параметри"
+msgstr ""
+
+#: routes.py:1472 routes.py:1743
+msgid "Файл не передано"
+msgstr ""
+
+#: routes.py:1486
+msgid "Файл успішно завантажено"
+msgstr ""
+
+#: routes.py:1493
+msgid "Помилка обробки файлу"
+msgstr ""
+
+#: routes.py:1505 routes.py:1616
+msgid "Необхідний ID для batch"
+msgstr ""
+
+#: routes.py:1513
+msgid "Batch успішно завершено та згруповано в серії"
+msgstr ""
+
+#: routes.py:1520
+msgid "Помилка завершення batch"
+msgstr ""
+
+#: routes.py:1532 routes.py:1623
+msgid "Batch не знайдено"
+msgstr ""
+
+#: routes.py:1538
+msgid "Помилка отримання статусу batch"
+msgstr ""
+
+#: routes.py:1627
+#, python-format
+msgid "Batch у стані '%(s)s', фіналізація неможлива"
+msgstr ""
+
+#: routes.py:1642
+msgid "Групування запущено у фоні. Очікуйте..."
+msgstr ""
+
+#: routes.py:1647
+msgid "Помилка фіналізації batch"
+msgstr ""
+
+#: routes.py:1672
+msgid "Помилка отримання списку файлів"
+msgstr ""
+
+#: routes.py:1720
+msgid "-- Будь ласка, виберіть локацію --"
+msgstr ""
+
+#: routes.py:1754 routes.py:1779
+#: templates/import_classification.html:129
+msgid "Оберіть локацію"
+msgstr ""
+
+#: routes.py:1766
+msgid "Помилка прев’ю імпорту"
+msgstr ""
+
+#: routes.py:1781
+#: templates/import_classification.html:135
+msgid "Оберіть рівень моделі"
+msgstr ""
+
+#: routes.py:1790
+msgid "Недопустимий рівень моделі"
+msgstr ""
+
+#: routes.py:1799
+msgid "Помилка імпорту класифікації"
+msgstr ""
+
+#: routes.py:1821
+msgid "Спостереження або фотографію не знайдено."
+msgstr ""
+
+#: routes.py:1828
+msgid "У цьому спостереженні немає фотографій."
+msgstr ""
+
+#: routes.py:1877
+msgid "Помилка завантаження фотографії."
+msgstr ""
+
+#: routes.py:2409
+msgid "Неправильний формат даних."
+msgstr ""
+
+#: routes.py:2456
+msgid "Ідентифікацію для серії успішно збережено!"
+msgstr ""
+
+#: routes.py:2460
+msgid "Помилка бази даних."
+msgstr ""
+
+#: routes.py:2472 routes.py:3198
+#: routes.py:3621 routes.py:4040
+msgid "Локацію не знайдено."
+msgstr ""
+
+#: routes.py:2493
+msgid "Помилка отримання даних локації."
+msgstr ""
+
+#: routes.py:2513
+msgid "Недостатньо прав для режиму перегляду"
+msgstr ""
+
+#: routes.py:2645
+#: templates/identification.html:326
+msgid "Немає серій для перегляду, які б відповідали критеріям."
+msgstr ""
+
+#: routes.py:2647
+#: templates/identification.html:325
+msgid "Вітаємо! Ви ідентифікували всі доступні серії фотографій."
+msgstr ""
+
+#: routes.py:2691
+#: templates/photo_viewer.html:100
+msgid "Пусто (немає тварин)"
+msgstr ""
+
+#: routes.py:2693
+msgid "Інший вид"
+msgstr ""
+
+#: routes.py:2695
+msgid "Людина"
+msgstr ""
+
+#: routes.py:2697
+msgid "Автомобіль"
+msgstr ""
+
+#: routes.py:2699
+msgid "Мотоцикл"
+msgstr ""
+
+#: routes.py:2750 templates/upload.html:438
+#: templates/upload_fast.html:484
+msgid "Назва та координати є обов'язковими."
+msgstr ""
+
+#: routes.py:2757
+msgid "Місце з такими координатами вже існує: "
+msgstr ""
+
+#: routes.py:2778
+msgid "Нове місце успішно створено!"
+msgstr ""
+
+#: routes.py:2782
+msgid "Помилка створення місця."
+msgstr ""
+
+#: routes.py:2794
+msgid "Неправильно вказане місце."
+msgstr ""
+
+#: routes.py:2796
+msgid "Файли не були передані."
+msgstr ""
+
+#: routes.py:2799
+msgid "Файли успішно оброблені!"
+msgstr ""
+
+#: routes.py:2804
+msgid "Сталася невідома помилка під час обробки файлів."
+msgstr ""
+
+#: routes.py:2822
+msgid "Очищення завершено. Файлів для видалення не знайдено."
+msgstr ""
+
+#: routes.py:2828
+msgid "Під час процесу очищення сталася несподівана помилка. Перевірте логи."
+msgstr ""
+
+#: routes.py:2881
+msgid "Аналіз запущено. Очікуйте..."
+msgstr ""
+
+#: routes.py:2885
+msgid "Помилка запуску аналізу"
+msgstr ""
+
+#: routes.py:2901
+msgid "Виконання запущено у фоні."
+msgstr ""
+
+#: routes.py:2913
+msgid "Помилка запуску виконання"
+msgstr ""
+
+#: routes.py:2925
+msgid "Запис не знайдено"
+msgstr ""
+
+#: routes.py:2929 routes.py:4228
+msgid "Помилка отримання статусу"
+msgstr ""
+
+#: routes.py:2943
+msgid "Помилка перерахунку консенсусу. Перевірте логи."
+msgstr ""
+
+#: routes.py:3039
+msgid "Помилка завантаження галереї."
+msgstr ""
+
+#: routes.py:3085 templates/gallery.html:191
+msgid "Для вибраного виду немає фото у вибраному."
+msgstr ""
+
+#: routes.py:3173
+msgid "Фото видалено з вибраного"
+msgstr ""
+
+#: routes.py:3213 routes.py:3619
+#: routes.py:4035 routes.py:4652
+#: routes.py:4718 routes.py:4801
+msgid "Немає доступу до цієї локації."
+msgstr ""
+
+#: routes.py:3358
+msgid "Помилка завантаження сторінки управління локаціями."
+msgstr ""
+
+#: routes.py:3552
+msgid "Помилка завантаження сторінки управління деплойментами."
+msgstr ""
+
+#: routes.py:3566 routes.py:3583
+#: routes.py:3653
+msgid "Деплоймент не знайдено."
+msgstr ""
+
+#: routes.py:3568 routes.py:4027
+#: routes.py:4056 routes.py:4644
+#: routes.py:4710 routes.py:4793
+msgid "Немає доступу."
+msgstr ""
+
+#: routes.py:3585 routes.py:3655
+msgid "Немає доступу до цього деплойменту."
+msgstr ""
+
+#: routes.py:3589 routes.py:3625
+msgid "Назва деплойменту обов'язкова."
+msgstr ""
+
+#: routes.py:3593
+msgid "Деплоймент оновлено успішно!"
+msgstr ""
+
+#: routes.py:3597 routes.py:3635
+msgid "Невірний формат дати/числа."
+msgstr ""
+
+#: routes.py:3601 routes.py:3639
+#: routes.py:4080
+msgid "Помилка збереження даних."
+msgstr ""
+
+#: routes.py:3616
+msgid "Не вказано локацію."
+msgstr ""
+
+#: routes.py:3631
+msgid "Деплоймент створено успішно!"
+msgstr ""
+
+#: routes.py:3659
+msgid "Деплоймент видалено."
+msgstr ""
+
+#: routes.py:3664
+msgid "Помилка видалення."
+msgstr ""
+
+#: routes.py:3738 routes.py:4110
+msgid "Немає доступу до цієї установи."
+msgstr ""
+
+#: routes.py:3829
+msgid "Помилка експорту."
+msgstr ""
+
+#: routes.py:4008
+msgid "Помилка завантаження сторінки якості даних."
+msgstr ""
+
+#: routes.py:4076
+msgid "Дані локації оновлено успішно!"
+msgstr ""
+
+#: routes.py:4105
+msgid "Вкажіть координати."
+msgstr ""
+
+#: routes.py:4138
+msgid "Локацію створено успішно!"
+msgstr ""
+
+#: routes.py:4143
+msgid "Помилка сервера при створенні локації."
+msgstr ""
+
+#: routes.py:4167
+msgid ""
+"Під час процесу видалення файлів сталася несподівана помилка. Перевірте "
+"логи."
+msgstr ""
+
+#: routes.py:4200
+msgid "Перерахунок аналітики запущено у фоні."
+msgstr ""
+
+#: routes.py:4201
+msgid ""
+"Перерахунок аналітики запущено у фоні. Це може зайняти кілька хвилин — "
+"статус оновиться на цій сторінці."
+msgstr ""
+
+#: routes.py:4206
+msgid "Перерахунок аналітики вже виконується."
+msgstr ""
+
+#: routes.py:4207
+msgid "Перерахунок аналітики вже виконується. Зачекайте завершення."
+msgstr ""
+
+#: routes.py:4212
+msgid "Не вдалося запустити перерахунок аналітики."
+msgstr ""
+
+#: routes.py:4213
+msgid "Не вдалося запустити перерахунок аналітики. Перевірте логи."
+msgstr ""
+
+#: routes.py:4607
+msgid "Прогноз за кількістю фото"
+msgstr ""
+
+#: routes.py:4611
+#: templates/service_log.html:340
+msgid "Прогноз за часом"
+msgstr ""
+
+#: routes.py:4673
+msgid "Не замінювались"
+msgstr ""
+
+#: routes.py:4704 routes.py:4808
+msgid "Не всі обов'язкові поля заповнені."
+msgstr ""
+
+#: routes.py:4759
+msgid "Запис успішно додано до журналу!"
+msgstr ""
+
+#: routes.py:4765
+msgid "Передано некоректні дані."
+msgstr ""
+
+#: routes.py:4769
+msgid "Помилка сервера при збереженні запису."
+msgstr ""
+
+#: routes.py:4782
+msgid "Запис не знайдено."
+msgstr ""
+
+#: routes.py:4789
+msgid "Недостатньо прав для редагування цього запису."
+msgstr ""
+
+#: routes.py:4833
+msgid "Запис оновлено успішно!"
+msgstr ""
+
+#: routes.py:4837
+msgid "Некоректні дані."
+msgstr ""
+
+#: routes.py:4841
+msgid "Помилка сервера."
+msgstr ""
+
+#: routes.py:4856
+msgid "Перерахунок статистики успішно завершено! Карта буде оновлена."
+msgstr ""
+
+#: routes.py:4860
+msgid "Під час перерахунку сталася помилка."
+msgstr ""
+
+#: routes.py:5476
+msgid "Помилка завантаження сторінки."
+msgstr ""
+
+#: templates/admin.html:3
+msgid "Адмін-панель — фотопастки"
+msgstr ""
+
+#: templates/admin.html:11
+msgid "Технічні дії над базою даних фотопасток. Доступно лише адміністраторам."
+msgstr ""
+
+#: templates/admin.html:15
+msgid "На повторний розгляд"
+msgstr ""
+
+#: templates/admin.html:20
+#: templates/ai_calibration.html:3
+msgid "Калібрування AI"
+msgstr ""
+
+#: templates/admin.html:29
+msgid "AI-класифікатор"
+msgstr ""
+
+#: templates/admin.html:33
+msgid "Активна модель:"
+msgstr ""
+
+#: templates/admin.html:35
+msgid "зареєстрована"
+msgstr ""
+
+#: templates/admin.html:39
+msgid "Жодна модель ще не запускалася. Перший прогін зареєструє її автоматично."
+msgstr ""
+
+#: templates/admin.html:47
+msgid "Класифіковано ШІ"
+msgstr ""
+
+#: templates/admin.html:51
+msgid "Лишилось до класифікації"
+msgstr ""
+
+#: templates/admin.html:58
+msgid "Запустити AI на N серій"
+msgstr ""
+
+#: templates/admin.html:60
+msgid ""
+"Додає запит у чергу. Worker (cron) підхопить його за 1-3 хв і обробить "
+"вказану кількість найстаріших pending серій. Прогнози зберігаються в "
+"окремій таблиці і не йдуть у фінальні ідентифікації."
+msgstr ""
+
+#: templates/admin.html:69
+#: templates/admin.html:135
+#: templates/admin.html:148
+#: templates/admin.html:470
+msgid "Запустити"
+msgstr ""
+
+#: templates/admin.html:75
+msgid "Останні запити"
+msgstr ""
+
+#: templates/admin.html:80
+#: templates/identification.html:320
+msgid "Час"
+msgstr ""
+
+#: templates/admin.html:81
+msgid "Джерело"
+msgstr ""
+
+#: templates/admin.html:82
+msgid "Серій"
+msgstr ""
+
+#: templates/admin.html:84
+msgid "Оброблено"
+msgstr ""
+
+#: templates/admin.html:85
+msgid "Тривалість"
+msgstr ""
+
+#: templates/admin.html:123
+msgid "Перерахунки"
+msgstr ""
+
+#: templates/admin.html:128
+msgid "Перерахувати аналітику"
+msgstr ""
+
+#: templates/admin.html:129
+msgid ""
+"Перерахунок усіх агрегатних таблиць для графіків і мапи. Може зайняти "
+"кілька хвилин."
+msgstr ""
+
+#: templates/admin.html:134
+msgid ""
+"Це запустить повний перерахунок всієї аналітики для графіків. Процес може"
+" зайняти кілька хвилин, залежно від обсягу даних. Продовжити?"
+msgstr ""
+
+#: templates/admin.html:142
+msgid "Перерахувати консенсус"
+msgstr ""
+
+#: templates/admin.html:143
+msgid ""
+"Перерахунок консенсусних видів для всіх спостережень за результатами "
+"ідентифікацій користувачів."
+msgstr ""
+
+#: templates/admin.html:147
+msgid "Перерахувати консенсус для всіх спостережень?"
+msgstr ""
+
+#: templates/admin.html:158
+msgid "Сховище та батчі"
+msgstr ""
+
+#: templates/admin.html:160
+msgid ""
+"Поточний стан перед очищенням нижче. Оновлюється при кожному відкритті "
+"сторінки."
+msgstr ""
+
+#: templates/admin.html:166
+msgid "Серій готових до архівації"
+msgstr ""
+
+#: templates/admin.html:169
+msgid "МБ"
+msgstr ""
+
+#: templates/admin.html:170
+msgid "Орієнтовно звільниться"
+msgstr ""
+
+#: templates/admin.html:174
+msgid "Фото без серій (сироти)"
+msgstr ""
+
+#: templates/admin.html:179
+msgid "Вік найстарішого незавершеного батчу"
+msgstr ""
+
+#: templates/admin.html:185
+msgid "Батчі за статусом:"
+msgstr ""
+
+#: templates/admin.html:195
+msgid "Очищення даних"
+msgstr ""
+
+#: templates/admin.html:200
+msgid "Видалити визначені фото"
+msgstr ""
+
+#: templates/admin.html:201
+msgid ""
+"Видаляє файли фото, для яких уже завершено ідентифікацію. Мініатюри "
+"залишаються."
+msgstr ""
+
+#: templates/admin.html:205
+msgid "Ви впевнені, що хочете видалити файли старих фотографій?"
+msgstr ""
+
+#: templates/admin.html:213
+msgid "Видалити оригінали"
+msgstr ""
+
+#: templates/admin.html:214
+msgid ""
+"УВАГА: видаляє ВСІ оригінали фото окрім позначених як «вибране». Дія "
+"НЕЗВОРОТНЯ."
+msgstr ""
+
+#: templates/admin.html:218
+msgid ""
+"УВАГА! Будуть видалені ВСІ оригінали фото, крім тих, що позначені як "
+"'вибране'. Мініатюри залишаться. Ця дія НЕЗВОРОТНЯ. Продовжити?"
+msgstr ""
+
+#: templates/admin.html:226
+msgid "Очистити невдалі завантаження та сироти"
+msgstr ""
+
+#: templates/admin.html:228
+msgid ""
+"Двофазно: спочатку аналіз (звіт), потім підтверджене видалення. Захист "
+"від активних завантажень — probe 10с. Ніколи не чіпає фото в серіях, у "
+"вибраних, в обробці, або файли молодші 5хв."
+msgstr ""
+
+#: templates/admin.html:232
+msgid "Запустити аналіз"
+msgstr ""
+
+#: templates/admin.html:242
+#: templates/admin.html:415
+msgid "Аналіз очищення"
+msgstr ""
+
+#: templates/admin.html:247
+msgid "Очікування..."
+msgstr ""
+
+#: templates/admin.html:252
+msgid "Захищено активних завантажень"
+msgstr ""
+
+#: templates/admin.html:253
+msgid "Невдалих/застряглих batchʼів"
+msgstr ""
+
+#: templates/admin.html:254
+msgid "Сирітських фото у БД"
+msgstr ""
+
+#: templates/admin.html:255
+msgid "Файлів-сиріт на диску"
+msgstr ""
+
+#: templates/admin.html:256
+msgid "Буде звільнено приблизно"
+msgstr ""
+
+#: templates/admin.html:260
+msgid "Перші 20 імен файлів для контролю"
+msgstr ""
+
+#: templates/admin.html:265
+msgid "Результати виконання"
+msgstr ""
+
+#: templates/admin.html:267
+msgid "Batchʼів марковано failed"
+msgstr ""
+
+#: templates/admin.html:268
+msgid "Фото видалено"
+msgstr ""
+
+#: templates/admin.html:269
+msgid "Файлів видалено"
+msgstr ""
+
+#: templates/admin.html:270
+msgid "Звільнено байтів"
+msgstr ""
+
+#: templates/admin.html:277
+msgid "Виконати очищення"
+msgstr ""
+
+#: templates/admin.html:323
+msgid "Запуск..."
+msgstr ""
+
+#: templates/admin.html:366
+msgid "(порожньо)"
+msgstr ""
+
+#: templates/admin.html:370
+msgid "Готово до виконання"
+msgstr ""
+
+#: templates/admin.html:381
+msgid "Виконано"
+msgstr ""
+
+#: templates/admin.html:393
+msgid "Аналіз триває (probe 10с)..."
+msgstr ""
+
+#: templates/admin.html:394
+msgid "Видалення триває..."
+msgstr ""
+
+#: templates/admin.html:408
+msgid "Запис звіту не знайдено"
+msgstr ""
+
+#: templates/admin.html:420
+msgid "Аналіз запущено, probe 10с..."
+msgstr ""
+
+#: templates/admin.html:423
+msgid "Помилка запуску"
+msgstr ""
+
+#: templates/admin.html:429
+msgid "Виконати очищення? Дія незворотня."
+msgstr ""
+
+#: templates/admin.html:431
+msgid "Виконання очищення"
+msgstr ""
+
+#: templates/admin.html:433
+msgid "Повторний probe + видалення..."
+msgstr ""
+
+#: templates/admin.html:439
+msgid "Помилка виконання"
+msgstr ""
+
+#: templates/admin.html:470
+msgid "Виконується…"
+msgstr ""
+
+#: templates/admin.html:473
+msgid "Перерахунок виконується у фоні…"
+msgstr ""
+
+#: templates/admin.html:476
+msgid "Останній перерахунок завершився помилкою."
+msgstr ""
+
+#: templates/admin.html:481
+msgid "Останній успішний перерахунок:"
+msgstr ""
+
+#: templates/admin.html:482
+msgid "Перерахунок ще не виконувався."
+msgstr ""
+
+#: templates/admin.html:509
+msgid "Запуск…"
+msgstr ""
+
+#: templates/admin.html:528
+msgid "Не вдалося запустити перерахунок."
+msgstr ""
+
+#: templates/ai_calibration.html:10
+msgid "Калібрування AI: точність по видах"
+msgstr ""
+
+#: templates/ai_calibration.html:11
+msgid ""
+"Точність прогнозів AI на серіях, де люди досягли консенсусу. Що більша "
+"вибірка — то надійніший показник."
+msgstr ""
+
+#: templates/ai_calibration.html:13
+msgid ""
+"Середня впевненість «вгадав» помітно вища за «помилився» — ознака доброго"
+" калібрування моделі."
+msgstr ""
+
+#: templates/ai_calibration.html:18
+msgid ""
+"Поки немає даних: жоден вид не має верифікованих AI-прогнозів за обраним "
+"порогом вибірки."
+msgstr ""
+
+#: templates/ai_calibration.html:25
+msgid "Вибірка"
+msgstr ""
+
+#: templates/ai_calibration.html:26
+msgid "Точність, %"
+msgstr ""
+
+#: templates/ai_calibration.html:27
+msgid "Сер. впевненість (вгадав)"
+msgstr ""
+
+#: templates/ai_calibration.html:28
+msgid "Сер. впевненість (помилка)"
+msgstr ""
+
+#: templates/behavior_analysis.html:3
+#: templates/behavior_analysis.html:13
+msgid "Аналіз поведінки тварин"
+msgstr ""
+
+#: templates/behavior_analysis.html:33
+msgid "Від"
+msgstr ""
+
+#: templates/behavior_analysis.html:38
+msgid "До"
+msgstr ""
+
+#: templates/behavior_analysis.html:48
+msgid "Установа / Екорегіон"
+msgstr ""
+
+#: templates/behavior_analysis.html:50
+msgid "Всі доступні дані"
+msgstr ""
+
+#: templates/behavior_analysis.html:61
+#: templates/comparison.html:53
+#: templates/comparison.html:79
+#: templates/contributors.html:47
+#: templates/daily_activity.html:46
+#: templates/dashboard.html:43
+#: templates/identification.html:24
+#: templates/species_dashboard.html:46
+msgid "Екорегіони"
+msgstr ""
+
+#: templates/behavior_analysis.html:71
+msgid "Біотоп"
+msgstr ""
+
+#: templates/behavior_analysis.html:73
+msgid "Будь-який біотоп"
+msgstr ""
+
+#: templates/behavior_analysis.html:84
+#: templates/daily_activity.html:117
+msgid "Побудувати"
+msgstr ""
+
+#: templates/behavior_analysis.html:87
+#: templates/comparison.html:91
+#: templates/species_dashboard.html:75
+msgid "До загального аналізу"
+msgstr ""
+
+#: templates/behavior_analysis.html:97
+msgid "Оберіть вид та натисніть «Побудувати» для відображення аналізу поведінки."
+msgstr ""
+
+#: templates/behavior_analysis.html:112
+msgid "Розподіл поведінкових тегів"
+msgstr ""
+
+#: templates/behavior_analysis.html:113
+msgid "% спостережень з кожним типом поведінки"
+msgstr ""
+
+#: templates/behavior_analysis.html:122
+msgid "Розмір групи"
+msgstr ""
+
+#: templates/behavior_analysis.html:123
+msgid "Розподіл кількості особин в одному спостереженні"
+msgstr ""
+
+#: templates/behavior_analysis.html:133
+msgid "Сезонна структура поведінки"
+msgstr ""
+
+#: templates/behavior_analysis.html:134
+msgid "Кількість спостережень з кожним типом поведінки по місяцях"
+msgstr ""
+
+#: templates/behavior_analysis.html:155
+msgid "Оберіть вид…"
+msgstr ""
+
+#: templates/behavior_analysis.html:222
+msgid "Даних за вибраними фільтрами не знайдено."
+msgstr ""
+
+#: templates/behavior_analysis.html:223
+msgid "Всього ідентифікацій у вибірці:"
+msgstr ""
+
+#: templates/behavior_analysis.html:225
+msgid "без поведінкових тегів:"
+msgstr ""
+
+#: templates/behavior_analysis.html:242
+#: templates/species_detailed.html:180
+msgid "Дані відсутні"
+msgstr ""
+
+#: templates/behavior_analysis.html:316
+#: templates/dashboard.html:229
+msgid "Кількість спостережень"
+msgstr ""
+
+#: templates/behavior_analysis.html:337
+#: templates/behavior_analysis.html:350
+#: templates/dashboard.html:75
+msgid "Спостережень"
+msgstr ""
+
+#: templates/behavior_analysis.html:347
+msgid "Особин у кадрі"
+msgstr ""
+
+#: templates/behavior_analysis.html:363
+msgid "Медіана"
+msgstr ""
+
+#: templates/behavior_analysis.html:363
+msgid "Мода"
+msgstr ""
+
+#: templates/comparison.html:3
+msgid "Порівняння регіонів"
+msgstr ""
+
+#: templates/comparison.html:12
+msgid "Порівняння регіонів / установ"
+msgstr ""
+
+#: templates/comparison.html:13
+msgid ""
+"Виберіть два регіони або установи для порівняння статистики детекцій і "
+"видового різноманіття."
+msgstr ""
+
+#: templates/comparison.html:19
+msgid "Від:"
+msgstr ""
+
+#: templates/comparison.html:23
+msgid "До:"
+msgstr ""
+
+#: templates/comparison.html:27
+#: templates/dashboard.html:52
+msgid "Біотоп:"
+msgstr ""
+
+#: templates/comparison.html:39
+msgid "Ліво (синій)"
+msgstr ""
+
+#: templates/comparison.html:40
+#: templates/comparison.html:66
+msgid "Установа або екорегіон:"
+msgstr ""
+
+#: templates/comparison.html:42
+#: templates/comparison.html:68
+msgid "— Оберіть —"
+msgstr ""
+
+#: templates/comparison.html:65
+msgid "Право (червоний)"
+msgstr ""
+
+#: templates/comparison.html:90
+msgid "Порівняти"
+msgstr ""
+
+#: templates/comparison.html:97
+msgid "Оберіть ліво та право і натисніть «Порівняти»."
+msgstr ""
+
+#: templates/comparison.html:112
+msgid "— Всі біотопи —"
+msgstr ""
+
+#: templates/comparison.html:123
+msgid "Будь ласка, оберіть обидва регіони."
+msgstr ""
+
+#: templates/comparison.html:181
+msgid "Пасткодні (trap-days)"
+msgstr ""
+
+#: templates/comparison.html:182
+#: templates/species_detailed.html:53
+msgid "Активних локацій"
+msgstr ""
+
+#: templates/comparison.html:183
+msgid "Видів (спостережено)"
+msgstr ""
+
+#: templates/comparison.html:184
+#: templates/species_detailed.html:49
+msgid "Всього детекцій"
+msgstr ""
+
+#: templates/comparison.html:185
+msgid "Шеннон H'"
+msgstr ""
+
+#: templates/comparison.html:186
+msgid "Сімпсон (1-D)"
+msgstr ""
+
+#: templates/comparison.html:187
+msgid "Рівномірність Пієлу J'"
+msgstr ""
+
+#: templates/comparison.html:192
+msgid "Порівняльна статистика"
+msgstr ""
+
+#: templates/comparison.html:196
+msgid "Показник"
+msgstr ""
+
+#: templates/comparison.html:209
+msgid "Індекс відносної чисельності (RAI) за видами"
+msgstr ""
+
+#: templates/comparison.html:216
+msgid "Частка спільних видів від усіх зустрінутих (за присутністю/відсутністю)"
+msgstr ""
+
+#: templates/comparison.html:217
+msgid "Схожий на Jaccard, але більш чутливий до спільних видів"
+msgstr ""
+
+#: templates/comparison.html:218
+msgid "Подібність за чисельністю (1 = повний збіг; розбіжність = 1 − це значення)"
+msgstr ""
+
+#: templates/comparison.html:219
+msgid "Стійкий до різниці обсягу вибірки. Найрекомендованіший для фотопасток."
+msgstr ""
+
+#: templates/comparison.html:237
+msgid "Індекси подібності між регіонами"
+msgstr ""
+
+#: templates/comparison.html:240
+msgid "0 = немає спільних видів, 1 = ідентичні угруповання"
+msgstr ""
+
+#: templates/comparison.html:244
+msgid "Різноманіття (підсумок)"
+msgstr ""
+
+#: templates/comparison.html:259
+msgid "зважене різноманіття. Вищий = більш різноманітна фауна."
+msgstr ""
+
+#: templates/comparison.html:260
+msgid "ймовірність що 2 особини різних видів. Від 0 до 1."
+msgstr ""
+
+#: templates/comparison.html:261
+msgid "рівномірність. 1 = всі види однаково часті."
+msgstr ""
+
+#: templates/comparison.html:272
+#: templates/comparison.html:275
+#: templates/comparison.html:278
+msgid "—"
+msgstr ""
+
+#: templates/comparison.html:283
+msgid "Тільки в лівому"
+msgstr ""
+
+#: templates/comparison.html:285
+#: templates/comparison.html:290
+#: templates/comparison.html:295
+msgid "…та ще"
+msgstr ""
+
+#: templates/comparison.html:285
+#: templates/comparison.html:290
+#: templates/comparison.html:295
+msgid "видів"
+msgstr ""
+
+#: templates/comparison.html:288
+msgid "Спільні"
+msgstr ""
+
+#: templates/comparison.html:293
+msgid "Тільки в правому"
+msgstr ""
+
+#: templates/comparison.html:304
+msgid "Немає даних для графіка."
+msgstr ""
+
+#: templates/comparison.html:347
+msgid "детекцій"
+msgstr ""
+
+#: templates/contributors.html:3
+#: templates/contributors.html:27
+#: templates/dashboard.html:96
+msgid "Всі учасники"
+msgstr ""
+
+#: templates/contributors.html:28
+msgid "Повний перелік учасників та їхній внесок за ковзні періоди."
+msgstr ""
+
+#: templates/contributors.html:34
+#: templates/daily_activity.html:29
+#: templates/dashboard.html:30
+#: templates/species_dashboard.html:29
+msgid "Установа / Екорегіон:"
+msgstr ""
+
+#: templates/contributors.html:36
+#: templates/daily_activity.html:32
+#: templates/dashboard.html:32
+#: templates/species_dashboard.html:32
+msgid "Всі дані"
+msgstr ""
+
+#: templates/contributors.html:67
+msgid "Учасник"
+msgstr ""
+
+#: templates/contributors.html:67
+msgid "Нікнейм"
+msgstr ""
+
+#: templates/contributors.html:68
+msgid "Сьогодні"
+msgstr ""
+
+#: templates/contributors.html:69
+msgid "Тиждень"
+msgstr ""
+
+#: templates/contributors.html:70
+msgid "Місяць"
+msgstr ""
+
+#: templates/contributors.html:72
+msgid "Усього"
+msgstr ""
+
+#: templates/contributors.html:90
+msgid "За цими фільтрами немає даних про ідентифікації."
+msgstr ""
+
+#: templates/ct_data_export.html:3
+#: templates/overview.html:3
+#: templates/overview.html:10
+msgid "Фотопастки"
+msgstr ""
+
+#: templates/ct_data_export.html:12
+msgid "Підготовка даних для експорту - фотопастки"
+msgstr ""
+
+#: templates/ct_data_export.html:16
+msgid "Інституції:"
+msgstr ""
+
+#: templates/ct_data_export.html:22
+msgid "Оберіть одну або декілька. Без вибору — всі доступні."
+msgstr ""
+
+#: templates/ct_data_export.html:34
+msgid "Тип даних для експорту:"
+msgstr ""
+
+#: templates/ct_data_export.html:34
+msgid "Тільки тварини"
+msgstr ""
+
+#: templates/ct_data_export.html:34
+msgid "Всі записи"
+msgstr ""
+
+#: templates/ct_data_export.html:35
+msgid "Без агрегації"
+msgstr ""
+
+#: templates/ct_data_export.html:35
+msgid "Агрегувати до дня і локації"
+msgstr ""
+
+#: templates/ct_data_export.html:35
+msgid "Локація + інтервал незалежності"
+msgstr ""
+
+#: templates/ct_data_export.html:36
+msgid "Інтервал незалежності (хв):"
+msgstr ""
+
+#: templates/ct_data_export.html:37
+msgid "Код інституції (для DwC):"
+msgstr ""
+
+#: templates/ct_data_export.html:43
+#: templates/manage_deployments.html:269
+#: templates/upload_fast.html:224
+msgid "Контроль якості"
+msgstr ""
+
+#: templates/ct_data_export.html:44
+#: templates/manage_locations.html:205
+#: templates/upload_fast.html:191
+msgid "необов'язково"
+msgstr ""
+
+#: templates/ct_data_export.html:47
+msgid ""
+"Виключати спостереження, якщо відповідне розгортання (за локацією і "
+"датою) має будь-який з обраних прапорців."
+msgstr ""
+
+#: templates/ct_data_export.html:50
+#: templates/data_quality.html:8
+#: templates/manage_deployments.html:101
+#: templates/upload_fast.html:25
+msgid "Дані непридатні"
+msgstr ""
+
+#: templates/ct_data_export.html:51
+#: templates/data_quality.html:20
+#: templates/manage_deployments.html:80
+#: templates/upload_fast.html:5
+msgid "Не функціонує"
+msgstr ""
+
+#: templates/ct_data_export.html:52
+#: templates/data_quality.html:30
+#: templates/manage_deployments.html:81
+#: templates/upload_fast.html:6
+msgid "Викрадена"
+msgstr ""
+
+#: templates/ct_data_export.html:53
+#: templates/data_quality.html:13
+#: templates/manage_deployments.html:82
+#: templates/upload_fast.html:7
+msgid "Проблема обладнання"
+msgstr ""
+
+#: templates/ct_data_export.html:54
+#: templates/data_quality.html:29
+#: templates/manage_deployments.html:83
+#: templates/upload_fast.html:8
+msgid "Проблема прошивки"
+msgstr ""
+
+#: templates/ct_data_export.html:55
+#: templates/data_quality.html:28
+#: templates/manage_deployments.html:84
+#: templates/upload_fast.html:9
+msgid "Проблема налаштувань"
+msgstr ""
+
+#: templates/ct_data_export.html:56
+#: templates/data_quality.html:19
+#: templates/manage_deployments.html:85
+#: templates/upload_fast.html:10
+msgid "Проблема з батарейками"
+msgstr ""
+
+#: templates/ct_data_export.html:57
+#: templates/data_quality.html:18
+#: templates/manage_deployments.html:86
+#: templates/upload_fast.html:11
+msgid "Проблема SD-карти"
+msgstr ""
+
+#: templates/ct_data_export.html:58
+#: templates/data_quality.html:14
+#: templates/manage_deployments.html:87
+msgid "Не завантажено дані"
+msgstr ""
+
+#: templates/ct_data_export.html:59
+#: templates/data_quality.html:15
+#: templates/manage_deployments.html:88
+#: templates/upload_fast.html:13
+msgid "Дані не сирі"
+msgstr ""
+
+#: templates/ct_data_export.html:60
+#: templates/data_quality.html:9
+#: templates/manage_deployments.html:89
+msgid "Немає GPS-координат"
+msgstr ""
+
+#: templates/ct_data_export.html:61
+#: templates/data_quality.html:22
+#: templates/manage_deployments.html:90
+#: templates/upload_fast.html:14
+msgid "Не зафіксовано видів"
+msgstr ""
+
+#: templates/ct_data_export.html:62
+#: templates/data_quality.html:12
+#: templates/manage_deployments.html:91
+#: templates/upload_fast.html:15
+msgid "Неправильне розміщення"
+msgstr ""
+
+#: templates/ct_data_export.html:63
+#: templates/data_quality.html:21
+#: templates/manage_deployments.html:92
+#: templates/upload_fast.html:16
+msgid "Погане розміщення"
+msgstr ""
+
+#: templates/ct_data_export.html:64
+#: templates/data_quality.html:10
+#: templates/manage_deployments.html:93
+#: templates/upload_fast.html:17
+msgid "Біля годівниці"
+msgstr ""
+
+#: templates/ct_data_export.html:65
+#: templates/data_quality.html:11
+#: templates/manage_deployments.html:94
+#: templates/upload_fast.html:18
+msgid "Неправильна установка"
+msgstr ""
+
+#: templates/ct_data_export.html:66
+#: templates/data_quality.html:16
+#: templates/manage_deployments.html:95
+#: templates/upload_fast.html:19
+msgid "Немає lapse-фото"
+msgstr ""
+
+#: templates/ct_data_export.html:67
+#: templates/data_quality.html:24
+#: templates/manage_deployments.html:96
+#: templates/upload_fast.html:20
+msgid "Немає фото встановлення"
+msgstr ""
+
+#: templates/ct_data_export.html:68
+#: templates/data_quality.html:25
+#: templates/manage_deployments.html:97
+#: templates/upload_fast.html:21
+msgid "Немає фото демонтажу"
+msgstr ""
+
+#: templates/ct_data_export.html:69
+#: templates/data_quality.html:26
+#: templates/manage_deployments.html:98
+#: templates/upload_fast.html:22
+msgid "Немає реф. фото відстані"
+msgstr ""
+
+#: templates/ct_data_export.html:70
+#: templates/data_quality.html:27
+#: templates/manage_deployments.html:99
+#: templates/upload_fast.html:23
+msgid "Немає фото дати/часу"
+msgstr ""
+
+#: templates/ct_data_export.html:71
+#: templates/data_quality.html:17
+#: templates/manage_deployments.html:100
+#: templates/upload_fast.html:24
+msgid "Локальний час не виставлено"
+msgstr ""
+
+#: templates/ct_data_export.html:72
+msgid "Проблема місцевого часу (є текст)"
+msgstr ""
+
+#: templates/ct_data_export.html:73
+#: templates/manage_deployments.html:102
+#: templates/upload_fast.html:26
+msgid "Використано BRF"
+msgstr ""
+
+#: templates/ct_data_export.html:108
+msgid "Всі доступні інституції"
+msgstr ""
+
+#: templates/ct_data_export.html:303
+#, python-brace-format
+msgid "Попередній перегляд (перші 20 записів з ${data.total_count})"
+msgstr ""
+
+#: templates/ct_location_coverage.html:11
+#: templates/manage_locations.html:70
+msgid "Календар покриття фотопасткою"
+msgstr ""
+
+#: templates/ct_location_coverage.html:25
+#, python-format
+msgid ""
+"«Камера працювала» = дні в межах деплойментів та дні з фото (прогалини до"
+" %(n)s днів вважаються неперервними)."
+msgstr ""
+
+#: templates/ct_location_coverage.html:32
+msgid "Днів роботи камери"
+msgstr ""
+
+#: templates/ct_location_coverage.html:36
+msgid "Днів із фото"
+msgstr ""
+
+#: templates/ct_location_coverage.html:40
+msgid "Усього фото"
+msgstr ""
+
+#: templates/ct_location_coverage.html:54
+msgid "більше фото"
+msgstr ""
+
+#: templates/ct_location_coverage.html:55
+#: templates/service_log.html:72
+msgid "Не працювала"
+msgstr ""
+
+#: templates/ct_location_coverage.html:59
+msgid "Для цієї локації ще немає даних про покриття."
+msgstr ""
+
+#: templates/ct_location_coverage.html:79
+#: templates/data_quality.html:195
+msgid "фото"
+msgstr ""
+
+#: templates/ct_location_coverage.html:79
+msgid "камера працювала"
+msgstr ""
+
+#: templates/ct_location_coverage.html:79
+msgid "не працювала"
+msgstr ""
+
+#: templates/daily_activity.html:3
+#: templates/daily_activity.html:12
+msgid "Добова активність видів"
+msgstr ""
+
+#: templates/daily_activity.html:20
+#: templates/species_detailed.html:21
+msgid "Період з:"
+msgstr ""
+
+#: templates/daily_activity.html:24
+#: templates/species_detailed.html:25
+msgid "до:"
+msgstr ""
+
+#: templates/daily_activity.html:56
+msgid "Тип даних:"
+msgstr ""
+
+#: templates/daily_activity.html:58
+msgid "Кількість спостережень на 100 пастко-днів"
+msgstr ""
+
+#: templates/daily_activity.html:59
+#: templates/daily_activity.html:399
+#: templates/species_dashboard.html:260
+msgid "Індекс DR"
+msgstr ""
+
+#: templates/daily_activity.html:61
+msgid "Відсоток від загальної активності виду"
+msgstr ""
+
+#: templates/daily_activity.html:62
+#, python-format
+msgid "Частка (%%)"
+msgstr "Частка (%)"
+
+#: templates/daily_activity.html:69
+msgid "Довірчі інтервали:"
+msgstr ""
+
+#: templates/daily_activity.html:76
+msgid "CI тільки для авторизованих"
+msgstr ""
+
+#: templates/daily_activity.html:84
+msgid "Згладжування (KDE):"
+msgstr ""
+
+#: templates/daily_activity.html:90
+msgid "Різко"
+msgstr ""
+
+#: templates/daily_activity.html:92
+msgid "Гладко"
+msgstr ""
+
+#: templates/daily_activity.html:100
+msgid "Види (можна декілька):"
+msgstr ""
+
+#: templates/daily_activity.html:122
+msgid "Завантажити CSV"
+msgstr ""
+
+#: templates/daily_activity.html:140
+msgid "Матриця перекриття активності"
+msgstr ""
+
+#: templates/daily_activity.html:143
+#, python-format
+msgid "Значення від 0%% (повне уникання) до 100%% (ідентична активність)."
+msgstr "Значення від 0% (повне уникання) до 100% (ідентична активність)."
+
+#: templates/daily_activity.html:144
+msgid "Високий відсоток вказує на те, що види активні в один і той же час."
+msgstr ""
+
+#: templates/daily_activity.html:168
+msgid "-- Виберіть види --"
+msgstr ""
+
+#: templates/daily_activity.html:211
+msgid "Будь ласка, виберіть хоча б один вид."
+msgstr ""
+
+#: templates/daily_activity.html:217
+msgid "Зачекайте..."
+msgstr ""
+
+#: templates/daily_activity.html:244
+msgid "Недостатньо даних для побудови графіка за вибраними критеріями."
+msgstr ""
+
+#: templates/daily_activity.html:388
+msgid "Година доби"
+msgstr ""
+
+#: templates/daily_activity.html:399
+#, python-format
+msgid "Щільність активності (%%)"
+msgstr "Щільність активності (%)"
+
+#: templates/daily_activity.html:525
+msgid "Загальние зусилля за період:"
+msgstr "Загальні зусилля за період:"
+
+#: templates/daily_activity.html:525
+msgid "пастко-днів"
+msgstr ""
+
+#: templates/dashboard.html:3
+msgid "Аналітичний дашборд"
+msgstr ""
+
+#: templates/dashboard.html:15
+msgid "Аналітичний дашборд фотопасток"
+msgstr ""
+
+#: templates/dashboard.html:16
+msgid "Загальна статистика, мапа локацій та топ-види за вибраний період."
+msgstr ""
+
+#: templates/dashboard.html:22
+msgid "Початкова дата:"
+msgstr ""
+
+#: templates/dashboard.html:26
+msgid "Кінцева дата:"
+msgstr ""
+
+#: templates/dashboard.html:73
+#: templates/data_quality.html:89
+msgid "Всього фото"
+msgstr ""
+
+#: templates/dashboard.html:77
+msgid "В очікуванні"
+msgstr ""
+
+#: templates/dashboard.html:78
+msgid "Днів зйомки"
+msgstr ""
+
+#: templates/dashboard.html:82
+msgid "Найактивніші учасники"
+msgstr ""
+
+#: templates/dashboard.html:88
+msgid "ідентифікацій"
+msgstr ""
+
+#: templates/dashboard.html:93
+msgid "За цей період немає даних про ідентифікації."
+msgstr ""
+
+#: templates/dashboard.html:101
+msgid "Повний набір даних можна завантажити через"
+msgstr ""
+
+#: templates/dashboard.html:109
+msgid "Статистика детекцій видів"
+msgstr ""
+
+#: templates/dashboard.html:221
+msgid "За цей період даних для діаграми немає."
+msgstr ""
+
+#: templates/dashboard.html:283
+msgid "К-ть фото:"
+msgstr ""
+
+#: templates/dashboard.html:285
+msgid "Включити у фільтр"
+msgstr ""
+
+#: templates/dashboard.html:315
+msgid "Вибрати всі"
+msgstr ""
+
+#: templates/dashboard.html:316
+msgid "Зняти виділення"
+msgstr ""
+
+#: templates/dashboard.html:317
+msgid "Інвертувати"
+msgstr ""
+
+#: templates/data_quality.html:3
+#: templates/data_quality.html:77
+msgid "Оцінка якості даних"
+msgstr ""
+
+#: templates/data_quality.html:7
+msgid "Зведена проблема"
+msgstr ""
+
+#: templates/data_quality.html:23
+msgid "Не досягнуто мін. днів"
+msgstr ""
+
+#: templates/data_quality.html:79
+msgid "До деплойментів"
+msgstr ""
+
+#: templates/data_quality.html:85
+#: templates/data_quality.html:301
+msgid "Деплойментів"
+msgstr ""
+
+#: templates/data_quality.html:86
+msgid "Придатні"
+msgstr ""
+
+#: templates/data_quality.html:87
+msgid "Зі зведеною проблемою"
+msgstr ""
+
+#: templates/data_quality.html:88
+msgid "Не досягли мін. днів"
+msgstr ""
+
+#: templates/data_quality.html:90
+msgid "Сер. днів роботи"
+msgstr ""
+
+#: templates/data_quality.html:96
+msgid "Регіон"
+msgstr ""
+
+#: templates/data_quality.html:96
+#: templates/manage_deployments.html:183
+#: templates/manage_deployments.html:212
+msgid "Сезон"
+msgstr ""
+
+#: templates/data_quality.html:96
+msgid "Дизайн"
+msgstr ""
+
+#: templates/data_quality.html:96
+#: templates/manage_deployments.html:230
+msgid "Модель камери"
+msgstr ""
+
+#: templates/data_quality.html:100
+#: templates/manage_deployments.html:128
+msgid "Усі"
+msgstr ""
+
+#: templates/data_quality.html:121
+#: templates/data_quality.html:273
+#: templates/data_quality.html:288
+msgid "Проблема"
+msgstr ""
+
+#: templates/data_quality.html:122
+#: templates/data_quality.html:288
+msgid "Норма (літо)"
+msgstr ""
+
+#: templates/data_quality.html:123
+#: templates/data_quality.html:288
+msgid "Норма (зима)"
+msgstr ""
+
+#: templates/data_quality.html:129
+msgid "Параметри якості (кількість деплойментів)"
+msgstr ""
+
+#: templates/data_quality.html:136
+msgid "Показати на карті точки з проблемою:"
+msgstr ""
+
+#: templates/data_quality.html:137
+msgid "(відмічені — показуються точки, де є хоча б одна з обраних проблем)"
+msgstr ""
+
+#: templates/data_quality.html:152
+msgid "Розподіл за статусом"
+msgstr ""
+
+#: templates/data_quality.html:156
+msgid "Деплойменти за роками"
+msgstr ""
+
+#: templates/data_quality.html:195
+msgid "днів"
+msgstr ""
+
+#: templates/data_quality.html:197
+msgid "Редагувати деплоймент"
+msgstr ""
+
+#: templates/data_quality.html:245
+msgid "Показано"
+msgstr ""
+
+#: templates/data_quality.html:274
+msgid "Норма"
+msgstr ""
+
+#: templates/data_quality.html:275
+#: templates/species_detailed.html:296
+msgid "Немає даних"
+msgstr ""
+
+#: templates/flagged_list.html:3
+#: templates/flagged_list.html:10
+msgid "Серії на повторний розгляд"
+msgstr ""
+
+#: templates/flagged_list.html:11
+msgid "Серії, які верифікатори позначили для перегляду. Усього:"
+msgstr ""
+
+#: templates/flagged_list.html:16
+msgid "Наразі немає позначених серій."
+msgstr ""
+
+#: templates/flagged_list.html:24
+msgid "Прев’ю серії"
+msgstr ""
+
+#: templates/flagged_list.html:36
+msgid "(без коментаря)"
+msgstr ""
+
+#: templates/flagged_list.html:41
+msgid "Зняти позначку"
+msgstr ""
+
+#: templates/gallery.html:3
+#: templates/gallery.html:12
+msgid "Галерея вибраних фото"
+msgstr ""
+
+#: templates/gallery.html:14
+msgid ""
+"Тут відображаться фото, які ще не були автоматично очищені системою, а "
+"також ті, що ідентифікатори додали у вибране. Більше фото можна знайти у "
+"нашому проекті на"
+msgstr ""
+
+#: templates/gallery.html:31
+msgid "Показати фото"
+msgstr ""
+
+#: templates/gallery.html:48
+msgid ""
+"Будь ласка, виберіть вид та натисніть \"Показати фото\" для перегляду "
+"галереї."
+msgstr ""
+
+#: templates/gallery.html:58
+msgid "Фото з галереї"
+msgstr ""
+
+#: templates/gallery.html:71
+msgid "Прибрати з вибраного"
+msgstr ""
+
+#: templates/gallery.html:73
+msgid "Тільки для модераторів та адмінів"
+msgstr ""
+
+#: templates/gallery.html:79
+msgid "Інформація про фото"
+msgstr ""
+
+#: templates/gallery.html:165
+msgid "Завантаження фото..."
+msgstr ""
+
+#: templates/gallery.html:186
+msgid "Помилка завантаження фото."
+msgstr ""
+
+#: templates/gallery.html:213
+#: templates/photo_viewer.html:37
+msgid "Час:"
+msgstr ""
+
+#: templates/gallery.html:214
+#: templates/identification.html:321
+#: templates/photo_viewer.html:58
+msgid "Фото"
+msgstr ""
+
+#: templates/gallery.html:228
+msgid "Дата зйомки:"
+msgstr ""
+
+#: templates/gallery.html:233
+msgid "Додано у вибране:"
+msgstr ""
+
+#: templates/gallery.html:240
+#: templates/photo_viewer.html:80
+msgid "У вибраному"
+msgstr ""
+
+#: templates/gallery.html:245
+msgid "№ в серії:"
+msgstr ""
+
+#: templates/gallery.html:290
+msgid "Ви впевнені, що хочете прибрати це фото з вибраного?"
+msgstr ""
+
+#: templates/gallery.html:327
+msgid "Фото успішно видалено з вибраного"
+msgstr ""
+
+#: templates/gallery.html:331
+msgid "Помилка видалення з вибраного"
+msgstr ""
+
+#: templates/identification.html:4
+msgid "Ідентифікація тварин"
+msgstr ""
+
+#: templates/identification.html:11
+msgid "Регіон / Установа:"
+msgstr ""
+
+#: templates/identification.html:35
+msgid "AI вид:"
+msgstr ""
+
+#: templates/identification.html:37
+#: templates/identification.html:450
+msgid "AI ще не виконував класифікацію — список порожній."
+msgstr ""
+
+#: templates/identification.html:38
+#: templates/identification.html:448
+msgid "Будь-який"
+msgstr ""
+
+#: templates/identification.html:60
+msgid "Режим перегляду визначених серій"
+msgstr ""
+
+#: templates/identification.html:70
+msgid "🔍 РЕЖИМ ПЕРЕГЛЯДУ: Перевіряється вже визначена серія"
+msgstr ""
+
+#: templates/identification.html:77
+msgid "Користувач:"
+msgstr ""
+
+#: templates/identification.html:79
+#: templates/identification.html:382
+msgid "-- Всі користувачі --"
+msgstr ""
+
+#: templates/identification.html:89
+msgid "Сортування:"
+msgstr ""
+
+#: templates/identification.html:91
+msgid "Випадково"
+msgstr ""
+
+#: templates/identification.html:92
+msgid "Дата (спочатку нові)"
+msgstr ""
+
+#: templates/identification.html:93
+msgid "Дата (спочатку старі)"
+msgstr ""
+
+#: templates/identification.html:94
+msgid "К-ть фото (спочатку більше)"
+msgstr ""
+
+#: templates/identification.html:105
+msgid "Існуючі ідентифікації серії:"
+msgstr ""
+
+#: templates/identification.html:118
+msgid "Фото для ідентифікації"
+msgstr ""
+
+#: templates/identification.html:122
+msgid "Відкрити у повному розмірі"
+msgstr ""
+
+#: templates/identification.html:143
+msgid "Короткий коментар, до 200 символів"
+msgstr ""
+
+#: templates/identification.html:157
+msgid "Позначити серію на повторний розгляд"
+msgstr ""
+
+#: templates/identification.html:184
+msgid "Загальні опції"
+msgstr ""
+
+#: templates/identification.html:196
+msgid "Ссавці"
+msgstr ""
+
+#: templates/identification.html:197
+msgid "Птахи"
+msgstr ""
+
+#: templates/identification.html:198
+msgid "Інші"
+msgstr ""
+
+#: templates/identification.html:216
+msgid "Інші категорії"
+msgstr ""
+
+#: templates/identification.html:322
+msgid "Будь ласка, виберіть вид, або опцію \"Пусто\"."
+msgstr ""
+
+#: templates/identification.html:324
+msgid "Не вдалося завантажити дані."
+msgstr ""
+
+#: templates/identification.html:327
+msgid "Залишилось вам:"
+msgstr ""
+
+#: templates/identification.html:545
+msgid "AI пропонує"
+msgstr ""
+
+#: templates/identification.html:546
+msgid "впевненість"
+msgstr ""
+
+#: templates/identification.html:547
+msgid "особин"
+msgstr ""
+
+#: templates/identification.html:693
+msgid "Коментар до позначки (за бажанням):"
+msgstr ""
+
+#: templates/import_classification.html:3
+msgid "Імпорт класифікації DeepFaune"
+msgstr ""
+
+#: templates/import_classification.html:14
+msgid "Імпорт зовнішньої класифікації DeepFaune"
+msgstr ""
+
+#: templates/import_classification.html:16
+msgid ""
+"Накладає результати локального прогону (CSV) на вже завантажені фото "
+"обраної локації. Серверні прогнози не змінюються — імпорт зберігається "
+"окремою моделлю (рівень MDR)."
+msgstr ""
+
+#: templates/import_classification.html:22
+msgid "1. Локація"
+msgstr ""
+
+#: templates/import_classification.html:27
+#: templates/upload.html:39
+#: templates/upload_fast.html:96
+msgid "-- Усі доступні установи --"
+msgstr ""
+
+#: templates/import_classification.html:47
+msgid "2. Рівень моделі (детектор)"
+msgstr ""
+
+#: templates/import_classification.html:49
+msgid "-- Оберіть рівень --"
+msgstr ""
+
+#: templates/import_classification.html:54
+msgid "Яким детектором прогнано цей CSV. Обов’язково."
+msgstr ""
+
+#: templates/import_classification.html:61
+msgid "3. CSV-файл DeepFaune"
+msgstr ""
+
+#: templates/import_classification.html:63
+msgid "Один файл на локацію (напр. 0801.csv)."
+msgstr ""
+
+#: templates/import_classification.html:69
+msgid "Прев’ю (без запису)"
+msgstr ""
+
+#: templates/import_classification.html:70
+msgid "Імпортувати"
+msgstr ""
+
+#: templates/import_classification.html:71
+msgid "Обробка…"
+msgstr ""
+
+#: templates/import_classification.html:130
+msgid "Оберіть CSV-файл"
+msgstr ""
+
+#: templates/import_classification.html:161
+msgid "Результат прев’ю"
+msgstr ""
+
+#: templates/import_classification.html:163
+msgid "Рядків у CSV:"
+msgstr ""
+
+#: templates/import_classification.html:164
+msgid "Фото на локації (згрупованих):"
+msgstr ""
+
+#: templates/import_classification.html:165
+msgid "Співпало:"
+msgstr ""
+
+#: templates/import_classification.html:166
+#: templates/import_classification.html:204
+msgid "CSV без фото в БД:"
+msgstr ""
+
+#: templates/import_classification.html:167
+msgid "Фото без рядка в CSV:"
+msgstr ""
+
+#: templates/import_classification.html:168
+msgid "Дублікатів-ключів у CSV:"
+msgstr ""
+
+#: templates/import_classification.html:169
+msgid "Фото без EXIF-часу на локації (не зматчаться):"
+msgstr ""
+
+#: templates/import_classification.html:170
+msgid "Помилок парсингу:"
+msgstr ""
+
+#: templates/import_classification.html:173
+msgid "Приклади незіставлених"
+msgstr ""
+
+#: templates/import_classification.html:177
+msgid "Жодного збігу — перевірте, чи це правильна локація і файл."
+msgstr ""
+
+#: templates/import_classification.html:188
+msgid "Записати імпортовані класифікації в базу?"
+msgstr ""
+
+#: templates/import_classification.html:198
+msgid "Імпорт завершено"
+msgstr ""
+
+#: templates/import_classification.html:199
+msgid "Зіставлено фото:"
+msgstr ""
+
+#: templates/import_classification.html:200
+msgid "Додано:"
+msgstr ""
+
+#: templates/import_classification.html:201
+msgid "Оновлено:"
+msgstr ""
+
+#: templates/import_classification.html:202
+msgid "Пропущено (не кращий score):"
+msgstr ""
+
+#: templates/import_classification.html:203
+msgid "Перераховано серій:"
+msgstr ""
+
+#: templates/manage_deployments.html:3
+#: templates/manage_deployments.html:106
+msgid "Управління деплойментами"
+msgstr ""
+
+#: templates/manage_deployments.html:125
+msgid "Рік:"
+msgstr ""
+
+#: templates/manage_deployments.html:139
+msgid "Усі локації"
+msgstr ""
+
+#: templates/manage_deployments.html:146
+msgid "Пошук за назвою деплойменту, камерою..."
+msgstr ""
+
+#: templates/manage_deployments.html:148
+msgid "Експорт у Ексель з урахуванням фільтрів установи та року"
+msgstr ""
+
+#: templates/manage_deployments.html:149
+msgid "Експорт у Ексель"
+msgstr ""
+
+#: templates/manage_deployments.html:157
+msgid "Клацніть локацію, щоб відфільтрувати деплойменти."
+msgstr ""
+
+#: templates/manage_deployments.html:165
+#: templates/overview.html:102
+msgid "Деплойменти"
+msgstr ""
+
+#: templates/manage_deployments.html:169
+msgid "Спершу виберіть локацію на карті або у фільтрі"
+msgstr ""
+
+#: templates/manage_deployments.html:170
+msgid "Новий"
+msgstr ""
+
+#: templates/manage_deployments.html:181
+#: templates/manage_locations.html:96
+#: templates/upload.html:64
+#: templates/upload_fast.html:116
+msgid "Назва"
+msgstr ""
+
+#: templates/manage_deployments.html:184
+#: templates/manage_deployments.html:236
+#: templates/upload_fast.html:204
+msgid "Початок"
+msgstr ""
+
+#: templates/manage_deployments.html:185
+#: templates/manage_deployments.html:244
+#: templates/upload_fast.html:208
+msgid "Кінець"
+msgstr ""
+
+#: templates/manage_deployments.html:186
+#: templates/manage_deployments.html:220
+msgid "Камера"
+msgstr ""
+
+#: templates/manage_deployments.html:191
+msgid "Немає деплойментів."
+msgstr ""
+
+#: templates/manage_deployments.html:202
+#: templates/overview.html:75
+msgid "Ідентифікація"
+msgstr ""
+
+#: templates/manage_deployments.html:204
+msgid "Назва (deployment_id)"
+msgstr ""
+
+#: templates/manage_deployments.html:216
+msgid "Дизайн дослідження"
+msgstr ""
+
+#: templates/manage_deployments.html:222
+msgid "ID камери"
+msgstr ""
+
+#: templates/manage_deployments.html:226
+msgid "Серійний №"
+msgstr ""
+
+#: templates/manage_deployments.html:234
+msgid "Період"
+msgstr ""
+
+#: templates/manage_deployments.html:240
+#: templates/upload_fast.html:214
+msgid "Час початку"
+msgstr ""
+
+#: templates/manage_deployments.html:248
+#: templates/upload_fast.html:218
+msgid "Час кінця"
+msgstr ""
+
+#: templates/manage_deployments.html:252
+msgid "Обсяг"
+msgstr ""
+
+#: templates/manage_deployments.html:254
+msgid "Робочих днів (введ.)"
+msgstr ""
+
+#: templates/manage_deployments.html:258
+msgid "Днів (розрах.)"
+msgstr ""
+
+#: templates/manage_deployments.html:262
+msgid "К-ть фото"
+msgstr ""
+
+#: templates/manage_deployments.html:271
+#: templates/upload_fast.html:226
+msgid "клік перемикає:"
+msgstr ""
+
+#: templates/manage_deployments.html:272
+#: templates/upload_fast.html:227
+msgid "невідомо"
+msgstr ""
+
+#: templates/manage_deployments.html:273
+#: templates/upload_fast.html:228
+msgid "немає проблеми"
+msgstr ""
+
+#: templates/manage_deployments.html:274
+#: templates/upload_fast.html:229
+msgid "є проблема"
+msgstr ""
+
+#: templates/manage_deployments.html:282
+#: templates/upload_fast.html:236
+msgid "клік перемикає невідомо / немає / є проблема"
+msgstr ""
+
+#: templates/manage_deployments.html:291
+msgid "Проблема з датою/часом"
+msgstr ""
+
+#: templates/manage_deployments.html:531
+msgid "Спершу виберіть локацію."
+msgstr ""
+
+#: templates/manage_deployments.html:537
+msgid "Новий деплоймент:"
+msgstr ""
+
+#: templates/manage_deployments.html:591
+msgid "Назва обов'язкова."
+msgstr ""
+
+#: templates/manage_deployments.html:634
+msgid "Видалити цей деплоймент? Дію не можна скасувати."
+msgstr ""
+
+#: templates/manage_deployments.html:648
+msgid "Помилка видалення:"
+msgstr ""
+
+#: templates/manage_locations.html:3
+#: templates/manage_locations.html:13
+msgid "Управління локаціями фотопасток"
+msgstr ""
+
+#: templates/manage_locations.html:49
+msgid "Без опису"
+msgstr ""
+
+#: templates/manage_locations.html:100
+#: templates/upload.html:69
+#: templates/upload_fast.html:121
+msgid "Опис"
+msgstr ""
+
+#: templates/manage_locations.html:102
+msgid "Коротка характеристика локації"
+msgstr ""
+
+#: templates/manage_locations.html:179
+#: templates/service_log.html:64
+msgid "Стан камери"
+msgstr ""
+
+#: templates/manage_locations.html:200
+msgid "SD-карта замінена"
+msgstr ""
+
+#: templates/manage_locations.html:204
+msgid "К-ть фото на карті"
+msgstr ""
+
+#: templates/manage_locations.html:661
+msgid "Замінено"
+msgstr ""
+
+#: templates/manage_locations.html:663
+msgid "Фото:"
+msgstr ""
+
+#: templates/manage_locations.html:678
+msgid "Камера:"
+msgstr ""
+
+#: templates/overview.html:11
+msgid ""
+"Моніторинг диких тварин — серії фото з камер-пасток, ідентифікація та "
+"аналітика. Виберіть розділ для роботи."
+msgstr ""
+
+#: templates/overview.html:21
+msgid "Дашборд"
+msgstr ""
+
+#: templates/overview.html:22
+msgid "Загальна статистика, мапа локацій і топ-види."
+msgstr ""
+
+#: templates/overview.html:27
+msgid "Тренди"
+msgstr ""
+
+#: templates/overview.html:28
+msgid "Динаміка чисельності видів за роками."
+msgstr ""
+
+#: templates/overview.html:33
+msgid "Добова активність"
+msgstr ""
+
+#: templates/overview.html:34
+msgid "Хронограма активності видів протягом доби."
+msgstr ""
+
+#: templates/overview.html:39
+msgid "Мапа"
+msgstr ""
+
+#: templates/overview.html:40
+msgid "Поширення видів на мапі локацій."
+msgstr ""
+
+#: templates/overview.html:45
+msgid "Галерея"
+msgstr ""
+
+#: templates/overview.html:46
+msgid "Перегляд відібраних фото з пасток."
+msgstr ""
+
+#: templates/overview.html:52
+msgid "Порівняння"
+msgstr ""
+
+#: templates/overview.html:53
+msgid "Порівняння двох регіонів або установ за показниками."
+msgstr ""
+
+#: templates/overview.html:59
+msgid "Поведінка"
+msgstr ""
+
+#: templates/overview.html:60
+msgid "Аналіз поведінкових тегів окремого виду."
+msgstr ""
+
+#: templates/overview.html:69
+msgid "Робота"
+msgstr ""
+
+#: templates/overview.html:76
+msgid "Визначення видів на нових серіях фото."
+msgstr ""
+
+#: templates/overview.html:84
+msgid "Додати фото з пасток до бази даних."
+msgstr ""
+
+#: templates/overview.html:89
+msgid "Імпорт класифікації"
+msgstr ""
+
+#: templates/overview.html:90
+msgid "Накласти результати локального DeepFaune (CSV) на фото локації."
+msgstr ""
+
+#: templates/overview.html:97
+msgid "Локації"
+msgstr ""
+
+#: templates/overview.html:98
+msgid "Керування точками встановлення пасток."
+msgstr ""
+
+#: templates/overview.html:103
+msgid "Редагування даних встановлень та контролю якості."
+msgstr ""
+
+#: templates/overview.html:107
+msgid "Якість даних"
+msgstr ""
+
+#: templates/overview.html:108
+msgid "Карта та графіки контролю якості деплойментів."
+msgstr ""
+
+#: templates/overview.html:116
+msgid "Завантажити відфільтровані дані у форматах CSV / Darwin Core."
+msgstr ""
+
+#: templates/overview.html:127
+msgid "Адміністрування"
+msgstr ""
+
+#: templates/overview.html:132
+msgid "Перерахунок аналітики, очищення фото та інші технічні дії."
+msgstr ""
+
+#: templates/photo_viewer.html:3
+msgid "Перегляд фото #"
+msgstr ""
+
+#: templates/photo_viewer.html:32
+msgid "Фото #"
+msgstr ""
+
+#: templates/photo_viewer.html:49
+msgid "Серія спостереження"
+msgstr ""
+
+#: templates/photo_viewer.html:70
+msgid "Деталі фотографії"
+msgstr ""
+
+#: templates/photo_viewer.html:76
+msgid "Оригінальна назва:"
+msgstr ""
+
+#: templates/photo_viewer.html:88
+msgid "Ідентифікації"
+msgstr ""
+
+#: templates/photo_viewer.html:95
+msgid "Користувач видалений"
+msgstr ""
+
+#: templates/photo_viewer.html:102
+msgid "Інший вид (немає у списку)"
+msgstr ""
+
+#: templates/photo_viewer.html:107
+msgid "К-сть:"
+msgstr ""
+
+#: templates/photo_viewer.html:113
+msgid "Для цього фото ще немає ідентифікацій."
+msgstr ""
+
+#: templates/service_log.html:3
+msgid "Журнал обслуговування фотопасток"
+msgstr ""
+
+#: templates/service_log.html:13
+msgid "Журнал обслуговування"
+msgstr ""
+
+#: templates/service_log.html:15
+msgid "Оновити статистику для розрахунку прогнозів"
+msgstr ""
+
+#: templates/service_log.html:17
+msgid "Оновити статистику"
+msgstr ""
+
+#: templates/service_log.html:19
+msgid "На дашборд"
+msgstr ""
+
+#: templates/service_log.html:68
+msgid "Працювала"
+msgstr ""
+
+#: templates/service_log.html:86
+msgid "Проведено заміну SD-карти"
+msgstr ""
+
+#: templates/service_log.html:91
+msgid "К-ть фото на карті (необов'язково)"
+msgstr ""
+
+#: templates/service_log.html:188
+#: templates/service_log.html:340
+msgid "Днів тому:"
+msgstr ""
+
+#: templates/service_log.html:188
+#: templates/service_log.html:340
+msgid "міс."
+msgstr ""
+
+#: templates/service_log.html:191
+msgid "Прогноз фото:"
+msgstr ""
+
+#: templates/service_log.html:267
+msgid "Стан камери:"
+msgstr ""
+
+#: templates/service_log.html:269
+msgid "SD-карта замінена:"
+msgstr ""
+
+#: templates/service_log.html:365
+msgid ""
+"Це може зайняти деякий час. Ви впевнені, що хочете запустити повний "
+"перерахунок статистики для всіх локацій?"
+msgstr ""
+
+#: templates/service_log.html:370
+msgid "Розрахунок..."
+msgstr ""
+
+#: templates/service_log.html:392
+msgid "Критична помилка запиту."
+msgstr ""
+
+#: templates/species_dashboard.html:3
+#: templates/species_dashboard.html:12
+msgid "Аналіз трендів по видах"
+msgstr ""
+
+#: templates/species_dashboard.html:170
+msgid "Не вдалося завантажити дані для аналізу."
+msgstr ""
+
+#: templates/species_dashboard.html:184
+msgid "Для вибраного виду та періоду немає даних."
+msgstr ""
+
+#: templates/species_dashboard.html:195
+msgid "Багаторічна динаміка (індекс відносної чисельності, DR)"
+msgstr ""
+
+#: templates/species_dashboard.html:227
+msgid "Середній тренд"
+msgstr ""
+
+#: templates/species_detailed.html:3
+#: templates/species_detailed.html:15
+msgid "Карта детекцій видів фотопастками"
+msgstr ""
+
+#: templates/species_detailed.html:29
+msgid "Вид тварини:"
+msgstr ""
+
+#: templates/species_detailed.html:57
+msgid "Середній DR"
+msgstr ""
+
+#: templates/species_detailed.html:78
+msgid "-- Виберіть вид --"
+msgstr ""
+
+#: templates/species_detailed.html:108
+msgid "Карта (OSM)"
+msgstr ""
+
+#: templates/species_detailed.html:109
+msgid "Супутник (Esri)"
+msgstr ""
+
+#: templates/species_detailed.html:114
+msgid "DR (Детекцій на 100 днів)"
+msgstr ""
+
+#: templates/species_detailed.html:123
+msgid "Завантажте дані..."
+msgstr ""
+
+#: templates/species_detailed.html:140
+msgid "Будь ласка, заповніть всі поля"
+msgstr ""
+
+#: templates/species_detailed.html:158
+msgid "Помилка отримання даних"
+msgstr ""
+
+#: templates/species_detailed.html:210
+msgid "Днів роботи:"
+msgstr ""
+
+#: templates/species_detailed.html:211
+msgid "DR:"
+msgstr ""
+
+#: templates/species_detailed.html:211
+msgid "дет./день"
+msgstr ""
+
+#: templates/species_detailed.html:292
+msgid "DR (на 100 днів)"
+msgstr ""
+
+#: templates/upload.html:3
+#: templates/upload_fast.html:52
+msgid "Завантаження даних фотопасток"
+msgstr ""
+
+#: templates/upload.html:19
+#: templates/upload_fast.html:84
+msgid "Завантаження фотографій з фотопасток"
+msgstr ""
+
+#: templates/upload.html:62
+#: templates/upload_fast.html:114
+msgid "Нове місце зйомки"
+msgstr ""
+
+#: templates/upload.html:66
+#: templates/upload_fast.html:118
+msgid "напр. Яворівський НПП — точка 1"
+msgstr ""
+
+#: templates/upload.html:71
+#: templates/upload_fast.html:123
+msgid "Коротка характеристика"
+msgstr ""
+
+#: templates/upload.html:91
+#: templates/upload_fast.html:137
+msgid "Створити та вибрати місце"
+msgstr ""
+
+#: templates/upload.html:104
+#: templates/upload_fast.html:145
+msgid "Фотографії"
+msgstr ""
+
+#: templates/upload.html:123
+#: templates/upload_fast.html:162
+msgid "Дозволені файли: .jpg, .jpeg"
+msgstr ""
+
+#: templates/upload.html:135
+#: templates/upload_fast.html:174
+msgid "Зберігати повнорозмірні (оригінальні) фотографії"
+msgstr ""
+
+#: templates/upload.html:164
+#: templates/upload_fast.html:284
+msgid "Файли успішно завантажені!"
+msgstr ""
+
+#: templates/upload.html:167
+#: templates/upload_fast.html:285
+msgid "Тепер ви можете перейти до їх розпізнавання."
+msgstr ""
+
+#: templates/upload.html:172
+#: templates/upload_fast.html:289
+msgid "Перейти до ідентифікації"
+msgstr ""
+
+#: templates/upload.html:177
+#: templates/upload_fast.html:294
+msgid "Завантажити ще"
+msgstr ""
+
+#: templates/upload.html:538
+msgid "Групування фото в серії..."
+msgstr ""
+
+#: templates/upload.html:547
+msgid "Успішно згруповано"
+msgstr ""
+
+#: templates/upload.html:547
+msgid "фото в серії"
+msgstr ""
+
+#: templates/upload.html:553
+msgid "Завантаження завершено:"
+msgstr ""
+
+#: templates/upload.html:553
+#: templates/upload_fast.html:819
+msgid "успішно,"
+msgstr ""
+
+#: templates/upload.html:553
+msgid "з помилками"
+msgstr ""
+
+#: templates/upload.html:558
+msgid "Помилка групування"
+msgstr ""
+
+#: templates/upload.html:559
+msgid "Помилка групування:"
+msgstr ""
+
+#: templates/upload.html:573
+msgid "стиснення..."
+msgstr ""
+
+#: templates/upload.html:588
+msgid "Завантажую файл"
+msgstr ""
+
+#: templates/upload.html:589
+msgid "завантажується..."
+msgstr ""
+
+#: templates/upload.html:604
+msgid "завантажено"
+msgstr ""
+
+#: templates/upload.html:607
+msgid "помилка"
+msgstr ""
+
+#: templates/upload.html:608
+msgid "помилка:"
+msgstr ""
+
+#: templates/upload.html:618
+msgid "Створення batch-сесії..."
+msgstr ""
+
+#: templates/upload.html:629
+msgid "Помилка підготовки:"
+msgstr ""
+
+#: templates/upload.html:638
+msgid "Будь ласка, спочатку виберіть файли для завантаження."
+msgstr ""
+
+#: templates/upload.html:641
+msgid "Будь ласка, виберіть дійсне місце перед завантаженням."
+msgstr ""
+
+#: templates/upload_fast.html:12
+msgid "Установа не завантажила дані"
+msgstr ""
+
+#: templates/upload_fast.html:181
+msgid "Паралельні запити (4 одночасно)"
+msgstr ""
+
+#: templates/upload_fast.html:190
+msgid "Деплоймент і контроль якості"
+msgstr ""
+
+#: templates/upload_fast.html:195
+msgid ""
+"Дані встановлення для вибраної локації. Якщо дати не вказати — візьмуться"
+" з найранішого та найпізнішого фото набору."
+msgstr ""
+
+#: templates/upload_fast.html:198
+msgid "Назва деплойменту"
+msgstr ""
+
+#: templates/upload_fast.html:200
+msgid "напр. 2025_Summer_Synevyr NNP_1903"
+msgstr ""
+
+#: templates/upload_fast.html:258
+msgid "Незавершене завантаження"
+msgstr ""
+
+#: templates/upload_fast.html:263
+msgid "Продовжити"
+msgstr ""
+
+#: templates/upload_fast.html:267
+msgid "Почати нове"
+msgstr ""
+
+#: templates/upload_fast.html:528
+msgid "і ще"
+msgstr ""
+
+#: templates/upload_fast.html:572
+msgid "Batch"
+msgstr ""
+
+#: templates/upload_fast.html:574
+msgid ""
+"файлів. Натисніть «Продовжити», виберіть ту саму папку, файли вже залиті "
+"будуть пропущені."
+msgstr ""
+
+#: templates/upload_fast.html:588
+msgid "Виберіть ту саму папку чи файли, що й попереднього разу."
+msgstr ""
+
+#: templates/upload_fast.html:654
+msgid "Завантаження файлів..."
+msgstr ""
+
+#: templates/upload_fast.html:657
+msgid "успіх"
+msgstr ""
+
+#: templates/upload_fast.html:658
+msgid "помилки"
+msgstr ""
+
+#: templates/upload_fast.html:705
+msgid "Повторне завантаження"
+msgstr ""
+
+#: templates/upload_fast.html:706
+msgid "спроба"
+msgstr ""
+
+#: templates/upload_fast.html:745
+msgid "Групування серій..."
+msgstr ""
+
+#: templates/upload_fast.html:746
+msgid "Очікування групування..."
+msgstr ""
+
+#: templates/upload_fast.html:768
+msgid "Підготовка..."
+msgstr ""
+
+#: templates/upload_fast.html:787
+msgid "Знайдено"
+msgstr ""
+
+#: templates/upload_fast.html:787
+msgid "уже залитих файлів — пропускаю їх"
+msgstr ""
+
+#: templates/upload_fast.html:796
+msgid "Жоден файл не вдалося завантажити"
+msgstr ""
+
+#: templates/upload_fast.html:801
+msgid "Запуск групування серій..."
+msgstr ""
+
+#: templates/upload_fast.html:818
+msgid "Завантажено з помилками:"
+msgstr ""
+
+#: templates/upload_fast.html:820
+msgid "не вдалося"
+msgstr ""
+
+#: templates/upload_fast.html:838
+msgid "Виберіть файли для завантаження."
+msgstr ""
+
+#: templates/upload_fast.html:840
+msgid "Виберіть дійсне місце перед завантаженням."
+msgstr ""

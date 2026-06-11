@@ -1,7 +1,7 @@
 from functools import wraps
 from flask import flash, redirect, url_for, g
 from flask_login import current_user
-from flask_babel import gettext as _
+from app.camera_traps.domain import _
 
 def role_required(*required_roles):
     """Restrict a view to users holding one of the given roles (or higher).

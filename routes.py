@@ -2,7 +2,7 @@ from flask import render_template, g, flash, redirect, url_for, jsonify, request
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
-from flask_babel import gettext as _
+from app.camera_traps.domain import _
 from sqlalchemy import func, distinct, extract, select, text, or_, case
 import io
 import csv
