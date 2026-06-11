@@ -3373,7 +3373,7 @@ msgstr ""
 
 #: app/camera_traps/templates/overview.html:16
 msgid "Аналітика"
-msgstr ""
+msgstr "Analytics"
 
 #: app/camera_traps/templates/overview.html:21
 msgid "Дашборд"
