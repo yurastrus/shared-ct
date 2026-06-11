@@ -1,17 +1,17 @@
-# Ukrainian translations for the camera_traps domain.
-# Copyright (C) 2025 ORGANIZATION
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
 #
+#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-06-11 15:57+0300\n"
-"PO-Revision-Date: 2026-06-11 00:00+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: uk\n"
-"Language-Team: uk\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -1898,7 +1898,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:62
 #, python-format
 msgid "Частка (%%)"
-msgstr "Частка (%)"
+msgstr ""
 
 #: app/camera_traps/templates/daily_activity.html:69
 msgid "Довірчі інтервали:"
@@ -1935,7 +1935,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:143
 #, python-format
 msgid "Значення від 0%% (повне уникання) до 100%% (ідентична активність)."
-msgstr "Значення від 0% (повне уникання) до 100% (ідентична активність)."
+msgstr ""
 
 #: app/camera_traps/templates/daily_activity.html:144
 msgid "Високий відсоток вказує на те, що види активні в один і той же час."
@@ -1964,11 +1964,11 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:399
 #, python-format
 msgid "Щільність активності (%%)"
-msgstr "Щільність активності (%)"
+msgstr ""
 
 #: app/camera_traps/templates/daily_activity.html:525
 msgid "Загальние зусилля за період:"
-msgstr "Загальні зусилля за період:"
+msgstr ""
 
 #: app/camera_traps/templates/daily_activity.html:525
 msgid "пастко-днів"
