@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-11 16:47+0300\n"
+"POT-Creation-Date: 2026-06-12 10:37+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -403,7 +403,7 @@ msgstr ""
 msgid "Помилка завантаження галереї."
 msgstr ""
 
-#: app/camera_traps/routes.py:3086 app/camera_traps/templates/gallery.html:191
+#: app/camera_traps/routes.py:3086 app/camera_traps/templates/gallery.html:190
 msgid "Для вибраного виду немає фото у вибраному."
 msgstr ""
 
@@ -617,7 +617,7 @@ msgid "Параметри"
 msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:207
-#: app/camera_traps/templates/gallery.html:220
+#: app/camera_traps/templates/gallery.html:219
 #: app/camera_traps/templates/identification.html:83
 msgid "Вид:"
 msgstr ""
@@ -764,7 +764,7 @@ msgid "-- Виберіть вид --"
 msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:324
-#: app/camera_traps/templates/gallery.html:157
+#: app/camera_traps/templates/gallery.html:156
 #: app/camera_traps/templates/species_dashboard.html:147
 msgid "Будь ласка, виберіть вид."
 msgstr ""
@@ -1281,7 +1281,7 @@ msgid "Дані відсутні"
 msgstr ""
 
 #: app/camera_traps/templates/behavior_analysis.html:316
-#: app/camera_traps/templates/dashboard.html:229
+#: app/camera_traps/templates/dashboard.html:223
 msgid "Кількість спостережень"
 msgstr ""
 
@@ -2144,23 +2144,19 @@ msgstr ""
 msgid "За цей період немає даних про ідентифікації."
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:101
-msgid "Повний набір даних можна завантажити через"
-msgstr ""
-
-#: app/camera_traps/templates/dashboard.html:109
+#: app/camera_traps/templates/dashboard.html:103
 msgid "Статистика детекцій видів"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:115
+#: app/camera_traps/templates/dashboard.html:109
 msgid "Карта локацій"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:171
+#: app/camera_traps/templates/dashboard.html:165
 msgid "-- Всі біотопи --"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:206
+#: app/camera_traps/templates/dashboard.html:200
 #: app/camera_traps/templates/data_quality.html:188
 #: app/camera_traps/templates/manage_deployments.html:367
 #: app/camera_traps/templates/manage_locations.html:354
@@ -2170,7 +2166,7 @@ msgstr ""
 msgid "OSM"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:206
+#: app/camera_traps/templates/dashboard.html:200
 #: app/camera_traps/templates/data_quality.html:188
 #: app/camera_traps/templates/manage_deployments.html:367
 #: app/camera_traps/templates/manage_locations.html:354
@@ -2180,27 +2176,27 @@ msgstr ""
 msgid "Супутник"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:221
+#: app/camera_traps/templates/dashboard.html:215
 msgid "За цей період даних для діаграми немає."
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:283
+#: app/camera_traps/templates/dashboard.html:277
 msgid "К-ть фото:"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:285
+#: app/camera_traps/templates/dashboard.html:279
 msgid "Включити у фільтр"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:315
+#: app/camera_traps/templates/dashboard.html:309
 msgid "Вибрати всі"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:316
+#: app/camera_traps/templates/dashboard.html:310
 msgid "Зняти виділення"
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:317
+#: app/camera_traps/templates/dashboard.html:311
 msgid "Інвертувати"
 msgstr ""
 
@@ -2363,87 +2359,84 @@ msgid "Галерея вибраних фото"
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:14
-msgid ""
-"Тут відображаться фото, які ще не були автоматично очищені системою, а "
-"також ті, що ідентифікатори додали у вибране. Більше фото можна знайти у "
-"нашому проекті на"
+msgid "Тут відображаться фото, які ідентифікатори додали у вибране."
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:22
+#: app/camera_traps/templates/gallery.html:21
 #: app/camera_traps/templates/species_dashboard.html:19
 msgid "Виберіть вид:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:31
+#: app/camera_traps/templates/gallery.html:30
 msgid "Показати фото"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:48
+#: app/camera_traps/templates/gallery.html:47
 msgid ""
 "Будь ласка, виберіть вид та натисніть \"Показати фото\" для перегляду "
 "галереї."
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:58
+#: app/camera_traps/templates/gallery.html:57
 msgid "Фото з галереї"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:69
+#: app/camera_traps/templates/gallery.html:68
 msgid "Управління"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:71
+#: app/camera_traps/templates/gallery.html:70
 msgid "Прибрати з вибраного"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:73
+#: app/camera_traps/templates/gallery.html:72
 msgid "Тільки для модераторів та адмінів"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:79
+#: app/camera_traps/templates/gallery.html:78
 msgid "Інформація про фото"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:143
+#: app/camera_traps/templates/gallery.html:142
 #: app/camera_traps/templates/species_dashboard.html:106
 msgid "-- Пошук та вибір виду --"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:165
+#: app/camera_traps/templates/gallery.html:164
 msgid "Завантаження фото..."
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:186
+#: app/camera_traps/templates/gallery.html:185
 msgid "Помилка завантаження фото."
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:212
-#: app/camera_traps/templates/gallery.html:224
+#: app/camera_traps/templates/gallery.html:211
+#: app/camera_traps/templates/gallery.html:223
 #: app/camera_traps/templates/manage_deployments.html:136
 #: app/camera_traps/templates/photo_viewer.html:38
 msgid "Локація:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:213
+#: app/camera_traps/templates/gallery.html:212
 #: app/camera_traps/templates/photo_viewer.html:39
 msgid "Час:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:214
+#: app/camera_traps/templates/gallery.html:213
 #: app/camera_traps/templates/identification.html:326
 #: app/camera_traps/templates/photo_viewer.html:60
 msgid "Фото"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:228
+#: app/camera_traps/templates/gallery.html:227
 msgid "Дата зйомки:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:233
+#: app/camera_traps/templates/gallery.html:232
 msgid "Додано у вибране:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:238
+#: app/camera_traps/templates/gallery.html:237
 #: app/camera_traps/templates/photo_viewer.html:75
 #: app/camera_traps/templates/service_log.html:180
 #: app/camera_traps/templates/service_log.html:183
@@ -2451,24 +2444,24 @@ msgstr ""
 msgid "Статус:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:240
+#: app/camera_traps/templates/gallery.html:239
 #: app/camera_traps/templates/photo_viewer.html:82
 msgid "У вибраному"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:245
+#: app/camera_traps/templates/gallery.html:244
 msgid "№ в серії:"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:290
+#: app/camera_traps/templates/gallery.html:289
 msgid "Ви впевнені, що хочете прибрати це фото з вибраного?"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:327
+#: app/camera_traps/templates/gallery.html:326
 msgid "Фото успішно видалено з вибраного"
 msgstr ""
 
-#: app/camera_traps/templates/gallery.html:331
+#: app/camera_traps/templates/gallery.html:330
 msgid "Помилка видалення з вибраного"
 msgstr ""
 
