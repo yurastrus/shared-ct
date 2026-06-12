@@ -30,7 +30,7 @@
 
         <!-- Filter panel -->
         <form id="filters-form" method="GET" class="filters-panel">
-            <div class="filter-group filter-group--grow">
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
                 <select id="scope-select" name="scope" class="form-control">
                     <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
@@ -52,7 +52,7 @@
                     {% endif %}
                 </select>
             </div>
-            <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
                 <a href="{{ url_for('camera_traps.contributors', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
             </div>

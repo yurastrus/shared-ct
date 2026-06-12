@@ -2226,10 +2226,6 @@ msgstr "identifications"
 msgid "За цей період немає даних про ідентифікації."
 msgstr "There is no identification data for this period."
 
-#: app/camera_traps/templates/dashboard.html:101
-msgid "Повний набір даних можна завантажити через"
-msgstr "The full dataset can be downloaded via"
-
 #: app/camera_traps/templates/dashboard.html:109
 msgid "Статистика детекцій видів"
 msgstr "Species Detection Statistics"

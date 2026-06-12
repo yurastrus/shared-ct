@@ -2144,10 +2144,6 @@ msgstr ""
 msgid "За цей період немає даних про ідентифікації."
 msgstr ""
 
-#: app/camera_traps/templates/dashboard.html:101
-msgid "Повний набір даних можна завантажити через"
-msgstr ""
-
 #: app/camera_traps/templates/dashboard.html:109
 msgid "Статистика детекцій видів"
 msgstr ""

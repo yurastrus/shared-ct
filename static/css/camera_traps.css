@@ -1158,7 +1158,7 @@ body.dark-theme .ai-pred-badge {
 #map { width: 100%; }
 
 /* Per-page heights */
-.dashboard-wrapper #map     { height: 450px; }
+.dashboard-wrapper #map     { height: 495px; }
 .species-detailed-page #map { height: 600px; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 .ct-manage-locs #map        { height: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
 .ct-service-log #map        { height: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
