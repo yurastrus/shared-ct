@@ -299,6 +299,7 @@ $(document).ready(function() {
 
     // === END THEME TOGGLE SYSTEM ===
 
+    const langCode = "{{ g.lang_code }}";
     const wrapper = $('#identification-wrapper');
     const noPhotosMessage = $('#no-photos-message');
     const photoDisplay = $('#photo-display');
@@ -683,7 +684,6 @@ $(document).ready(function() {
     $('#fullsize-btn').on('click', function() {
         if (currentObservation && typeof currentPhotoIndex !== 'undefined') {
             // Build the URL directly.
-            const langCode = "{{ g.lang_code }}";
             const fullsizeUrl = `/${langCode}/camera-traps/observation/${currentObservation.observation_id}/photo/${currentPhotoIndex}`;
             
             window.open(fullsizeUrl, '_blank');
