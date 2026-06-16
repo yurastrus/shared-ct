@@ -1298,6 +1298,9 @@ def identify(lang_code):
             except Exception as e:
                 current_app.logger.warning(f"AI: cannot load species list: {e}")
 
+        # Якщо передано start_obs_id — передати до шаблону (для JS-ініціалізації).
+        start_obs_id = request.args.get('start_obs_id', type=int)
+
         # Pass the dynamically populated lists to the template
         return render_template('identification.html',
                              form=form,
@@ -1308,7 +1311,8 @@ def identify(lang_code):
                              institutions=institutions,
                              ecoregions=ecoregions,
                              ai_available=ai_available,
-                             ai_species_list=ai_species_list)
+                             ai_species_list=ai_species_list,
+                             start_obs_id=start_obs_id)
     finally:
         close_ct_session()
 
@@ -2508,10 +2512,53 @@ def next_observation_for_identification(lang_code):
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
         ai_species_id = request.args.get('ai_species_id', type=int)  # фільтр "AI: вид"
+        start_obs_id = request.args.get('start_obs_id', type=int)  # відкрити конкретну серію першою
 
         # Check access rights for review mode
         if review_mode and not current_user.has_role('manager'):
             return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
+
+        # Якщо передано start_obs_id — повернути конкретну серію (наприклад, зі сторінки зафлагованих).
+        if start_obs_id is not None:
+            observation = ct_session.query(Observation).get(start_obs_id)
+            if observation is None:
+                return jsonify({'message': _('Серію не знайдено.')}), 404
+            # Перевіряємо доступ (адмін бачить усе; решта — тільки свої установи/публічні)
+            is_admin_check = current_user.has_role('admin')
+            if not is_admin_check:
+                user_inst_ids_check = [inst.id for inst in current_user.institutions]
+                loc = observation.location
+                if loc:
+                    loc_inst_ids = [inst.id for inst in loc.institutions] if hasattr(loc, 'institutions') else []
+                    if loc.visibility_level != 0 and not any(i in user_inst_ids_check for i in loc_inst_ids):
+                        return jsonify({'message': _('Немає доступу до цієї серії.')}), 403
+            photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+            photos_data = []
+            for i, photo in enumerate(photos_sorted):
+                photos_data.append({
+                    'id': photo.id,
+                    'thumbnail_url': url_for('camera_traps.serve_thumbnail',
+                                            lang_code=g.lang_code,
+                                            filename=photo.system_filename,
+                                            _external=True),
+                    'captured_at': photo.captured_at.strftime('%d.%m.%Y %H:%M:%S'),
+                    'debug_index': i,
+                    'debug_filename': photo.system_filename
+                })
+            response_data = {
+                'observation_id': observation.id,
+                'location_name': observation.location.name if observation.location else '',
+                'photos': photos_data
+            }
+            try:
+                from .ai_runner import is_ai_available, get_observation_ai_prediction
+                if is_ai_available():
+                    ai_pred = get_observation_ai_prediction(observation.id)
+                    if ai_pred is not None:
+                        response_data['ai_prediction'] = ai_pred
+            except Exception as e:
+                current_app.logger.warning(f"AI: cannot load prediction for obs {observation.id}: {e}")
+            return jsonify(response_data)
 
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
 

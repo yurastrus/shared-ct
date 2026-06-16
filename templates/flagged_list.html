@@ -35,11 +35,15 @@
                 {% else %}
                 <p class="flagged-note flagged-note--empty">{{ _('(без коментаря)') }}</p>
                 {% endif %}
-                <form method="post"
-                      action="{{ url_for('camera_traps.unflag_observation', lang_code=g.lang_code, obs_id=it.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                    <button type="submit" class="btn btn-sm btn-secondary">{{ _('Зняти позначку') }}</button>
-                </form>
+                <div class="flagged-card__actions">
+                    <a href="{{ url_for('camera_traps.identify', lang_code=g.lang_code, start_obs_id=it.id) }}"
+                       class="btn btn-sm btn-primary">{{ _('Визначити') }}</a>
+                    <form method="post"
+                          action="{{ url_for('camera_traps.unflag_observation', lang_code=g.lang_code, obs_id=it.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-sm btn-secondary">{{ _('Зняти позначку') }}</button>
+                    </form>
+                </div>
             </div>
         </div>
         {% endfor %}

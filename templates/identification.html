@@ -300,6 +300,9 @@ $(document).ready(function() {
     // === END THEME TOGGLE SYSTEM ===
 
     const langCode = "{{ g.lang_code }}";
+    // Якщо сторінку відкрито з посиланням «Визначити» (зі сторінки зафлагованих),
+    // start_obs_id містить id конкретної серії для першого завантаження.
+    const startObsId = {{ start_obs_id | tojson }};
     const wrapper = $('#identification-wrapper');
     const noPhotosMessage = $('#no-photos-message');
     const photoDisplay = $('#photo-display');
@@ -594,11 +597,22 @@ $(document).ready(function() {
         nextBtn.toggle(currentPhotoIndex < photoCount - 1);
     }
 
+        // При першому завантаженні (з посилання «Визначити» зі сторінки зафлагованих)
+        // start_obs_id використовується один раз, далі обнуляється.
+        // Зберігаємо у змінній поза функцією, щоб стан зберігався між викликами.
+        let _pendingStartObsId = startObsId;
+
         function loadNextObservation() {
         wrapper.css('opacity', 0.5);
 
         let apiUrl = "{{ url_for('camera_traps.next_observation_for_identification', lang_code=g.lang_code) }}";
         const params = new URLSearchParams();
+
+        // Якщо є «стартова» серія (прийшли зі сторінки зафлагованих) — передати один раз.
+        if (_pendingStartObsId) {
+            params.set('start_obs_id', _pendingStartObsId);
+            _pendingStartObsId = null;  // одноразово
+        }
 
         // Scope filter (institution or ecoregion).
         const scopeVal = $('#scope-select').val() || '';
