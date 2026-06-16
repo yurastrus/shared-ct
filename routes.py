@@ -568,7 +568,7 @@ def resolve_scope(scope_arg, accessible_institutions, default_scope=''):
 # --- FULL CONTRIBUTORS LIST ---
 #
 def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
-                            location_ids=None, biotope_ids=None):
+                            location_ids=None, biotope_ids=None, species_id=None):
     """
     Return contribution statistics per user with rolling windows anchored to
     `today`. Metric — number of unique observations (distinct observation_id)
@@ -588,6 +588,8 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
     Access is filtered via `inst_condition_orm`/`inst_params`
     (result of get_institution_filter), so the function does not resolve
     permissions itself. Returns a list of Rows sorted by total desc.
+
+    Optional `species_id` narrows results to identifications of that species only.
     """
     start_today = datetime.combine(today, datetime.min.time())
     start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
@@ -614,6 +616,8 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
         query = query.filter(Location.id.in_(location_ids))
     if biotope_ids:
         query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+    if species_id:
+        query = query.filter(Identification.species_id == species_id)
 
     return query.group_by(Identification.user_id)\
         .order_by(func.count(distinct(Photo.observation_id)).desc())\
@@ -653,7 +657,34 @@ def contributors(lang_code):
         )
         inst_condition_orm = text(inst_condition)
 
-        rows = query_contributor_stats(ct_session, today, inst_condition_orm, inst_params)
+        # --- Species filter ---
+        selected_species_id = request.args.get('species_id', type=int)
+
+        # Build species list (same pattern as species_dashboard, routes.py line ~730)
+        species_list = []
+        species_q = ct_session.query(Species)\
+            .join(Identification, Species.id == Identification.species_id)\
+            .join(Photo, Identification.photo_id == Photo.id)\
+            .join(Observation, Photo.observation_id == Observation.id)\
+            .join(Location, Observation.location_id == Location.id)\
+            .filter(
+                inst_condition_orm,
+                Identification.species_id > 0,
+            ).params(**inst_params)\
+            .distinct()\
+            .order_by(Species.common_name_ua)
+        for s in species_q:
+            display_name = s.scientific_name
+            if g.lang_code == 'uk' and s.common_name_ua:
+                display_name = f"{s.common_name_ua} ({s.scientific_name})"
+            elif g.lang_code == 'en' and s.common_name_en:
+                display_name = f"{s.common_name_en} ({s.scientific_name})"
+            species_list.append({'id': s.id, 'text': display_name})
+
+        rows = query_contributor_stats(
+            ct_session, today, inst_condition_orm, inst_params,
+            species_id=selected_species_id,
+        )
 
         # --- Fetch names from the main database ---
         contributors = []
@@ -682,6 +713,8 @@ def contributors(lang_code):
             selected_scope=selected_scope,
             is_admin=is_admin,
             show_full_name=is_manager,
+            available_species=species_list,
+            selected_species_id=selected_species_id,
         )
     except Exception as e:
         current_app.logger.error(f"Error in contributors: {str(e)}")
@@ -689,7 +722,7 @@ def contributors(lang_code):
         return render_template(
             'contributors.html', contributors=[], institutions=[],
             ecoregions={}, selected_scope='global:', is_admin=False,
-            show_full_name=False,
+            show_full_name=False, available_species=[], selected_species_id=None,
         )
     finally:
         close_ct_session()

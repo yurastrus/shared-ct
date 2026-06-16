@@ -52,6 +52,15 @@
                     {% endif %}
                 </select>
             </div>
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+                <label for="species-select">{{ _('Вид:') }}</label>
+                <select id="species-select" name="species_id" class="form-control">
+                    <option value="">{{ _('Усі види') }}</option>
+                    {% for sp in available_species %}
+                    <option value="{{ sp.id }}" {% if selected_species_id == sp.id %}selected{% endif %}>{{ sp.text }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
                 <a href="{{ url_for('camera_traps.contributors', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
@@ -101,6 +110,7 @@
 <script>
 $(document).ready(function() {
     $('#scope-select').select2({ width: '100%' });
+    $('#species-select').select2({ width: '100%', allowClear: true, placeholder: '{{ _('Усі види') }}' });
 
     // Simple client-side table sorting.
     $('#contributors-table th').on('click', function() {
