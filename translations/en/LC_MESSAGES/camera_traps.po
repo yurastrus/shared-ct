@@ -501,7 +501,7 @@ msgstr "Location data updated successfully!"
 #: app/camera_traps/routes.py:4184
 #: app/camera_traps/templates/manage_locations.html:597
 msgid "Вкажіть назву локації."
-msgstr "Please specify a location name."
+msgstr "Enter the location name."
 
 #: app/camera_traps/routes.py:4186
 msgid "Вкажіть координати."
@@ -963,7 +963,7 @@ msgstr "Photos without series (orphans)"
 
 #: app/camera_traps/templates/admin.html:178
 msgid "год"
-msgstr "hr"
+msgstr "h"
 
 #: app/camera_traps/templates/admin.html:179
 msgid "Вік найстарішого незавершеного батчу"
@@ -2608,7 +2608,7 @@ msgstr "Short comment, up to 200 characters"
 
 #: app/camera_traps/templates/identification.html:160
 msgid "Надіслати"
-msgstr "Submit"
+msgstr "Send"
 
 #: app/camera_traps/templates/identification.html:161
 msgid "Пропустити"
@@ -3113,7 +3113,7 @@ msgstr "Habitats"
 #: app/camera_traps/templates/manage_locations.html:145
 #: app/camera_traps/templates/manage_locations.html:718
 msgid "Новий запис"
-msgstr "New record"
+msgstr "New entry"
 
 #: app/camera_traps/templates/manage_locations.html:148
 msgid "Виберіть локацію, щоб додати запис."
@@ -3126,7 +3126,7 @@ msgstr "Date and time"
 #: app/camera_traps/templates/manage_locations.html:159
 #: app/camera_traps/templates/service_log.html:44
 msgid "Результат візиту"
-msgstr "Visit outcome"
+msgstr "Visit result"
 
 #: app/camera_traps/templates/manage_locations.html:161
 #: app/camera_traps/templates/manage_locations.html:253
@@ -3186,7 +3186,7 @@ msgstr "Comments"
 #: app/camera_traps/templates/manage_locations.html:719
 #: app/camera_traps/templates/service_log.html:99
 msgid "Зберегти запис"
-msgstr "Save record"
+msgstr "Save entry"
 
 #: app/camera_traps/templates/manage_locations.html:222
 msgid "Історія"
@@ -3222,7 +3222,7 @@ msgstr "Regional landscape parks"
 #: app/camera_traps/templates/manage_locations.html:332
 #: app/camera_traps/templates/upload.html:270
 msgid "Заказники"
-msgstr "Wildlife sanctuaries"
+msgstr "Wildlife refuges"
 
 #: app/camera_traps/templates/manage_locations.html:333
 #: app/camera_traps/templates/upload.html:271
@@ -3232,12 +3232,12 @@ msgstr "Nature reserves"
 #: app/camera_traps/templates/manage_locations.html:334
 #: app/camera_traps/templates/upload.html:272
 msgid "Пам'ятки природи"
-msgstr "Natural monuments"
+msgstr "Nature monuments"
 
 #: app/camera_traps/templates/manage_locations.html:335
 #: app/camera_traps/templates/upload.html:273
 msgid "Заповідні урочища"
-msgstr "Protected natural sites"
+msgstr "Protected landscapes"
 
 #: app/camera_traps/templates/manage_locations.html:365
 #: app/camera_traps/templates/upload.html:287
@@ -3250,7 +3250,7 @@ msgstr "Create"
 
 #: app/camera_traps/templates/manage_locations.html:598
 msgid "Вкажіть координати: клацніть на карті або введіть вручну."
-msgstr "Specify coordinates: click on the map or enter manually."
+msgstr "Enter coordinates: click on the map or enter manually."
 
 #: app/camera_traps/templates/manage_locations.html:639
 #: app/camera_traps/templates/manage_locations.html:767
@@ -3280,7 +3280,7 @@ msgstr "SD:"
 
 #: app/camera_traps/templates/manage_locations.html:695
 msgid "Редагування запису"
-msgstr "Edit record"
+msgstr "Edit entry"
 
 #: app/camera_traps/templates/manage_locations.html:706
 msgid "Зберегти зміни"
@@ -3491,15 +3491,15 @@ msgstr "To Dashboard"
 
 #: app/camera_traps/templates/service_log.html:33
 msgid "Додати новий запис"
-msgstr "Add new record"
+msgstr "Add new entry"
 
 #: app/camera_traps/templates/service_log.html:34
 msgid "Виберіть локацію на карті, щоб почати."
-msgstr "Select a location on the map to get started."
+msgstr "Select a location on the map to begin."
 
 #: app/camera_traps/templates/service_log.html:40
 msgid "Дата та час візиту"
-msgstr "Date and time of visit"
+msgstr "Visit date and time"
 
 #: app/camera_traps/templates/service_log.html:68
 msgid "Працювала"
@@ -3519,7 +3519,7 @@ msgstr "Maintenance history"
 
 #: app/camera_traps/templates/service_log.html:106
 msgid "Немає даних для відображення."
-msgstr "No data to display."
+msgstr "No data to show."
 
 #: app/camera_traps/templates/service_log.html:175
 #: app/camera_traps/templates/service_log.html:340
@@ -3542,7 +3542,7 @@ msgstr "Photo forecast:"
 
 #: app/camera_traps/templates/service_log.html:226
 msgid "Новий запис для:"
-msgstr "New record for:"
+msgstr "New entry for:"
 
 #: app/camera_traps/templates/service_log.html:267
 msgid "Стан камери:"
@@ -3595,13 +3595,11 @@ msgstr "End year:"
 
 #: app/camera_traps/templates/species_dashboard.html:74
 msgid "Побудувати графіки"
-msgstr "Generate charts"
+msgstr "Build charts"
 
 #: app/camera_traps/templates/species_dashboard.html:83
 msgid "Будь ласка, виберіть вид та натисніть \"Побудувати графіки\" для аналізу."
-msgstr ""
-"Please select a species and click \"Generate charts\" to view the "
-"analysis."
+msgstr "Please select a species and click \"Build Charts\" to analyze."
 
 #: app/camera_traps/templates/species_dashboard.html:170
 msgid "Не вдалося завантажити дані для аналізу."
@@ -3636,7 +3634,7 @@ msgstr "Mean trend"
 #: app/camera_traps/templates/species_dashboard.html:236
 #, python-format
 msgid "95%% Довірчий інтервал"
-msgstr "95%% Confidence Interval"
+msgstr "95% Confidence interval"
 
 #: app/camera_traps/templates/species_detailed.html:3
 #: app/camera_traps/templates/species_detailed.html:15
