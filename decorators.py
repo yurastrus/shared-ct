@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 from functools import wraps
 from flask import flash, redirect, url_for, g
 from flask_login import current_user

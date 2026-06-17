@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 from sqlalchemy import Column, Integer, String, DateTime, Date, Time, Boolean, Text, Numeric, Float, ForeignKey, Index, Table, Interval
 from sqlalchemy import CheckConstraint, Computed, UniqueConstraint, func
 from sqlalchemy.orm import relationship, backref

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import os, shutil
 from datetime import datetime, timedelta
 from flask import current_app

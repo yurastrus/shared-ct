@@ -272,3 +272,17 @@ This repository is used as a Git submodule inside [biomon](https://github.com/yu
 - **Templates** — `ct_base.html` extends the host app's `base.html`.
 
 For full installation steps, environment variable reference, and deployment instructions, see the [biomon README](https://github.com/yurastrus/biomon#readme).
+
+## License: GNU AGPL-3.0
+
+Copyright (C) 2025–2026 Iurii Strus.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the **GNU Affero General Public License, version 3** as published
+by the Free Software Foundation. See the [LICENSE](LICENSE) file for the full
+text (`SPDX-License-Identifier: AGPL-3.0-only`).
+
+Because this is an AGPL-licensed network application: if you run a modified
+version of this module on a server and let users interact with it over a
+network, you must also make the complete corresponding source code of your
+modified version available to those users (AGPL §13).

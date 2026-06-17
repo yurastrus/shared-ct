@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 Import deployments from an ARD Excel file (CT_LocationARD_Dataset.xlsx) into the
 deployments table.
@@ -161,7 +162,7 @@ def coerce_int(v):
             return int(v)
         raise ValueError(v)
     s = str(v).strip().replace(',', '')
-    return int(float(s))  # кине ValueError на сміття
+    return int(float(s))  # raises ValueError on garbage
 
 
 def coerce_year(v):
@@ -232,7 +233,7 @@ def build_location_index(session):
         try:
             key = (_round5(loc.latitude), _round5(loc.longitude))
         except (TypeError, ValueError):
-            continue  # пропускаємо локації з битими координатами (NaN тощо)
+            continue  # skip locations with broken coordinates (NaN etc.)
         if key in index:
             ambiguous.add(key)
         else:
@@ -359,7 +360,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                             report['unmapped_parks'].add(str(row.get(park_col)).strip())
                     new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
                     session.add(new_loc)
-                    session.flush()  # отримати id
+                    session.flush()  # get id
                     location_id = new_loc.id
                     loc_index[key] = location_id
                     report['locations_created'] += 1
@@ -448,39 +449,39 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
 def format_report(report):
     lines = []
     lines.append('=' * 60)
-    lines.append(f"Імпорт деплойментів: {report['xlsx']}")
-    lines.append(f"Режим: {'DRY-RUN (без запису)' if report['dry_run'] else 'ЗАПИС'}")
+    lines.append(f"Deployment import: {report['xlsx']}")
+    lines.append(f"Mode: {'DRY-RUN (no writes)' if report['dry_run'] else 'WRITE'}")
     lines.append('-' * 60)
-    lines.append(f"  Вставлено:               {report['inserted']}")
-    lines.append(f"  Оновлено:                {report['updated']}")
-    lines.append(f"  Створено локацій:        {report.get('locations_created', 0)}")
-    lines.append(f"  Локацій без установи:    {report.get('locations_without_institution', 0)}")
-    lines.append(f"  Деплойменти без GPS:     {report.get('no_coords_deployments', 0)}")
-    lines.append(f"  Пропущено (нема локації):{report['skipped_no_location']}")
-    lines.append(f"  Пропущено (биті коорд.): {report['skipped_bad_coords']}")
-    lines.append(f"  Пропущено (нема назви):  {report['skipped_no_name']}")
-    lines.append(f"  Неоднозначна локація:    {report['ambiguous_location']}")
+    lines.append(f"  Inserted:                {report['inserted']}")
+    lines.append(f"  Updated:                 {report['updated']}")
+    lines.append(f"  Locations created:       {report.get('locations_created', 0)}")
+    lines.append(f"  Locations w/o institution:{report.get('locations_without_institution', 0)}")
+    lines.append(f"  Deployments without GPS: {report.get('no_coords_deployments', 0)}")
+    lines.append(f"  Skipped (no location):   {report['skipped_no_location']}")
+    lines.append(f"  Skipped (bad coords):    {report['skipped_bad_coords']}")
+    lines.append(f"  Skipped (no name):       {report['skipped_no_name']}")
+    lines.append(f"  Ambiguous location:      {report['ambiguous_location']}")
     if report['sheets_missing']:
-        lines.append(f"  Відсутні листи: {', '.join(report['sheets_missing'])}")
+        lines.append(f"  Missing sheets: {', '.join(report['sheets_missing'])}")
     lines.append('-' * 60)
-    lines.append('По листах (rows / inserted / updated / no_location):')
+    lines.append('Per sheet (rows / inserted / updated / no_location):')
     for sheet, st in report['per_sheet'].items():
         lines.append(f"  {sheet:18} {st.get('rows',0):4} / {st.get('inserted',0):4} / "
                      f"{st.get('updated',0):4} / {st.get('skipped_no_location',0):4}")
     if report['unmapped_columns']:
         lines.append('-' * 60)
-        lines.append('Незмаплені (проігноровані) колонки:')
+        lines.append('Unmapped (ignored) columns:')
         for sheet, cols in report['unmapped_columns'].items():
             lines.append(f"  {sheet}: {', '.join(cols)}")
     if report.get('unmapped_parks'):
         lines.append('-' * 60)
-        lines.append('Парки без зіставленої установи: ' + ', '.join(report['unmapped_parks']))
+        lines.append('Parks without a matched institution: ' + ', '.join(report['unmapped_parks']))
     warns = report['coercion_warnings']
     lines.append('-' * 60)
-    lines.append(f"Помилки приведення типів: {len(warns)}")
+    lines.append(f"Type coercion errors: {len(warns)}")
     for w in warns[:40]:
-        lines.append(f"  [{w[0]} рядок {w[1]}] {w[2]} = {w[3]}")
+        lines.append(f"  [{w[0]} row {w[1]}] {w[2]} = {w[3]}")
     if len(warns) > 40:
-        lines.append(f"  ... ще {len(warns) - 40}")
+        lines.append(f"  ... {len(warns) - 40} more")
     lines.append('=' * 60)
     return '\n'.join(lines)

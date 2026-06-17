@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """WTForms form definitions for the camera-traps module."""
 
 from flask_wtf import FlaskForm

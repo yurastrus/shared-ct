@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 from flask import render_template, g, flash, redirect, url_for, jsonify, request, current_app, send_from_directory, abort, Response
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -1331,7 +1332,7 @@ def identify(lang_code):
             except Exception as e:
                 current_app.logger.warning(f"AI: cannot load species list: {e}")
 
-        # Якщо передано start_obs_id — передати до шаблону (для JS-ініціалізації).
+        # If start_obs_id is passed, send it to the template (for JS initialization).
         start_obs_id = request.args.get('start_obs_id', type=int)
 
         # Pass the dynamically populated lists to the template
@@ -2544,19 +2545,19 @@ def next_observation_for_identification(lang_code):
         sort_by = request.args.get('sort_by', 'random') # Default: 'random'
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
-        ai_species_id = request.args.get('ai_species_id', type=int)  # фільтр "AI: вид"
-        start_obs_id = request.args.get('start_obs_id', type=int)  # відкрити конкретну серію першою
+        ai_species_id = request.args.get('ai_species_id', type=int)  # filter "AI: species"
+        start_obs_id = request.args.get('start_obs_id', type=int)  # open a specific series first
 
         # Check access rights for review mode
         if review_mode and not current_user.has_role('manager'):
             return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
 
-        # Якщо передано start_obs_id — повернути конкретну серію (наприклад, зі сторінки зафлагованих).
+        # If start_obs_id is passed, return that specific series (e.g. from the flagged page).
         if start_obs_id is not None:
             observation = ct_session.query(Observation).get(start_obs_id)
             if observation is None:
                 return jsonify({'message': _('Серію не знайдено.')}), 404
-            # Перевіряємо доступ (адмін бачить усе; решта — тільки свої установи/публічні)
+            # Check access (admin sees everything; others only their own institutions/public)
             is_admin_check = current_user.has_role('admin')
             if not is_admin_check:
                 user_inst_ids_check = [inst.id for inst in current_user.institutions]

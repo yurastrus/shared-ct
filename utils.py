@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import os
 import uuid
 import hashlib
@@ -378,10 +379,10 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
                     file.save(thumb_path)
                 else:
                     create_thumbnail(file, thumb_path)
-                    current_app.logger.warning(f"Файл {system_filename} був стиснутий сервером (клієнт надіслав невідповідний файл)")
+                    current_app.logger.warning(f"File {system_filename} was compressed by the server (client sent a mismatched file)")
 
             except Exception as e:
-                current_app.logger.error(f"Помилка перевірки зображення {original_filename}: {e}")
+                current_app.logger.error(f"Image validation error for {original_filename}: {e}")
                 file.seek(0)
                 create_thumbnail(file, thumb_path)
 

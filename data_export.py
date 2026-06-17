@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 from flask import current_app
 from sqlalchemy import text
 from .database import get_ct_engine
@@ -122,7 +123,7 @@ def get_ct_occurrence_data(filters, limit=None):
                         ) as rn
                     FROM ObservationConsensus
                 ),
-                -- --- НОВИЙ БЛОК: Збираємо ID користувачів, які проголосували за вид-переможець ---
+                -- --- NEW BLOCK: Collect IDs of users who voted for the winning species ---
                 WinningIdentifiers AS (
                     SELECT
                         p.observation_id,
@@ -132,7 +133,7 @@ def get_ct_occurrence_data(filters, limit=None):
                     JOIN photos p ON i.photo_id = p.id
                     GROUP BY p.observation_id, i.species_id
                 ),
-                -- --- КІНЕЦЬ НОВОГО БЛОКУ ---
+                -- --- END OF NEW BLOCK ---
                 BaseData AS (
                     SELECT
                         o.id as observation_id,
@@ -142,12 +143,12 @@ def get_ct_occurrence_data(filters, limit=None):
                         s.family, s.genus, s.establishment_means,
                         o.series_start_time,
                         l.latitude as lat, l.longitude as lon, l.name as location_name, l.state_province,
-                        wi.identifier_user_ids -- <-- ДОДАНО: Отримуємо рядок з ID
+                        wi.identifier_user_ids -- <-- ADDED: Get the string of IDs
                     FROM observations o
                     JOIN RankedConsensus c ON o.id = c.observation_id AND c.rn = 1
                     JOIN locations l ON o.location_id = l.id
                     JOIN species s ON s.id = c.species_id
-                    -- <-- ЗМІНЕНО: Приєднуємо новий CTE, щоб отримати правильних користувачів -->
+                    -- <-- CHANGED: Join the new CTE to get the correct users -->
                     LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND c.species_id = wi.species_id
                     WHERE
                         o.status IN ('completed', 'archived')

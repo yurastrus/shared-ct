@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Per-location statistics: consensus-based observation counts → LocationStats."""
 
 from datetime import datetime
@@ -34,7 +35,7 @@ def calculate_stats_for_location(location_id, db_session):
         
         consensus_query = text("""
             WITH ObservationConsensus AS (
-                -- Крок 1: Рахуємо голоси за кожен вид у кожному спостереженні
+                -- Step 1: Count votes for each species in each observation
                 SELECT
                     p.observation_id,
                     i.species_id,
@@ -45,14 +46,14 @@ def calculate_stats_for_location(location_id, db_session):
                 GROUP BY p.observation_id, i.species_id
             ),
             RankedConsensus AS (
-                -- Крок 2: Визначаємо "переможця" для кожного спостереження
+                -- Step 2: Determine the "winner" for each observation
                 SELECT
                     observation_id,
                     species_id,
                     ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC) as rn
                 FROM ObservationConsensus
             )
-            -- Крок 3: Агрегуємо результати по одній локації
+            -- Step 3: Aggregate the results for a single location
             SELECT
                 COUNT(rc.observation_id) as total_observations,
                 COUNT(DISTINCT s.id) FILTER (WHERE s.id > 0) as total_species,

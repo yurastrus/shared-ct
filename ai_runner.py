@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Flask-side helpers for the AI runner.
 
 Flask imports nothing from services/biomon_ai/ — that lives in a separate venv.
@@ -136,8 +137,8 @@ def get_classification_stats() -> dict:
               SELECT 1 FROM ai_predictions ap
               WHERE ap.observation_id = o.id AND ap.model_id = :mid
           )
-          -- Вибірковість (як у worker pick_pending_observations): не рахуємо
-          -- серії, для яких уже є краща/рівна локальна класифікація.
+          -- Selectivity (as in worker pick_pending_observations): do not count
+          -- series that already have a better/equal local classification.
           AND NOT EXISTS (
               SELECT 1 FROM ai_predictions ap2
               JOIN ai_models m2 ON m2.id = ap2.model_id

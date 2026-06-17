@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import numpy as np
 from scipy.stats import gaussian_kde
 from sqlalchemy import text

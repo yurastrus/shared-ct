@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Orphan and failed-batch cleanup — replacement for the old cleanup_stale_batches.
 
 Three-category process:

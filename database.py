@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Camera-traps database: engine/session singletons and init helpers (separate ct_db)."""
 
 import threading

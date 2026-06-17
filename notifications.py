@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Email reminders to verifiers about pending (unidentified) camera-trap series."""
 from flask import current_app
 from flask_mail import Message
@@ -23,12 +24,12 @@ def send_identification_reminders():
     """
     ct_verifier_role = Role.query.filter_by(name='ct_verifier').first()
     if not ct_verifier_role:
-        current_app.logger.info("Роль ct_verifier не знайдена, пропускаємо нагадування")
+        current_app.logger.info("Role ct_verifier not found, skipping reminders")
         return 0, 0
 
     users_with_email = [u for u in ct_verifier_role.users.all() if u.email]
     if not users_with_email:
-        current_app.logger.info("Немає користувачів з роллю ct_verifier та email")
+        current_app.logger.info("No users with role ct_verifier and an email")
         return 0, 0
 
     engine = get_ct_engine()
@@ -45,13 +46,13 @@ def send_identification_reminders():
                 _send_reminder_email(user, count)
                 sent += 1
                 current_app.logger.info(
-                    f"Нагадування надіслано: {user.email} ({count} серій)"
+                    f"Reminder sent: {user.email} ({count} series)"
                 )
             else:
                 skipped += 1
         except Exception as e:
             current_app.logger.error(
-                f"Помилка при обробці користувача {user.id} ({user.email}): {e}"
+                f"Error processing user {user.id} ({user.email}): {e}"
             )
         finally:
             ct_session.close()
@@ -100,7 +101,7 @@ def _count_pending_for_user(ct_session, user):
 
 
 def _send_reminder_email(user, count):
-    site_url = current_app.config.get('SITE_URL', 'http://91.99.138.240:82')
+    site_url = current_app.config.get('SITE_URL', 'http://localhost:5000')
     identify_url = f"{site_url}/uk/camera-traps/identify"
     name = user.full_name
 

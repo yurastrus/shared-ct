@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Fast upload path for large photo sets (10k–100k+).
 
 Runs in parallel with the old `utils.group_batch_into_series` —
@@ -179,7 +180,7 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                       FROM ordered
                 ),
                 numbered AS (
-                    -- Кумулятивна сума межевих прапорів = індекс серії
+                    -- Cumulative sum of boundary flags = series index
                     SELECT
                         photo_id,
                         captured_at,
@@ -189,9 +190,9 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                         ) AS series_idx
                       FROM marked
                 )
-                -- ROW_NUMBER PARTITION BY series_idx — окремим кроком, бо
-                -- PostgreSQL не дозволяє window-функцію всередині
-                -- PARTITION BY іншої window-функції.
+                -- ROW_NUMBER PARTITION BY series_idx as a separate step, because
+                -- PostgreSQL does not allow a window function inside
+                -- the PARTITION BY of another window function.
                 SELECT
                     photo_id,
                     captured_at,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Import external DeepFaune classification results (CSV) into ct_db.
 
 Purpose
