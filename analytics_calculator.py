@@ -17,33 +17,49 @@ from .models import (
     LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend,
     location_institutions
 )
+from .validity import valid_location_id_subquery
 
 # Configure logging so progress is visible during execution.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def _calculate_monthly_activity():
+def _calculate_monthly_activity(exclude_invalid_locations=True):
     """Perform the main calculation and populate the location_monthly_activity table.
 
     This version correctly handles zero-detection entries.
+
+    When ``exclude_invalid_locations`` is True (default), observations at
+    locations flagged invalid by an admin (``Location.is_valid = False``) are
+    skipped, so the precomputed analytics tables never include their data.
+    Because the yearly-trend stage reads from this table, the exclusion
+    cascades to both precomputed tables.
     """
     session = get_ct_session()
     try:
-        logging.info("Starting calculation of monthly activity...")
+        logging.info(
+            "Starting calculation of monthly activity (exclude_invalid_locations=%s)...",
+            exclude_invalid_locations,
+        )
 
         # Step 1: Truncate the table.
         logging.info("Truncating LocationMonthlyActivity table...")
         session.query(LocationMonthlyActivity).delete()
         session.commit()
 
+        # Optional admin-controlled filter: drop data from invalid locations.
+        valid_subq = valid_location_id_subquery() if exclude_invalid_locations else None
+
         # Step 2: Calculate TRAP DAYS for all active locations.
         logging.info("Calculating trap days for ALL active locations per month...")
-        trap_days_query = session.query(
+        trap_days_q = session.query(
             Observation.location_id,
             extract('year', Photo.captured_at).label('year'),
             extract('month', Photo.captured_at).label('month'),
             func.count(func.distinct(func.date(Photo.captured_at))).label('trap_days')
         ).join(Photo, Observation.id == Photo.observation_id)\
-        .filter(Observation.status.in_(['completed', 'archived']))\
+        .filter(Observation.status.in_(['completed', 'archived']))
+        if valid_subq is not None:
+            trap_days_q = trap_days_q.filter(Observation.location_id.in_(valid_subq))
+        trap_days_query = trap_days_q\
         .group_by(Observation.location_id, 'year', 'month')\
         .all()
 
@@ -56,7 +72,7 @@ def _calculate_monthly_activity():
 
         # Step 3: Calculate DETECTION COUNTS.
         logging.info("Calculating detection counts where species were present...")
-        detection_query = session.query(
+        detection_q = session.query(
             Identification.species_id,
             Observation.location_id,
             extract('year', Photo.captured_at).label('year'),
@@ -68,7 +84,10 @@ def _calculate_monthly_activity():
             Observation.status.in_(['completed', 'archived']),
             Identification.species_id.isnot(None),
             Identification.species_id > 0
-        )\
+        )
+        if valid_subq is not None:
+            detection_q = detection_q.filter(Observation.location_id.in_(valid_location_id_subquery()))
+        detection_query = detection_q\
         .group_by(Identification.species_id, Observation.location_id, 'year', 'month')\
         .all()
 
@@ -248,8 +267,11 @@ def _calculate_yearly_trends_with_bootstrap():
     finally:
         close_ct_session()
 
-def update_analytics_tables(force_run=False):
+def update_analytics_tables(force_run=False, exclude_invalid_locations=True):
     """Main entry point. Check whether a recalculation is needed and run both stages.
+
+    ``exclude_invalid_locations`` (default True) is forwarded to the monthly
+    activity stage; see _calculate_monthly_activity.
 
     Returns:
         True  — recalculation completed successfully (or skipped: no changes);
@@ -276,7 +298,7 @@ def update_analytics_tables(force_run=False):
         logging.info("Changes detected or force_run=True. Starting analytics calculation...")
 
         # Stage 1: Monthly activity calculation.
-        success_monthly = _calculate_monthly_activity()
+        success_monthly = _calculate_monthly_activity(exclude_invalid_locations=exclude_invalid_locations)
         if not success_monthly:
             logging.error("Monthly activity calculation failed. Aborting further calculations.")
             return False
@@ -408,11 +430,15 @@ def _finish_analytics_run(status: str, error_message: Optional[str] = None) -> N
         )
 
 
-def _run_analytics_in_thread(app, triggered_by: Optional[int]) -> None:
+def _run_analytics_in_thread(app, triggered_by: Optional[int],
+                             exclude_invalid_locations: bool = True) -> None:
     """Background thread body. Runs outside the HTTP context."""
     with app.app_context():
         try:
-            ok = update_analytics_tables(force_run=True)
+            ok = update_analytics_tables(
+                force_run=True,
+                exclude_invalid_locations=exclude_invalid_locations,
+            )
             if ok:
                 _finish_analytics_run('completed')
             else:
@@ -428,12 +454,17 @@ def _run_analytics_in_thread(app, triggered_by: Optional[int]) -> None:
                 pass
 
 
-def start_async_analytics(triggered_by: Optional[int] = None) -> bool:
+def start_async_analytics(triggered_by: Optional[int] = None,
+                          exclude_invalid_locations: bool = True) -> bool:
     """Start a background analytics recalculation. Returns IMMEDIATELY.
 
     Returns:
         True  — run started in the background (thread created);
         False — a recalculation is already running, no new one started.
+
+    ``exclude_invalid_locations`` (default True) is forwarded to the
+    recalculation; it mirrors the admin-panel checkbox "Discard invalid
+    locations".
 
     NB: this layer is intentionally thin — so that in the future the body
     can be replaced with `recalc_analytics_task.delay()` (Celery) without
@@ -445,7 +476,7 @@ def start_async_analytics(triggered_by: Optional[int] = None) -> bool:
     app = current_app._get_current_object()  # type: ignore[attr-defined]
     threading.Thread(
         target=_run_analytics_in_thread,
-        args=(app, triggered_by),
+        args=(app, triggered_by, exclude_invalid_locations),
         name="ct-analytics-recalc",
         daemon=True,
     ).start()

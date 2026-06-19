@@ -66,6 +66,10 @@ class Location(CTBase):
     created_at = Column(DateTime, default=func.now())
     created_by_id = Column(Integer, nullable=True)  # User ID from the main database
     visibility_level = Column(Integer, default=1, nullable=False)
+    # Admin-only data-validity flag. When False, the location's data is excluded
+    # from dashboards, exports, and analytics aggregation (see scripts/init_location_validity_ct.py).
+    is_valid = Column(Boolean, default=True, nullable=False, server_default='true')
+    invalid_note = Column(Text)  # Optional admin reason for marking the location invalid
 
     # Relationships
     observations = relationship('Observation', back_populates='location')

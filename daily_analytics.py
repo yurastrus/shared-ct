@@ -44,6 +44,7 @@ def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_id
             rc.species_id IN :species_ids
             AND o.status IN ('completed', 'archived')
             AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+            AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
             {location_clause}
     """
 

@@ -152,6 +152,7 @@ def get_ct_occurrence_data(filters, limit=None):
                     LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND c.species_id = wi.species_id
                     WHERE
                         o.status IN ('completed', 'archived')
+                        AND l.is_valid IS NOT FALSE  -- exclude admin-invalidated locations
                         AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
                         {species_filter_condition}
                         {taxo_where}

@@ -23,6 +23,7 @@ from .decorators import role_required
 from .data_export import get_ct_occurrence_data
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 from .activity_heatmap import fetch_heatmap_data, fetch_date_range
+from .validity import valid_location_id_subquery, VALID_LOCATION_SQL
 
 #
 # --- MODULE STATIC FILES ---
@@ -377,6 +378,7 @@ def dashboard(lang_code):
             query_photos = query_photos.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_photos = query_photos.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_photos = query_photos.filter(Location.id.in_(valid_location_id_subquery()))
         total_photos = query_photos.scalar() or 0
 
         # Total Locations
@@ -387,6 +389,7 @@ def dashboard(lang_code):
             query_locations = query_locations.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_locations = query_locations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_locations = query_locations.filter(Location.id.in_(valid_location_id_subquery()))
         total_locations = query_locations.scalar() or 0
         
         # Total Observations
@@ -398,6 +401,7 @@ def dashboard(lang_code):
             query_observations = query_observations.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_observations = query_observations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_observations = query_observations.filter(Location.id.in_(valid_location_id_subquery()))
         total_observations = query_observations.scalar() or 0
 
         # Identified Species Count
@@ -410,6 +414,7 @@ def dashboard(lang_code):
             query_species_count = query_species_count.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_species_count = query_species_count.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_species_count = query_species_count.filter(Location.id.in_(valid_location_id_subquery()))
         identified_species_count = query_species_count.scalar() or 0
 
         # Pending Observations
@@ -420,6 +425,7 @@ def dashboard(lang_code):
             query_pending = query_pending.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_pending = query_pending.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_pending = query_pending.filter(Location.id.in_(valid_location_id_subquery()))
         pending_observations = query_pending.scalar() or 0
 
         # Unique Capture Days
@@ -430,6 +436,7 @@ def dashboard(lang_code):
             query_capture_days = query_capture_days.filter(Location.id.in_(location_ids))
         if biotope_ids:
             query_capture_days = query_capture_days.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+        query_capture_days = query_capture_days.filter(Location.id.in_(valid_location_id_subquery()))
         unique_capture_days = query_capture_days.scalar() or 0
 
         # Top Contributors
@@ -455,6 +462,7 @@ def dashboard(lang_code):
         if biotope_ids:
             top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         
+        top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(valid_location_id_subquery()))
         top_contributors_raw = top_contributors_raw_query.group_by(Identification.user_id)\
             .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
         # --- END OF DB QUERIES ---
@@ -611,7 +619,8 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
         func.count(distinct(Photo.observation_id)).label('total'),
     ).join(Photo, Identification.photo_id == Photo.id)\
         .join(Observation).join(Location)\
-        .filter(inst_condition_orm).params(**inst_params)
+        .filter(inst_condition_orm).params(**inst_params)\
+        .filter(Location.id.in_(valid_location_id_subquery()))
 
     if location_ids:
         query = query.filter(Location.id.in_(location_ids))
@@ -671,6 +680,7 @@ def contributors(lang_code):
             .filter(
                 inst_condition_orm,
                 Identification.species_id > 0,
+                Location.id.in_(valid_location_id_subquery()),
             ).params(**inst_params)\
             .distinct()\
             .order_by(Species.common_name_ua)
@@ -746,7 +756,8 @@ def species_dashboard(lang_code):
             .join(Photo, Identification.photo_id == Photo.id)\
             .join(Observation, Photo.observation_id == Observation.id)\
             .filter(Observation.status.in_(['completed', 'archived']),
-                    Identification.species_id > 0)
+                    Identification.species_id > 0,
+                    Observation.location_id.in_(valid_location_id_subquery()))
 
         if not is_admin and user_inst_ids:
             allowed_locs = select(location_institutions.c.location_id).where(
@@ -965,6 +976,7 @@ def api_behavior_data(lang_code):
                 Identification.species_id == species_id,
                 Observation.status.in_(['completed', 'archived']),
                 Photo.captured_at.between(start_dt, end_dt),
+                Location.id.in_(valid_location_id_subquery()),
                 text(inst_condition),
             )
             .params(**inst_params)
@@ -1987,6 +1999,7 @@ def stats_top_species(lang_code):
             "o.status IN ('completed', 'archived')",
             "s.id > 0",
             "DATE(o.series_start_time) BETWEEN :start_date AND :end_date",
+            "l." + VALID_LOCATION_SQL,
             inst_condition
         ]
 
@@ -2067,6 +2080,8 @@ def stats_locations(lang_code):
         
         if biotope_ids:
             query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+
+        query = query.filter(Location.id.in_(valid_location_id_subquery()))
 
         res = query.group_by(Location.id).all()
         data = [{'id': l.id, 'name': l.name, 'lat': float(l.latitude), 'lon': float(l.longitude), 'photo_count': l.photo_count} for l in res]
@@ -2298,6 +2313,7 @@ def api_comparison(lang_code):
                 Observation, Photo.observation_id == Observation.id
             ).filter(
                 Observation.location_id.in_(loc_ids),
+                Observation.location_id.in_(valid_location_id_subquery()),
                 Observation.status.in_(['completed', 'archived']),
                 Identification.species_id > 0,
                 Photo.captured_at >= start_date,
@@ -3410,7 +3426,9 @@ def manage_locations(lang_code):
                 'longitude': float(loc.longitude),
                 'biotope_ids': [b.id for b in loc.biotopes],
                 'has_description': bool(loc.description and loc.description.strip()),
-                'institution_ids': loc_inst_map.get(loc.id, [])
+                'institution_ids': loc_inst_map.get(loc.id, []),
+                'is_valid': bool(loc.is_valid),
+                'invalid_note': loc.invalid_note or ''
             })
 
         geoserver_url = current_app.config['GEOSERVER_URL']
@@ -3441,6 +3459,57 @@ def manage_locations(lang_code):
         return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
     finally:
         close_ct_session()
+
+@camera_traps_bp.route('/location/<int:location_id>/validity', methods=['POST'])
+@login_required
+@role_required('admin')
+def set_location_validity(lang_code, location_id):
+    """Admin-only: set a location's data-validity flag.
+
+    Marking a location invalid (is_valid=False) excludes its data from
+    dashboards and exports immediately, and from the precomputed analytics
+    tables on the next recalculation. Accepts form or JSON `is_valid`
+    (true/false) and an optional `note`.
+    """
+    wants_json = request.accept_mimetypes.best == 'application/json' \
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    ct_session = get_ct_session()
+    try:
+        loc = ct_session.query(Location).get(location_id)
+        if not loc:
+            if wants_json:
+                return jsonify({'error': _('Локацію не знайдено.')}), 404
+            flash(_('Локацію не знайдено.'), 'danger')
+            return redirect(request.referrer or url_for('camera_traps.manage_locations', lang_code=g.lang_code))
+
+        body = request.get_json(silent=True) or {}
+        raw = request.form.get('is_valid')
+        if raw is None:
+            raw = body.get('is_valid')
+        # Absent → default to valid (idempotent "restore"); explicit false marks invalid.
+        is_valid = True if raw is None else str(raw).strip().lower() in ('1', 'true', 'on', 'yes')
+        note = (request.form.get('note') or body.get('note') or '').strip() or None
+
+        loc.is_valid = is_valid
+        loc.invalid_note = None if is_valid else note
+        ct_session.commit()
+
+        msg = _('Локацію позначено валідною.') if is_valid else \
+            _('Локацію позначено невалідною — її дані виключено з дашбордів і експорту.')
+        if wants_json:
+            return jsonify({'success': True, 'is_valid': is_valid,
+                            'invalid_note': loc.invalid_note, 'message': msg}), 200
+        flash(msg, 'success')
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error setting validity for location {location_id}: {e}")
+        if wants_json:
+            return jsonify({'error': _('Помилка зміни валідності локації.')}), 500
+        flash(_('Помилка зміни валідності локації.'), 'danger')
+    finally:
+        close_ct_session()
+    return redirect(request.referrer or url_for('camera_traps.manage_locations', lang_code=g.lang_code))
+
 
 # ── Deployments ──────────────────────────────────────────────────────────────
 DEPLOYMENT_STR_FIELDS = ['name', 'study_season', 'study_design', 'camera_id',
@@ -4270,11 +4339,25 @@ def manual_run_analytics(lang_code):
     wants_json = request.accept_mimetypes.best == 'application/json' \
         or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
+    # Admin-panel checkbox "Discard invalid locations" (default ON). Absent param
+    # is treated as ON so direct/no-JS calls keep invalid locations out; the UI
+    # posts an explicit 'false' only when the admin unchecks the box.
+    _raw_excl = request.form.get('exclude_invalid_locations')
+    if _raw_excl is None:
+        _json = request.get_json(silent=True) or {}
+        _raw_excl = _json.get('exclude_invalid_locations')
+    exclude_invalid = True if _raw_excl is None else \
+        str(_raw_excl).strip().lower() in ('1', 'true', 'on', 'yes')
+
     try:
         current_app.logger.info(
-            f"Manual analytics recalculation triggered by admin: {current_user.username}"
+            f"Manual analytics recalculation triggered by admin: {current_user.username} "
+            f"(exclude_invalid_locations={exclude_invalid})"
         )
-        started = start_async_analytics(triggered_by=current_user.id)
+        started = start_async_analytics(
+            triggered_by=current_user.id,
+            exclude_invalid_locations=exclude_invalid,
+        )
 
         if started:
             if wants_json:
@@ -5034,6 +5117,7 @@ def get_cached_species_for_filter():
             FROM observations o
             JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
             WHERE o.status IN ('completed', 'archived')
+              AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
             GROUP BY rc.species_id
             HAVING COUNT(*) >= :min_detections
         """)
@@ -5104,6 +5188,7 @@ def species_detailed(lang_code):
             .filter(
                 Species.id > 0,
                 Observation.status.in_(['completed', 'archived']),
+                Location.id.in_(valid_location_id_subquery()),
                 text(inst_condition)  # institution filter
             ).params(**inst_params).distinct()
 
@@ -5185,10 +5270,11 @@ def api_distribution_map(lang_code):
             FROM observations o
             JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
             JOIN locations l ON o.location_id = l.id
-            WHERE 
+            WHERE
                 rc.species_id = :species_id
                 AND o.status IN ('completed', 'archived')
                 AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+                AND l.{VALID_LOCATION_SQL}
                 AND ({inst_condition})
             GROUP BY l.id, l.name, l.latitude, l.longitude
         """

@@ -131,6 +131,11 @@
                 </div>
                 <form id="analytics-form" action="{{ url_for('camera_traps.manual_run_analytics', lang_code=g.lang_code) }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <label class="admin-action__desc d-block mb-2" style="cursor:pointer;">
+                        <input type="checkbox" id="exclude-invalid-locations"
+                               name="exclude_invalid_locations" value="true" checked>
+                        {{ _('Відкинути невалідні локації') }}
+                    </label>
                     <button type="submit" id="analytics-run-btn" class="btn btn-info" onclick="return confirm('{{ _('Це запустить повний перерахунок всієї аналітики для графіків. Процес може зайняти кілька хвилин, залежно від обсягу даних. Продовжити?') }}')">
                         {{ _('Запустити') }}
                     </button>
@@ -517,7 +522,10 @@
                     'Accept': 'application/json',
                     'Content-Type': 'application/json'
                 },
-                body: '{}',
+                body: JSON.stringify({
+                    exclude_invalid_locations:
+                        (document.getElementById('exclude-invalid-locations') || {}).checked !== false
+                }),
                 credentials: 'same-origin'
             });
             // 202 — started; 409 — already running. Poll in both cases.

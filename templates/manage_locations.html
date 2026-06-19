@@ -63,8 +63,8 @@
             <ul class="locations-list">
                 {% for loc in locations %}
                     <li data-location-id="{{ loc.id }}"
-                        class="{% if not loc.biotope_ids %}loc-no-biotope{% elif not loc.has_description %}loc-no-description{% endif %}">
-                        <span class="loc-name">{{ loc.name }}</span>
+                        class="{% if not loc.is_valid %}loc-invalid {% endif %}{% if not loc.biotope_ids %}loc-no-biotope{% elif not loc.has_description %}loc-no-description{% endif %}">
+                        <span class="loc-name">{{ loc.name }}{% if not loc.is_valid %} <span class="badge bg-danger loc-invalid-badge">{{ _('Невалідна') }}</span>{% endif %}</span>
                         <a class="coverage-link"
                            href="{{ url_for('camera_traps.ct_location_coverage', lang_code=g.lang_code, location_id=loc.id) }}"
                            title="{{ _('Календар покриття фотопасткою') }}"
@@ -137,6 +137,31 @@
                         <button type="button" id="cancel-btn" class="btn btn-outline-secondary btn-sm">{{ _('Скасувати') }}</button>
                     </div>
                 </form>
+
+                {% if is_admin %}
+                <!-- ── Data validity (admin only) ── -->
+                <div id="validity-section" class="mt-3 pt-2 border-top" style="display:none;">
+                    <h6 class="mb-2 panel-subtitle text-danger">
+                        <i class="fas fa-shield-alt me-1"></i>{{ _('Валідність даних') }}
+                    </h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="location-is-valid" checked>
+                        <label class="form-check-label small" for="location-is-valid">
+                            {{ _('Дані локації валідні (використовуються в дашбордах і експорті)') }}
+                        </label>
+                    </div>
+                    <div class="mb-2" id="invalid-note-wrap" style="display:none;">
+                        <label class="form-label form-label-sm text-muted">{{ _('Причина невалідності') }}</label>
+                        <input type="text" class="form-control form-control-sm" id="location-invalid-note"
+                               placeholder="{{ _('необов\'язково') }}">
+                    </div>
+                    <button type="button" id="save-validity-btn" class="btn btn-outline-danger btn-sm">
+                        {{ _('Зберегти валідність') }}
+                    </button>
+                    <div id="validity-feedback" class="small mt-1"></div>
+                </div>
+                {% endif %}
+
                 <hr class="my-3">
                 {% endif %}
 
@@ -509,7 +534,51 @@ $(document).ready(function() {
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
         $('#visit-datetime').val(now.toISOString().slice(0, 16));
         loadHistory(locationId);
+
+        {% if is_admin %}
+        populateValidity(locationId);
+        {% endif %}
     }
+
+    {% if is_admin %}
+    // ─── DATA VALIDITY (admin only) ───────────────────────────────
+    function populateValidity(locationId) {
+        const loc = locationsData.find(l => l.id == locationId);
+        const isValid = loc ? loc.is_valid !== false : true;
+        $('#location-is-valid').prop('checked', isValid);
+        $('#location-invalid-note').val(loc && loc.invalid_note ? loc.invalid_note : '');
+        $('#invalid-note-wrap').toggle(!isValid);
+        $('#validity-feedback').text('').removeClass('text-success text-danger');
+        $('#validity-section').show();
+    }
+    $('#location-is-valid').on('change', function () {
+        $('#invalid-note-wrap').toggle(!this.checked);
+    });
+    $('#save-validity-btn').on('click', function () {
+        if (!activeLocationId) return;
+        const isValid = $('#location-is-valid').is(':checked');
+        const note = $('#location-invalid-note').val();
+        fetch(`/{{ g.lang_code }}/camera-traps/location/${activeLocationId}/validity`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+            body: JSON.stringify({ is_valid: isValid, note: note })
+        })
+        .then(r => r.json())
+        .then(d => {
+            const fb = $('#validity-feedback');
+            if (d.success) {
+                const loc = locationsData.find(l => l.id == activeLocationId);
+                if (loc) { loc.is_valid = d.is_valid; loc.invalid_note = d.invalid_note || ''; }
+                fb.removeClass('text-danger').addClass('text-success').text(d.message || '{{ _("Збережено.") }}');
+                const li = $(`.locations-list li[data-location-id="${activeLocationId}"]`);
+                li.toggleClass('loc-invalid', !d.is_valid);
+            } else {
+                fb.removeClass('text-success').addClass('text-danger').text(d.error || '{{ _("Помилка.") }}');
+            }
+        })
+        .catch(() => $('#validity-feedback').removeClass('text-success').addClass('text-danger').text('{{ _("Помилка.") }}'));
+    });
+    {% endif %}
 
     function showPanel() {
         $('#placeholder').hide();

@@ -44,6 +44,7 @@ def fetch_date_range(session):
         SELECT MIN(DATE(series_start_time)), MAX(DATE(series_start_time))
         FROM observations
         WHERE status IN ('completed', 'archived')
+          AND location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
     """)).fetchone()
     if row and row[0] and row[1]:
         return row[0], row[1]
@@ -100,6 +101,7 @@ def fetch_heatmap_data(session, species_id, location_ids=None,
         JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
         WHERE rc.species_id = :species_id
           AND o.status IN ('completed', 'archived')
+          AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
           {location_clause}
           {date_clause}
         GROUP BY hour_of_day, month_of_year

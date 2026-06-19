@@ -739,6 +739,10 @@ def calculate_total_effort(session, start_date, end_date, location_ids=None):
     if location_ids is not None:
         dates_query = dates_query.filter(Location.id.in_(location_ids))
 
+    # Exclude admin-invalidated locations so the RAI effort denominator stays
+    # consistent with the (already filtered) detection numerator.
+    dates_query = dates_query.filter(Location.is_valid.is_(True))
+
     dates_query = dates_query.distinct().order_by(Location.id, 'cap_date').all()
 
     loc_dates = {}
