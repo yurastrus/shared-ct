@@ -1774,10 +1774,18 @@ def import_classification(lang_code):
             {'id': lv.id, 'code': lv.code, 'name': lv.name}
             for lv in get_import_levels(ct_session)
         ]
+        # Verifiers for the "manual verifications (level 4)" mode: system users
+        # who may identify (ct_verifier and above).
+        verifiers = sorted(
+            (u for u in User.query.all() if u.has_role('ct_verifier')),
+            key=lambda u: u.full_name.lower()
+        )
+        verifier_choices = [(u.id, u.full_name) for u in verifiers]
         return render_template(
             'import_classification.html',
             location_choices=location_choices,
             level_choices=levels,
+            verifier_choices=verifier_choices,
             locations_data=locations_data,
             institutions=institutions_list,
         )
@@ -1848,6 +1856,65 @@ def import_classification_run(lang_code):
         ct_session.rollback()
         current_app.logger.exception(f"import-classification run failed: {e}")
         return jsonify({'error': _('Помилка імпорту класифікації')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/import-classification/verification/preview', methods=['POST'])
+@login_required
+@role_required('manager')
+def import_verification_preview(lang_code):
+    """Dry-run preview for the human-verification import (level 4)."""
+    from .verification_import import preview_verification_import
+    location_id = request.form.get('location_id', type=int)
+    if not location_id or location_id <= 0:
+        return jsonify({'error': _('Оберіть локацію')}), 400
+    rows, errors = _read_uploaded_csv()
+    if rows is None:
+        return jsonify({'error': errors[0]}), 400
+    ct_session = get_ct_session()
+    try:
+        stats = preview_verification_import(ct_session, location_id, rows)
+        stats['parse_errors'] = errors[:20]
+        stats['parse_error_count'] = len(errors)
+        return jsonify(stats), 200
+    except Exception as e:
+        current_app.logger.exception(f"verification import preview failed: {e}")
+        return jsonify({'error': _('Помилка прев’ю імпорту')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/import-classification/verification/run', methods=['POST'])
+@login_required
+@role_required('manager')
+def import_verification_run(lang_code):
+    """Import human-verified DeepFaune classifications as identifications,
+    credited to the chosen verifier. Only pending series are written."""
+    from .verification_import import run_verification_import
+    location_id = request.form.get('location_id', type=int)
+    verifier_id = request.form.get('verifier_id', type=int)
+    if not location_id or location_id <= 0:
+        return jsonify({'error': _('Оберіть локацію')}), 400
+    if not verifier_id:
+        return jsonify({'error': _('Оберіть верифікатора')}), 400
+    verifier = User.query.get(verifier_id)
+    if verifier is None or not verifier.has_role('ct_verifier'):
+        return jsonify({'error': _('Недопустимий верифікатор')}), 400
+    rows, errors = _read_uploaded_csv()
+    if rows is None:
+        return jsonify({'error': errors[0]}), 400
+    ct_session = get_ct_session()
+    try:
+        report = run_verification_import(ct_session, location_id, rows, verifier_id)
+        ct_session.commit()
+        report['success'] = True
+        report['parse_error_count'] = len(errors)
+        return jsonify(report), 200
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.exception(f"verification import run failed: {e}")
+        return jsonify({'error': _('Помилка імпорту верифікацій')}), 500
     finally:
         close_ct_session()
 

@@ -16,6 +16,21 @@
         {{ _('Накладає результати локального прогону (CSV) на вже завантажені фото обраної локації. Серверні прогнози не змінюються — імпорт зберігається окремою моделлю (рівень MDR).') }}
     </p>
 
+    <!-- MODE -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h6 class="card-title">{{ _('Режим імпорту') }}</h6>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="import-mode" id="mode-ai" value="ai" checked>
+                <label class="form-check-label" for="mode-ai">{{ _('AI-передбачення (DeepFaune CSV → окрема модель)') }}</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="import-mode" id="mode-verification" value="verification">
+                <label class="form-check-label" for="mode-verification">{{ _('Ручні верифікації (рівень 4) — зараховуються верифікатору') }}</label>
+            </div>
+        </div>
+    </div>
+
     <!-- STEP 1: location -->
     <div class="card mb-3">
         <div class="card-body">
@@ -41,17 +56,31 @@
         </div>
     </div>
 
-    <!-- Model level (required) -->
-    <div class="card mb-3">
+    <!-- Model level (AI mode) -->
+    <div class="card mb-3" id="level-card">
         <div class="card-body">
             <h6 class="card-title">{{ _('2. Рівень моделі (детектор)') }} *</h6>
-            <select id="level-select" class="form-select" required>
+            <select id="level-select" class="form-select">
                 <option value="" selected disabled>{{ _('-- Оберіть рівень --') }}</option>
                 {% for lv in level_choices %}
                     <option value="{{ lv.id }}">{{ lv.code }} — {{ lv.name }}</option>
                 {% endfor %}
             </select>
             <small class="text-muted">{{ _('Яким детектором прогнано цей CSV. Обов’язково.') }}</small>
+        </div>
+    </div>
+
+    <!-- Verifier (verification mode) -->
+    <div class="card mb-3" id="verifier-card" style="display:none;">
+        <div class="card-body">
+            <h6 class="card-title">{{ _('2. Верифікатор') }} *</h6>
+            <select id="verifier-select" class="form-select">
+                <option value="" selected disabled>{{ _('-- Оберіть верифікатора --') }}</option>
+                {% for vid, vname in verifier_choices %}
+                    <option value="{{ vid }}">{{ vname }}</option>
+                {% endfor %}
+            </select>
+            <small class="text-muted">{{ _('Кому зарахувати ці верифікації. Усі визначення припишуться цій людині (лише серії, що ще на розгляді).') }}</small>
         </div>
     </div>
 
@@ -88,6 +117,26 @@
     const btnRun = document.getElementById('btn-run');
     const spinner = document.getElementById('spinner');
     const result = document.getElementById('result');
+    const modeVerification = document.getElementById('mode-verification');
+    const levelCard = document.getElementById('level-card');
+    const verifierCard = document.getElementById('verifier-card');
+    const verifierSelect = document.getElementById('verifier-select');
+    const URLS = {
+        aiPreview:  "{{ url_for('camera_traps.import_classification_preview', lang_code=g.lang_code) }}",
+        aiRun:      "{{ url_for('camera_traps.import_classification_run', lang_code=g.lang_code) }}",
+        verPreview: "{{ url_for('camera_traps.import_verification_preview', lang_code=g.lang_code) }}",
+        verRun:     "{{ url_for('camera_traps.import_verification_run', lang_code=g.lang_code) }}",
+    };
+    function isVerification() { return modeVerification.checked; }
+    function onModeChange() {
+        const v = isVerification();
+        levelCard.style.display = v ? 'none' : '';
+        verifierCard.style.display = v ? '' : 'none';
+        invalidate();
+    }
+    document.getElementById('mode-ai').addEventListener('change', onModeChange);
+    modeVerification.addEventListener('change', onModeChange);
+    verifierSelect.addEventListener('change', updateRunGate);
 
     const allOptions = Array.from(locSelect.options).map(o => ({
         value: o.value, text: o.text
@@ -111,9 +160,10 @@
         invalidate();
     });
 
-    // Import allowed only when preview has matches AND model level is selected.
+    // Import allowed only when preview found work AND the mode's required field is set.
     function updateRunGate() {
-        btnRun.disabled = !(lastMatched > 0 && levelSelect.value);
+        const ready = isVerification() ? !!verifierSelect.value : !!levelSelect.value;
+        btnRun.disabled = !(lastMatched > 0 && ready);
     }
     function invalidate() {
         lastMatched = null;
@@ -124,16 +174,21 @@
     csvInput.addEventListener('change', invalidate);
     levelSelect.addEventListener('change', updateRunGate);   // changing level does not reset the preview.
 
-    function currentForm(includeLevel) {
+    function currentForm(forRun) {
         const locId = parseInt(locSelect.value, 10);
         if (!locId || locId <= 0) { alert("{{ _('Оберіть локацію') }}"); return null; }
         if (!csvInput.files.length) { alert("{{ _('Оберіть CSV-файл') }}"); return null; }
         const fd = new FormData();
         fd.append('location_id', locId);
         fd.append('file', csvInput.files[0]);
-        if (includeLevel) {
-            if (!levelSelect.value) { alert("{{ _('Оберіть рівень моделі') }}"); return null; }
-            fd.append('level_id', levelSelect.value);
+        if (forRun) {
+            if (isVerification()) {
+                if (!verifierSelect.value) { alert("{{ _('Оберіть верифікатора') }}"); return null; }
+                fd.append('verifier_id', verifierSelect.value);
+            } else {
+                if (!levelSelect.value) { alert("{{ _('Оберіть рівень моделі') }}"); return null; }
+                fd.append('level_id', levelSelect.value);
+            }
         }
         return fd;
     }
@@ -145,64 +200,102 @@
 
     function esc(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
+    function renderAiPreview(d) {
+        const matched = d.matched;
+        return '<div class="card"><div class="card-body">' +
+            '<h6>' + "{{ _('Результат прев’ю') }}" + '</h6>' +
+            '<ul class="mb-2">' +
+            '<li>' + "{{ _('Рядків у CSV:') }}" + ' <b>' + d.csv_rows + '</b></li>' +
+            '<li>' + "{{ _('Фото на локації (згрупованих):') }}" + ' <b>' + d.location_photos + '</b></li>' +
+            '<li class="text-success">' + "{{ _('Співпало:') }}" + ' <b>' + matched + '</b></li>' +
+            '<li class="text-warning">' + "{{ _('CSV без фото в БД:') }}" + ' <b>' + d.csv_unmatched + '</b></li>' +
+            '<li class="text-muted">' + "{{ _('Фото без рядка в CSV:') }}" + ' <b>' + d.db_without_prediction + '</b></li>' +
+            (d.csv_duplicate_keys ? '<li class="text-muted">' + "{{ _('Дублікатів-ключів у CSV:') }}" + ' ' + d.csv_duplicate_keys + '</li>' : '') +
+            (d.location_placeholder_photos ? '<li class="text-warning">' + "{{ _('Фото без EXIF-часу на локації (не зматчаться):') }}" + ' ' + d.location_placeholder_photos + '</li>' : '') +
+            (d.parse_error_count ? '<li class="text-danger">' + "{{ _('Помилок парсингу:') }}" + ' ' + d.parse_error_count + '</li>' : '') +
+            '</ul>' +
+            (d.sample_unmatched && d.sample_unmatched.length
+                ? '<details><summary class="text-muted">' + "{{ _('Приклади незіставлених') }}" + '</summary><pre style="font-size:.8rem;">' +
+                  esc(d.sample_unmatched.map(x => x.filename + '  ' + x.captured_at).join('\n')) + '</pre></details>'
+                : '') +
+            (matched === 0
+                ? '<div class="alert alert-warning mt-2 mb-0">' + "{{ _('Жодного збігу — перевірте, чи це правильна локація і файл.') }}" + '</div>'
+                : '') +
+            '</div></div>';
+    }
+    function renderVerPreview(d) {
+        return '<div class="card"><div class="card-body">' +
+            '<h6>' + "{{ _('Результат прев’ю (верифікації)') }}" + '</h6>' +
+            '<ul class="mb-2">' +
+            '<li>' + "{{ _('Рядків у CSV:') }}" + ' <b>' + d.csv_rows + '</b></li>' +
+            '<li class="text-success">' + "{{ _('Серій на розгляді (буде записано):') }}" + ' <b>' + d.pending_series + '</b></li>' +
+            '<li class="text-muted">' + "{{ _('Зіставлено фото (всього / у pending):') }}" + ' ' + d.matched_photos + ' / ' + d.matched_photos_pending + '</li>' +
+            '<li class="text-warning">' + "{{ _('Пропущено серій (вже на консенсусі):') }}" + ' <b>' + d.skipped_consensus_series + '</b></li>' +
+            (d.ambiguous_series ? '<li class="text-muted">' + "{{ _('Серій із неоднозначним видом (вирішено тай-брейком):') }}" + ' ' + d.ambiguous_series + '</li>' : '') +
+            (d.no_species_series ? '<li class="text-warning">' + "{{ _('Серій без змапованого виду (пропустяться):') }}" + ' ' + d.no_species_series + '</li>' : '') +
+            '<li class="text-warning">' + "{{ _('CSV без фото в БД:') }}" + ' ' + d.csv_unmatched + '</li>' +
+            (d.parse_error_count ? '<li class="text-danger">' + "{{ _('Помилок парсингу:') }}" + ' ' + d.parse_error_count + '</li>' : '') +
+            '</ul>' +
+            (d.pending_series === 0
+                ? '<div class="alert alert-warning mt-2 mb-0">' + "{{ _('Немає серій на розгляді для запису — можливо всі вже на консенсусі або нема збігів.') }}" + '</div>'
+                : '') +
+            '</div></div>';
+    }
+
     btnPreview.addEventListener('click', function () {
         const fd = currentForm(false);
         if (!fd) return;
+        const ver = isVerification();
         busy(true); result.style.display = 'none';
-        fetch("{{ url_for('camera_traps.import_classification_preview', lang_code=g.lang_code) }}", {
+        fetch(ver ? URLS.verPreview : URLS.aiPreview, {
             method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd
         }).then(r => r.json().then(d => ({ok: r.ok, d}))).then(({ok, d}) => {
             busy(false);
             if (!ok) { showError(d.error || 'error'); return; }
-            const matched = d.matched;
             result.style.display = 'block';
-            result.innerHTML =
-                '<div class="card"><div class="card-body">' +
-                '<h6>' + "{{ _('Результат прев’ю') }}" + '</h6>' +
-                '<ul class="mb-2">' +
-                '<li>' + "{{ _('Рядків у CSV:') }}" + ' <b>' + d.csv_rows + '</b></li>' +
-                '<li>' + "{{ _('Фото на локації (згрупованих):') }}" + ' <b>' + d.location_photos + '</b></li>' +
-                '<li class="text-success">' + "{{ _('Співпало:') }}" + ' <b>' + matched + '</b></li>' +
-                '<li class="text-warning">' + "{{ _('CSV без фото в БД:') }}" + ' <b>' + d.csv_unmatched + '</b></li>' +
-                '<li class="text-muted">' + "{{ _('Фото без рядка в CSV:') }}" + ' <b>' + d.db_without_prediction + '</b></li>' +
-                (d.csv_duplicate_keys ? '<li class="text-muted">' + "{{ _('Дублікатів-ключів у CSV:') }}" + ' ' + d.csv_duplicate_keys + '</li>' : '') +
-                (d.location_placeholder_photos ? '<li class="text-warning">' + "{{ _('Фото без EXIF-часу на локації (не зматчаться):') }}" + ' ' + d.location_placeholder_photos + '</li>' : '') +
-                (d.parse_error_count ? '<li class="text-danger">' + "{{ _('Помилок парсингу:') }}" + ' ' + d.parse_error_count + '</li>' : '') +
-                '</ul>' +
-                (d.sample_unmatched && d.sample_unmatched.length
-                    ? '<details><summary class="text-muted">' + "{{ _('Приклади незіставлених') }}" + '</summary><pre style="font-size:.8rem;">' +
-                      esc(d.sample_unmatched.map(x => x.filename + '  ' + x.captured_at).join('\n')) + '</pre></details>'
-                    : '') +
-                (matched === 0
-                    ? '<div class="alert alert-warning mt-2 mb-0">' + "{{ _('Жодного збігу — перевірте, чи це правильна локація і файл.') }}" + '</div>'
-                    : '') +
-                '</div></div>';
-            lastMatched = matched;
+            result.innerHTML = ver ? renderVerPreview(d) : renderAiPreview(d);
+            lastMatched = ver ? (d.pending_series || 0) : d.matched;
             updateRunGate();
         }).catch(e => { busy(false); showError(e); });
     });
 
+    function renderAiRun(d) {
+        return '<div class="alert alert-success">' +
+            '<h6>' + "{{ _('Імпорт завершено') }}" + '</h6>' +
+            "{{ _('Зіставлено фото:') }}" + ' <b>' + d.matched + '</b><br>' +
+            "{{ _('Додано:') }}" + ' ' + d.added + ' · ' +
+            "{{ _('Оновлено:') }}" + ' ' + d.updated + ' · ' +
+            "{{ _('Пропущено (не кращий score):') }}" + ' ' + d.skipped_lower_score + '<br>' +
+            "{{ _('Перераховано серій:') }}" + ' <b>' + d.observations_recomputed + '</b><br>' +
+            "{{ _('CSV без фото в БД:') }}" + ' ' + d.csv_unmatched +
+            '</div>';
+    }
+    function renderVerRun(d) {
+        return '<div class="alert alert-success">' +
+            '<h6>' + "{{ _('Імпорт верифікацій завершено') }}" + '</h6>' +
+            "{{ _('Записано серій:') }}" + ' <b>' + d.series_written + '</b><br>' +
+            "{{ _('Ідентифікацій додано:') }}" + ' ' + d.identifications_added + ' · ' +
+            "{{ _('оновлено:') }}" + ' ' + d.identifications_updated + '<br>' +
+            "{{ _('Досягнуто консенсусу:') }}" + ' <b>' + d.consensus_reached + '</b><br>' +
+            "{{ _('Пропущено серій (вже на консенсусі):') }}" + ' ' + d.skipped_consensus_series +
+            (d.no_species_series ? ' · ' + "{{ _('без виду:') }}" + ' ' + d.no_species_series : '') + '<br>' +
+            "{{ _('CSV без фото в БД:') }}" + ' ' + d.csv_unmatched +
+            '</div>';
+    }
+
     btnRun.addEventListener('click', function () {
         const fd = currentForm(true);
         if (!fd) return;
-        if (!confirm("{{ _('Записати імпортовані класифікації в базу?') }}")) return;
+        const ver = isVerification();
+        if (!confirm(ver ? "{{ _('Записати верифікації від обраного верифікатора?') }}" : "{{ _('Записати імпортовані класифікації в базу?') }}")) return;
         busy(true); btnRun.disabled = true;
-        fetch("{{ url_for('camera_traps.import_classification_run', lang_code=g.lang_code) }}", {
+        fetch(ver ? URLS.verRun : URLS.aiRun, {
             method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd
         }).then(r => r.json().then(d => ({ok: r.ok, d}))).then(({ok, d}) => {
             busy(false);
             if (!ok) { showError(d.error || 'error'); return; }
             result.style.display = 'block';
-            result.innerHTML =
-                '<div class="alert alert-success">' +
-                '<h6>' + "{{ _('Імпорт завершено') }}" + '</h6>' +
-                "{{ _('Зіставлено фото:') }}" + ' <b>' + d.matched + '</b><br>' +
-                "{{ _('Додано:') }}" + ' ' + d.added + ' · ' +
-                "{{ _('Оновлено:') }}" + ' ' + d.updated + ' · ' +
-                "{{ _('Пропущено (не кращий score):') }}" + ' ' + d.skipped_lower_score + '<br>' +
-                "{{ _('Перераховано серій:') }}" + ' <b>' + d.observations_recomputed + '</b><br>' +
-                "{{ _('CSV без фото в БД:') }}" + ' ' + d.csv_unmatched +
-                '</div>';
+            result.innerHTML = ver ? renderVerRun(d) : renderAiRun(d);
         }).catch(e => { busy(false); showError(e); });
     });
 
