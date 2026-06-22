@@ -3517,14 +3517,17 @@ def manage_locations(lang_code):
 
 @camera_traps_bp.route('/location/<int:location_id>/validity', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def set_location_validity(lang_code, location_id):
-    """Admin-only: set a location's data-validity flag.
+    """Set a location's data-validity flag (manager+).
 
     Marking a location invalid (is_valid=False) excludes its data from
     dashboards and exports immediately, and from the precomputed analytics
     tables on the next recalculation. Accepts form or JSON `is_valid`
     (true/false) and an optional `note`.
+
+    Managers may only toggle locations that belong to one of their
+    institutions; admins (and quality_control) may toggle any location.
     """
     # The page's fetch() posts a JSON body (Content-Type: application/json) but
     # sets neither Accept nor X-Requested-With, so request.is_json must be part
@@ -3541,6 +3544,13 @@ def set_location_validity(lang_code, location_id):
             if wants_json:
                 return jsonify({'error': _('Локацію не знайдено.')}), 404
             flash(_('Локацію не знайдено.'), 'danger')
+            return redirect(request.referrer or url_for('camera_traps.manage_locations', lang_code=g.lang_code))
+
+        # Managers may only toggle locations within their institutions.
+        if not _user_can_access_location(ct_session, location_id):
+            if wants_json:
+                return jsonify({'error': _('Немає доступу до цієї локації.')}), 403
+            flash(_('Немає доступу до цієї локації.'), 'danger')
             return redirect(request.referrer or url_for('camera_traps.manage_locations', lang_code=g.lang_code))
 
         body = request.get_json(silent=True) or {}

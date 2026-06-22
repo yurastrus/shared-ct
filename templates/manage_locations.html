@@ -140,8 +140,8 @@
                     </div>
                 </form>
 
-                {% if is_admin %}
-                <!-- ── Data validity (admin only) ── -->
+                {% if can_edit %}
+                <!-- ── Data validity (manager+, scoped to own institutions) ── -->
                 <div id="validity-section" class="mt-3 pt-2 border-top" style="display:none;">
                     <h6 class="mb-2 panel-subtitle text-danger">
                         <i class="fas fa-shield-alt me-1"></i>{{ _('Валідність даних') }}
@@ -554,13 +554,13 @@ $(document).ready(function() {
         $('#visit-datetime').val(now.toISOString().slice(0, 16));
         loadHistory(locationId);
 
-        {% if is_admin %}
+        {% if can_edit %}
         populateValidity(locationId);
         {% endif %}
     }
 
-    {% if is_admin %}
-    // ─── DATA VALIDITY (admin only) ───────────────────────────────
+    {% if can_edit %}
+    // ─── DATA VALIDITY (manager+, scoped to own institutions) ─────
     function populateValidity(locationId) {
         const loc = locationsData.find(l => l.id == locationId);
         const isValid = loc ? loc.is_valid !== false : true;
