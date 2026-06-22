@@ -450,18 +450,6 @@ def dashboard(lang_code):
             top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(location_ids))
         if biotope_ids:
             top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        
-        # Top Contributors
-        top_contributors_raw_query = ct_session.query(
-            Identification.user_id,
-            func.count(distinct(Photo.observation_id)).label('observation_count')
-        ).join(Photo, Identification.photo_id == Photo.id).join(Observation).join(Location)\
-        .filter(Photo.captured_at.between(start_date, end_date))
-        if location_ids:
-            top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        
         top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(valid_location_id_subquery()))
         top_contributors_raw = top_contributors_raw_query.group_by(Identification.user_id)\
             .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
