@@ -47,12 +47,14 @@
                 <span class="legend-item"><span class="legend-dot" style="background:#2a81cb"></span>{{ _('Повна') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>{{ _('Без біотопу') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#e783b0"></span>{{ _('Без опису') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c2185b"></span>{{ _('Невалідні') }}</span>
             </div>
             <div class="marker-legend" id="legend-service" style="display:none;">
                 <span class="legend-item"><span class="legend-dot" style="background:#2aad27"></span>{{ _('OK') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#f0a500"></span>{{ _('Увага') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#cb2b3e"></span>{{ _('Критично') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#9e9e9e"></span>{{ _('Невідомо') }}</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#c2185b"></span>{{ _('Невалідні') }}</span>
             </div>
         </div>
     </div>
@@ -309,6 +311,19 @@ $(document).ready(function() {
     const noBiotopeIcon    = L.icon({ iconUrl: CM+'marker-icon-gold.png',   iconRetinaUrl: CM+'marker-icon-2x-gold.png',   ...iconOpts });
     const noDescriptionIcon= L.icon({ iconUrl: CM+'marker-icon-violet.png', iconRetinaUrl: CM+'marker-icon-2x-violet.png', ...iconOpts });
 
+    // Invalid locations: a distinct raspberry pin (the pointhi colour set has no
+    // crimson, so build it as a self-contained SVG divIcon). Same shape/anchor as
+    // the PNG pins so it lines up with the others.
+    const INVALID_COLOR = '#c2185b';
+    const invalidIcon = L.divIcon({
+        className: 'marker-invalid-icon',
+        html: '<svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">'
+            + '<path d="M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z" '
+            + 'fill="' + INVALID_COLOR + '" stroke="#fff" stroke-width="1.5"/>'
+            + '<circle cx="12.5" cy="12.5" r="4.5" fill="#fff"/></svg>',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+    });
+
     function mkServiceIcon(color, cls='') {
         return L.icon({ iconUrl: CM+'marker-icon-'+color+'.png', iconRetinaUrl: CM+'marker-icon-2x-'+color+'.png', ...iconOpts, className: cls });
     }
@@ -321,6 +336,7 @@ $(document).ready(function() {
     };
 
     function getStatusIcon(loc) {
+        if (loc.is_valid === false) return invalidIcon;
         if (!loc.biotope_ids || loc.biotope_ids.length === 0) return noBiotopeIcon;
         if (!loc.has_description) return noDescriptionIcon;
         return defaultIcon;
@@ -328,6 +344,9 @@ $(document).ready(function() {
 
     function getMarkerIcon(loc) {
         if (loc.id == activeLocationId) return selectedIcon;
+        // Invalid locations stay raspberry in both modes — they're excluded from
+        // dashboards/exports, so flagging them always takes priority over status.
+        if (loc.is_valid === false) return invalidIcon;
         if (mapMode === 'service') {
             const s = serviceStatus[loc.id];
             return s ? (serviceIcons[s] || serviceIcons.unknown) : serviceIcons.unknown;
@@ -572,6 +591,8 @@ $(document).ready(function() {
                 fb.removeClass('text-danger').addClass('text-success').text(d.message || '{{ _("Збережено.") }}');
                 const li = $(`.locations-list li[data-location-id="${activeLocationId}"]`);
                 li.toggleClass('loc-invalid', !d.is_valid);
+                // Recolour the pin so it turns raspberry (or back) without a reload.
+                refreshAllMarkers();
             } else {
                 fb.removeClass('text-success').addClass('text-danger').text(d.error || '{{ _("Помилка.") }}');
             }

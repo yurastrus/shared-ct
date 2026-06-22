@@ -1188,6 +1188,8 @@ body.dark-theme .ai-pred-badge {
 /* Inactive / selected markers */
 .leaflet-marker-icon.marker-inactive { opacity: 0.45 !important; filter: grayscale(80%); }
 .marker-selected-icon { filter: brightness(0) invert(1) drop-shadow(0 0 3px rgba(0, 0, 0, 0.6)); }
+/* Invalid-location SVG pin: strip the default Leaflet divIcon white box/border. */
+.marker-invalid-icon { background: none; border: none; }
 
 /* Leaflet legend box — shared base */
 .info {
