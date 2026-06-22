@@ -3538,7 +3538,13 @@ def set_location_validity(lang_code, location_id):
     tables on the next recalculation. Accepts form or JSON `is_valid`
     (true/false) and an optional `note`.
     """
-    wants_json = request.accept_mimetypes.best == 'application/json' \
+    # The page's fetch() posts a JSON body (Content-Type: application/json) but
+    # sets neither Accept nor X-Requested-With, so request.is_json must be part
+    # of the check — otherwise the route falls through to a 302 HTML redirect and
+    # the client's r.json() throws, surfacing a bogus "Error." after a successful
+    # commit.
+    wants_json = request.is_json \
+        or request.accept_mimetypes.best == 'application/json' \
         or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     ct_session = get_ct_session()
     try:
