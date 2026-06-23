@@ -22,10 +22,25 @@ _QC_TEXT_FLAG = 'qc_local_datetime_issue'
 _VALID_QC_FLAGS = _VALID_QC_BOOL_FLAGS | {_QC_TEXT_FLAG}
 
 
-def _build_qc_exclusion_cond(qc_exclude):
-    """Return a SQL fragment for NOT EXISTS QC exclusion, or empty string.
+def _build_qc_exclusion_cond(qc_exclude, obs_alias='o'):
+    """Return a bare ``NOT EXISTS (...)`` SQL predicate for QC exclusion, or "".
 
-    qc_exclude: list of flag names (already validated against _VALID_QC_FLAGS).
+    The returned fragment carries NO leading `` AND `` so it can be dropped
+    equally into a raw-SQL ``conditions`` list (AND-joined) or into an ORM
+    ``.filter(text(...))`` clause. Callers add `` AND `` themselves when needed.
+
+    Semantics (identical to #30):
+        * boolean flag  → ``d_qc.<flag> = TRUE``
+        * text flag     → ``IS NOT NULL AND <> ''``
+        * flags OR-ed together; one matching deployment excludes the observation
+        * observations with no overlapping deployment are NOT excluded
+
+    Args:
+        qc_exclude: list of flag names (validated here against _VALID_QC_FLAGS).
+        obs_alias: SQL alias of the observations table in the outer query, used
+            to correlate the subquery (``<alias>.location_id`` /
+            ``<alias>.series_start_time``). Pass ``'observations'`` for ORM
+            queries that join the ``Observation`` model.
     """
     safe = [f for f in qc_exclude if f in _VALID_QC_FLAGS]
     if not safe:
@@ -39,11 +54,10 @@ def _build_qc_exclusion_cond(qc_exclude):
             )
         else:
             or_parts.append(f"d_qc.{flag} = TRUE")
-    return f"""
-        AND NOT EXISTS (
+    return f"""NOT EXISTS (
             SELECT 1 FROM deployments d_qc
-            WHERE d_qc.location_id = o.location_id
-              AND DATE(o.series_start_time) BETWEEN d_qc.start_date AND d_qc.end_date
+            WHERE d_qc.location_id = {obs_alias}.location_id
+              AND DATE({obs_alias}.series_start_time) BETWEEN d_qc.start_date AND d_qc.end_date
               AND ({' OR '.join(or_parts)})
         )"""
 
@@ -67,7 +81,8 @@ def get_ct_occurrence_data(filters, limit=None):
                 'end_date': filters.get('end_date')
             }
 
-            qc_cond = _build_qc_exclusion_cond(filters.get('qc_exclude', []))
+            qc_pred = _build_qc_exclusion_cond(filters.get('qc_exclude', []))
+            qc_cond = (' AND ' + qc_pred) if qc_pred else ''
 
             taxo_conditions = []
             if filters.get('species_ids'):

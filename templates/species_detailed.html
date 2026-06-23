@@ -41,6 +41,10 @@
                 <i class="fas fa-search"></i> {{ _('Застосувати') }}
             </button>
         </div>
+        {% if current_user.is_authenticated %}
+        {% set qc_checked = qc_checked_flags %}
+        {% include '_qc_filter_block.html' %}
+        {% endif %}
     </div>
 
     <!-- Statistics block -->
@@ -79,6 +83,25 @@ $(document).ready(function() {
         allowClear: true,
         width: '100%'
     });
+
+    // --- QC exclusion filter helpers ---
+    function collectQcExclude() {
+        const flags = [];
+        $('.qc-filter-cb:checked').each(function() { flags.push($(this).val()); });
+        return flags.join(',');
+    }
+
+    // Restore QC filter state from the URL (deep-link / reload support).
+    (function restoreQcFromUrl() {
+        const qc = new URLSearchParams(window.location.search).get('qc_exclude');
+        if (!qc) return;
+        const wanted = qc.split(',').filter(Boolean);
+        let any = false;
+        $('.qc-filter-cb').each(function() {
+            if (wanted.includes($(this).val())) { $(this).prop('checked', true); any = true; }
+        });
+        if (any) { $('#qc-filter-block').prop('open', true); }
+    })();
 
     // Map variables.
     const map = L.map('map').setView([49.0, 31.0], 6); // Centre of Ukraine (approximate).
@@ -146,8 +169,14 @@ $(document).ready(function() {
         const originalText = btn.html();
         btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ _("Завантаження...") }}');
 
+        // QC exclusion filter (authenticated users only).
+        const qcExclude = collectQcExclude();
+
         // URL API
-        const apiUrl = `{{ url_for('camera_traps.api_distribution_map', lang_code=g.lang_code) }}?species_id=${speciesId}&start_date=${startDate}&end_date=${endDate}`;
+        let apiUrl = `{{ url_for('camera_traps.api_distribution_map', lang_code=g.lang_code) }}?species_id=${speciesId}&start_date=${startDate}&end_date=${endDate}`;
+        if (qcExclude) {
+            apiUrl += `&qc_exclude=${encodeURIComponent(qcExclude)}`;
+        }
 
         $.getJSON(apiUrl)
             .done(function(data) {

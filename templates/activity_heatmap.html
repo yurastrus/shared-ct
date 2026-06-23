@@ -255,6 +255,13 @@
             </div>
             {% endif %}
 
+            {% if current_user.is_authenticated %}
+            <div class="sidebar-group">
+                {% set qc_checked = qc_checked_flags %}
+                {% include '_qc_filter_block.html' %}
+            </div>
+            {% endif %}
+
             <button id="apply-btn" class="btn btn-primary">
                 <i class="fas fa-th"></i> {{ _('Побудувати') }}
             </button>
@@ -318,6 +325,25 @@ $(document).ready(function() {
         dropdownAutoWidth: false
     });
 
+    // --- QC exclusion filter helpers ---
+    function collectQcExclude() {
+        const flags = [];
+        $('.qc-filter-cb:checked').each(function() { flags.push($(this).val()); });
+        return flags.join(',');
+    }
+
+    // Restore QC filter state from the URL (deep-link / reload support).
+    (function restoreQcFromUrl() {
+        const qc = new URLSearchParams(window.location.search).get('qc_exclude');
+        if (!qc) return;
+        const wanted = qc.split(',').filter(Boolean);
+        let any = false;
+        $('.qc-filter-cb').each(function() {
+            if (wanted.includes($(this).val())) { $(this).prop('checked', true); any = true; }
+        });
+        if (any) { $('#qc-filter-block').prop('open', true); }
+    })();
+
     $('#apply-btn').click(function() {
         const speciesId = $('#species-select').val();
         if (!speciesId) {
@@ -336,12 +362,15 @@ $(document).ready(function() {
         const startDate = $('#start-date').val();
         const endDate   = $('#end-date').val();
 
+        const qcExclude = collectQcExclude();
+
         const url = '{{ url_for("camera_traps.api_activity_heatmap", lang_code=g.lang_code) }}'
             + '?species_id=' + speciesId
             + '&scope_type=' + encodeURIComponent(scopeType || 'global')
             + '&scope_id='   + encodeURIComponent(scopeId || '')
             + (startDate ? '&start_date=' + startDate : '')
-            + (endDate   ? '&end_date='   + endDate   : '');
+            + (endDate   ? '&end_date='   + endDate   : '')
+            + (qcExclude ? '&qc_exclude=' + encodeURIComponent(qcExclude) : '');
 
         $.getJSON(url)
             .done(function(data) {

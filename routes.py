@@ -20,7 +20,7 @@ from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, loca
 from .models import Deployment
 from app.models import User, Institution
 from .decorators import role_required
-from .data_export import get_ct_occurrence_data
+from .data_export import get_ct_occurrence_data, _build_qc_exclusion_cond
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 from .activity_heatmap import fetch_heatmap_data, fetch_date_range
 from .validity import valid_location_id_subquery, VALID_LOCATION_SQL
@@ -347,7 +347,17 @@ def dashboard(lang_code):
         # Convert lists of strings to lists of integers
         biotope_ids = [int(id) for id in biotope_ids_str_list if id.isdigit()]
         location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
-        
+
+        # QC exclusion filter (opt-in). Only authenticated users may apply it;
+        # for anonymous users the parameter is ignored so it cannot be forced
+        # via a hand-crafted URL. Validation happens inside the whitelist helper.
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+        # ORM queries join the Observation model → table alias 'observations'.
+        qc_cond = _build_qc_exclusion_cond(qc_exclude, obs_alias='observations')
+
         # Fetch biotope list to pass to the template
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
@@ -379,6 +389,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_photos = query_photos.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_photos = query_photos.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_photos = query_photos.filter(text(qc_cond))
         total_photos = query_photos.scalar() or 0
 
         # Total Locations
@@ -390,6 +402,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_locations = query_locations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_locations = query_locations.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_locations = query_locations.filter(text(qc_cond))
         total_locations = query_locations.scalar() or 0
         
         # Total Observations
@@ -402,6 +416,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_observations = query_observations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_observations = query_observations.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_observations = query_observations.filter(text(qc_cond))
         total_observations = query_observations.scalar() or 0
 
         # Identified Species Count
@@ -415,6 +431,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_species_count = query_species_count.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_species_count = query_species_count.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_species_count = query_species_count.filter(text(qc_cond))
         identified_species_count = query_species_count.scalar() or 0
 
         # Pending Observations
@@ -426,6 +444,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_pending = query_pending.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_pending = query_pending.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_pending = query_pending.filter(text(qc_cond))
         pending_observations = query_pending.scalar() or 0
 
         # Unique Capture Days
@@ -437,6 +457,8 @@ def dashboard(lang_code):
         if biotope_ids:
             query_capture_days = query_capture_days.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         query_capture_days = query_capture_days.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            query_capture_days = query_capture_days.filter(text(qc_cond))
         unique_capture_days = query_capture_days.scalar() or 0
 
         # Top Contributors
@@ -451,6 +473,8 @@ def dashboard(lang_code):
         if biotope_ids:
             top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
         top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(valid_location_id_subquery()))
+        if qc_cond:
+            top_contributors_raw_query = top_contributors_raw_query.filter(text(qc_cond))
         top_contributors_raw = top_contributors_raw_query.group_by(Identification.user_id)\
             .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
         # --- END OF DB QUERIES ---
@@ -487,13 +511,14 @@ def dashboard(lang_code):
                              ecoregions=ecoregions,
                              selected_scope=selected_scope,
                              effective_inst_ids=effective_inst_ids,
+                             qc_exclude=qc_exclude,
                              is_admin=is_admin)
 
     except Exception as e:
         current_app.logger.error(f"Error in dashboard: {str(e)}")
         stats = {'total_photos': 0, 'total_locations': 0, 'total_identifications': 0, 'identified_species_count': 0, 'top_contributors': []}
         flash(_('Помилка завантаження статистики.'), 'warning')
-        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[], institutions=[], ecoregions={}, selected_scope='global:', effective_inst_ids=[], is_admin=False)
+        return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[], institutions=[], ecoregions={}, selected_scope='global:', effective_inst_ids=[], qc_exclude=[], is_admin=False)
     finally:
         close_ct_session()
 
@@ -2058,6 +2083,16 @@ def stats_top_species(lang_code):
             inst_condition
         ]
 
+        # QC exclusion (opt-in, authenticated users only). Whitelisted literals,
+        # no bind params needed. Correlates on the observations alias 'o'.
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+        qc_cond = _build_qc_exclusion_cond(qc_exclude, obs_alias='o')
+        if qc_cond:
+            conditions.append(qc_cond)
+
         if biotope_ids:
             query_base += " JOIN location_biotopes lb ON l.id = lb.location_id"
             conditions.append("lb.biotope_id IN :biotope_ids")
@@ -2137,6 +2172,16 @@ def stats_locations(lang_code):
             query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
 
         query = query.filter(Location.id.in_(valid_location_id_subquery()))
+
+        # QC exclusion (opt-in, authenticated users only). ORM query joins the
+        # Observation model → correlate the subquery on the 'observations' alias.
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+        qc_cond = _build_qc_exclusion_cond(qc_exclude, obs_alias='observations')
+        if qc_cond:
+            query = query.filter(text(qc_cond))
 
         res = query.group_by(Location.id).all()
         data = [{'id': l.id, 'name': l.name, 'lat': float(l.latitude), 'lon': float(l.longitude), 'photo_count': l.photo_count} for l in res]
@@ -5308,6 +5353,14 @@ def api_distribution_map(lang_code):
         # Important: use alias 'l' because it is referenced in the SQL below.
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='l')
 
+        # QC exclusion (opt-in, authenticated users only). Correlates on alias 'o'.
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+        qc_pred = _build_qc_exclusion_cond(qc_exclude, obs_alias='o')
+        qc_clause = ('\n                AND ' + qc_pred) if qc_pred else ''
+
         params = {
             'species_id': species_id,
             'start_date': start_date_str,
@@ -5346,7 +5399,7 @@ def api_distribution_map(lang_code):
                 AND o.status IN ('completed', 'archived')
                 AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
                 AND l.{VALID_LOCATION_SQL}
-                AND ({inst_condition})
+                AND ({inst_condition}){qc_clause}
             GROUP BY l.id, l.name, l.latitude, l.longitude
         """
         
@@ -5522,9 +5575,16 @@ def api_daily_activity(lang_code):
                 'ci_computed': compute_ci, 'overlap_matrix': None
             })
 
+        # QC exclusion (opt-in, authenticated users only). Applied to detections
+        # only; effort/trap-days are intentionally left unchanged this iteration.
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+
         total_effort = calculate_total_effort(ct_session, start_date, end_date, location_ids=location_ids)
-        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids, location_ids=location_ids)
-        
+        raw_data = fetch_raw_daily_data(ct_session, start_date_str, end_date_str, species_ids, location_ids=location_ids, qc_exclude=qc_exclude)
+
         results = {}
         species_info = {}
         overlap_matrix = None
@@ -5831,11 +5891,18 @@ def api_activity_heatmap(lang_code):
         else:
             species_name = species.scientific_name
 
+        # QC exclusion (opt-in, authenticated users only).
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+
         result = fetch_heatmap_data(
             ct_session, species_id,
             location_ids=location_ids,
             start_date=start_date,
             end_date=end_date,
+            qc_exclude=qc_exclude,
         )
         result['species_name'] = species_name
 

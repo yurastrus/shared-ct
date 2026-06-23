@@ -52,7 +52,7 @@ def fetch_date_range(session):
 
 
 def fetch_heatmap_data(session, species_id, location_ids=None,
-                       start_date=None, end_date=None):
+                       start_date=None, end_date=None, qc_exclude=None):
     """Query ct_db and return a 24×12 matrix of verified-registration counts.
 
     Uses the same consensus CTE as fetch_raw_daily_data in daily_analytics.py:
@@ -65,12 +65,18 @@ def fetch_heatmap_data(session, species_id, location_ids=None,
         location_ids: optional list[int] of Location.id to restrict the query.
         start_date: optional date/str — lower bound (inclusive).
         end_date: optional date/str — upper bound (inclusive).
+        qc_exclude: optional list of QC flag names; observations whose
+            overlapping deployment raises any selected flag are excluded
+            (reuses the shared #30 exclusion logic).
     """
+    from .data_export import _build_qc_exclusion_cond
     location_clause = "AND o.location_id IN :location_ids" if location_ids else ""
     date_clause = (
         "AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date"
         if start_date and end_date else ""
     )
+    qc_pred = _build_qc_exclusion_cond(qc_exclude or [], obs_alias='o')
+    qc_clause = ("AND " + qc_pred) if qc_pred else ""
 
     sql = f"""
         WITH ObservationConsensus AS (
@@ -104,6 +110,7 @@ def fetch_heatmap_data(session, species_id, location_ids=None,
           AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
           {location_clause}
           {date_clause}
+          {qc_clause}
         GROUP BY hour_of_day, month_of_year
     """
 

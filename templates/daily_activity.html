@@ -109,7 +109,15 @@
         </div>
 
 
-        <!-- ROW 3: Buttons -->
+        {% if current_user.is_authenticated %}
+        <!-- ROW 3: QC FILTER (full width) -->
+        <div class="filter-row">
+            {% set qc_checked = qc_checked_flags %}
+            {% include '_qc_filter_block.html' %}
+        </div>
+        {% endif %}
+
+        <!-- ROW 4: Buttons -->
         <div class="filter-row">
             <div class="filter-group buttons-group">
                 <div style="display: flex; gap: 10px;">
@@ -175,6 +183,26 @@ $(document).ready(function() {
         $('#bw-value').text($(this).val());
     });
 
+    // --- QC exclusion filter helpers ---
+    // Collect checked QC flags into a CSV (empty string if none / not present).
+    function collectQcExclude() {
+        const flags = [];
+        $('.qc-filter-cb:checked').each(function() { flags.push($(this).val()); });
+        return flags.join(',');
+    }
+
+    // Restore QC filter state from the URL (deep-link / reload support).
+    (function restoreQcFromUrl() {
+        const qc = new URLSearchParams(window.location.search).get('qc_exclude');
+        if (!qc) return;
+        const wanted = qc.split(',').filter(Boolean);
+        let any = false;
+        $('.qc-filter-cb').each(function() {
+            if (wanted.includes($(this).val())) { $(this).prop('checked', true); any = true; }
+        });
+        if (any) { $('#qc-filter-block').prop('open', true); }
+    })();
+
     let chartInstance = null;
     let rawApiData = null; 
     let currentMode = 'rai'; // 'rai' or 'percent'.
@@ -223,8 +251,14 @@ $(document).ready(function() {
         const scopeVal = $('#scope-select').val() || 'global:';
         const [scopeType, scopeId] = scopeVal.split(':');
 
+        // QC exclusion filter (authenticated users only).
+        const qcExclude = collectQcExclude();
+
         // Build the URL.
-        const apiUrl = `{{ url_for('camera_traps.api_daily_activity', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&compute_ci=${computeCi}&bw_adjust=${bwAdjust}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
+        let apiUrl = `{{ url_for('camera_traps.api_daily_activity', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&compute_ci=${computeCi}&bw_adjust=${bwAdjust}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
+        if (qcExclude) {
+            apiUrl += `&qc_exclude=${encodeURIComponent(qcExclude)}`;
+        }
 
         $.getJSON(apiUrl)
             .done(function(data) {
@@ -277,8 +311,14 @@ $(document).ready(function() {
         const scopeVal = $('#scope-select').val() || 'global:';
         const [scopeType, scopeId] = scopeVal.split(':');
 
-        const downloadUrl = `{{ url_for('camera_traps.api_daily_activity_download', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&bw_adjust=${bwAdjust}&compute_ci=${computeCi}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
-        
+        let downloadUrl = `{{ url_for('camera_traps.api_daily_activity_download', lang_code=g.lang_code) }}?start_date=${startDate}&end_date=${endDate}&species_ids=${speciesIds.join(',')}&bw_adjust=${bwAdjust}&compute_ci=${computeCi}&scope_type=${scopeType || 'global'}&scope_id=${encodeURIComponent(scopeId || '')}`;
+
+        // Same QC filter as "apply" — export must match the view.
+        const qcExclude = collectQcExclude();
+        if (qcExclude) {
+            downloadUrl += `&qc_exclude=${encodeURIComponent(qcExclude)}`;
+        }
+
         window.location.href = downloadUrl;
     });
 

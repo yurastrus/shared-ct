@@ -5,7 +5,8 @@ from sqlalchemy import text
 import io
 import csv
 
-def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_ids=None):
+def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_ids=None,
+                         qc_exclude=None):
     """Fetch the exact observation times (in decimal hours) for each location.
 
     Returns a dict: { species_id: { location_id: [12.5, 14.2, ...], ... } }.
@@ -14,10 +15,17 @@ def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_id
         location_ids: optional list of Location.id to restrict the result to
             specific locations (for institution/ecoregion filtering).
             None means "all locations".
+        qc_exclude: optional list of QC flag names; observations whose
+            overlapping deployment raises any selected flag are excluded
+            (reuses the shared #30 exclusion logic). Affects detections only,
+            not effort/trap-days.
     """
+    from .data_export import _build_qc_exclusion_cond
     # SQL query that returns decimal hours (e.g. 13:30 -> 13.5).
     # Uses the consensus CTE.
     location_clause = "AND o.location_id IN :location_ids" if location_ids else ""
+    qc_pred = _build_qc_exclusion_cond(qc_exclude or [], obs_alias='o')
+    qc_clause = ("AND " + qc_pred) if qc_pred else ""
 
     query_sql = f"""
         WITH ObservationConsensus AS (
@@ -46,6 +54,7 @@ def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_id
             AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
             AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
             {location_clause}
+            {qc_clause}
     """
 
     params = {

@@ -59,6 +59,15 @@
                 </select>
             </div>
             <!-- Hidden location-ID field will be injected here by JS -->
+
+            {# QC filter — authenticated users only; opt-in, collapsed by default.
+               Hidden field serialises the picked flags into the GET URL on submit. #}
+            {% if current_user.is_authenticated %}
+            {% set qc_checked = qc_exclude %}
+            {% include '_qc_filter_block.html' %}
+            <input type="hidden" id="qc-exclude-input" name="qc_exclude" value="{{ (qc_exclude or [])|join(',') }}">
+            {% endif %}
+
             <div style="flex-basis: 100%; display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
             </div>
@@ -145,6 +154,14 @@ $(document).ready(function() {
     // Filtering fix: create an input and insert it INSIDE the form.
     let locationsInput = $('<input type="hidden" id="locations-input" name="locations">');
     $('#filters-form').append(locationsInput);
+
+    // On submit, serialise the picked QC checkboxes into the hidden field so
+    // they ride along in the GET URL (server-rendered metrics read it back).
+    $('#filters-form').on('submit', function() {
+        const qcChecked = [];
+        $('.qc-filter-cb:checked').each(function() { qcChecked.push($(this).val()); });
+        $('#qc-exclude-input').val(qcChecked.join(','));
+    });
     
     // Initialise `selectedLocationIds` from URL if the parameter is present.
     const preselectedStr = urlParams.get('locations');
@@ -248,6 +265,11 @@ $(document).ready(function() {
             mapApiUrl.searchParams.set('biotopes', selectedBiotopes.join(','));
         }
         EFFECTIVE_INST_IDS.forEach(id => mapApiUrl.searchParams.append('institution_id', id));
+        // Propagate the QC filter (already in the URL after form submit).
+        const qcExclude = urlParams.get('qc_exclude');
+        if (qcExclude) {
+            mapApiUrl.searchParams.set('qc_exclude', qcExclude);
+        }
 
         fetch(mapApiUrl)
             .then(response => response.json())
