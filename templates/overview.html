@@ -2,6 +2,10 @@
 
 {% block title %}{{ _('Фотопастки') }}{% endblock %}
 
+{# lang_code conditional (not _()): this template lives in the shared-ct
+   submodule with its own i18n domain, kept separate from the main catalog. #}
+{% block meta_description %}{% if g.lang_code == 'uk' %}Фотопастки БіоМон: завантаження, ідентифікація та аналіз знімків фауни. Автоматизований облік ссавців і птахів на Розточчі.{% else %}BioMon camera traps: upload, identify and analyse wildlife images. Automated recording of mammals and birds in Roztochia.{% endif %}{% endblock %}
+
 {% block ct_content %}
 <div class="container">
 <div class="module-hub">
