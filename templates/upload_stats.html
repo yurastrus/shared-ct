@@ -1,0 +1,183 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Статистика завантажень') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .uploads-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .uploads-table th, .uploads-table td {
+        padding: 8px 12px; border-bottom: 1px solid #e0e0e0; text-align: right;
+    }
+    .uploads-table th:nth-child(2), .uploads-table td:nth-child(2),
+    .uploads-table th:first-child, .uploads-table td:first-child { text-align: left; }
+    .uploads-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .uploads-table th.sorted-asc::after { content: " \25B2"; }
+    .uploads-table th.sorted-desc::after { content: " \25BC"; }
+    .uploads-table tbody tr:hover { background: #f6f8fa; }
+    .col-total { font-weight: 600; }
+    .chart-card { margin-top: 28px; }
+    .chart-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .chart-toolbar .range-btn.active { font-weight: 600; }
+    .chart-box { position: relative; height: 340px; }
+</style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+    <div class="dashboard-wrapper">
+
+        <div class="page-header">
+            <h1>{{ _('Статистика завантажень') }}</h1>
+            <h4>{{ _('Скільки фото кожен користувач завантажив за ковзні періоди.') }}</h4>
+        </div>
+
+        <!-- Filter panel (scope only — no species filter) -->
+        <form id="filters-form" method="GET" class="filters-panel">
+            <input type="hidden" name="days" value="{{ days }}">
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" name="scope" class="form-control">
+                    <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}" {% if selected_scope == 'institution:' ~ inst.id %}selected{% endif %}>
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}" {% if selected_scope == 'ecoregion:' ~ eco_key %}selected{% endif %}>{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end;">
+                <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
+                <a href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
+            </div>
+        </form>
+
+        <!-- Per-user table -->
+        <div class="dashboard-section" style="margin-top: 20px;">
+            {% if uploaders %}
+            <table class="uploads-table" id="uploads-table">
+                <thead>
+                    <tr>
+                        <th data-type="text">#</th>
+                        <th data-type="text">{{ _('Користувач') }}</th>
+                        <th data-type="num">{{ _('Сьогодні') }}</th>
+                        <th data-type="num">{{ _('Тиждень') }}</th>
+                        <th data-type="num">{{ _('Місяць') }}</th>
+                        <th data-type="num">{{ _('Рік') }}</th>
+                        <th data-type="num" class="sorted-desc">{{ _('Усього') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in uploaders %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ u.name }}</td>
+                        <td>{{ u.d_today }}</td>
+                        <td>{{ u.d_week }}</td>
+                        <td>{{ u.d_month }}</td>
+                        <td>{{ u.d_year }}</td>
+                        <td class="col-total">{{ u.total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="info-message">{{ _('За цими фільтрами немає даних про завантаження.') }}</div>
+            {% endif %}
+        </div>
+
+        <!-- Daily totals bar chart -->
+        <div class="dashboard-section chart-card">
+            <h3>{{ _('Завантажено фото по днях (усі користувачі)') }}</h3>
+            <div class="chart-toolbar">
+                <span>{{ _('Період:') }}</span>
+                {% for d in chart_day_options %}
+                <a class="btn btn-sm range-btn {% if days == d %}btn-primary active{% else %}btn-secondary{% endif %}"
+                   href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code, scope=selected_scope, days=d) }}">
+                    {{ _('%(n)s дн.', n=d) }}
+                </a>
+                {% endfor %}
+            </div>
+            {% if daily %}
+            <div class="chart-box">
+                <canvas id="uploads-daily-chart"></canvas>
+            </div>
+            {% else %}
+            <div class="info-message">{{ _('За цими фільтрами немає даних про завантаження.') }}</div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(document).ready(function() {
+    $('#scope-select').select2({ width: '100%' });
+
+    // Submit the scope form keeps the selected chart range (hidden `days` input).
+
+    // Simple client-side table sorting (mirrors contributors.html).
+    $('#uploads-table th').on('click', function() {
+        var table = $('#uploads-table');
+        var rows = table.find('tbody tr').get();
+        var idx = $(this).index();
+        var type = $(this).data('type');
+        var asc = !$(this).hasClass('sorted-asc');
+
+        table.find('th').removeClass('sorted-asc sorted-desc');
+        $(this).addClass(asc ? 'sorted-asc' : 'sorted-desc');
+
+        rows.sort(function(a, b) {
+            var x = $(a).children('td').eq(idx).text().trim();
+            var y = $(b).children('td').eq(idx).text().trim();
+            if (type === 'num') { x = parseFloat(x) || 0; y = parseFloat(y) || 0; return asc ? x - y : y - x; }
+            return asc ? x.localeCompare(y) : y.localeCompare(x);
+        });
+        $.each(rows, function(i, row) { table.children('tbody').append(row); });
+    });
+
+    // Daily bar chart.
+    var daily = {{ daily | tojson }};
+    var canvas = document.getElementById('uploads-daily-chart');
+    if (canvas && daily.length) {
+        new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: daily.map(function(d) { return d.day; }),
+                datasets: [{
+                    label: '{{ _('Завантажено фото') }}',
+                    data: daily.map(function(d) { return d.count; }),
+                    backgroundColor: '#0d6efd',
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxRotation: 90, autoSkip: true, maxTicksLimit: 16 } },
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

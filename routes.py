@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from app.camera_traps.domain import _
-from sqlalchemy import func, distinct, extract, select, text, or_, case
+from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, Date
 import io
 import csv
 import os
@@ -15,7 +15,7 @@ from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
-from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity
+from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
 from .models import Deployment
 from app.models import User, Institution
@@ -747,6 +747,209 @@ def contributors(lang_code):
             'contributors.html', contributors=[], institutions=[],
             ecoregions={}, selected_scope='global:', is_admin=False,
             show_full_name=False, available_species=[], selected_species_id=None,
+        )
+    finally:
+        close_ct_session()
+
+
+#
+# --- UPLOAD STATISTICS (admin) ---
+#
+# How many PHOTOS each user uploaded, over rolling windows + a daily totals chart.
+#
+# Source of truth — `upload_batches`: created_at ≈ real upload time,
+# uploaded_by_id = who uploaded; photos link via Photo.upload_batch_id.
+# The oldest seed import (photos with NULL upload_batch_id — a single day at
+# launch, before batch-tracking) is backfilled from the observation:
+# created_at = grouping time (≤~48 min after upload), uploaded_by_id. This keeps
+# 100% photo coverage while using true upload timestamps for ~99.4% of photos.
+#
+ALLOWED_UPLOAD_CHART_DAYS = (30, 90, 365)
+
+
+def _is_postgres(ct_session):
+    """True when the CT session is bound to PostgreSQL (prod); False on the
+    SQLite test database. Used to keep timezone/date SQL portable."""
+    try:
+        return ct_session.get_bind().dialect.name == 'postgresql'
+    except Exception:
+        return False
+
+
+def _upload_event_exprs(ct_session):
+    """Return (uploader_id, upload_time) SQL expressions for the combined
+    batch-with-observation-backfill source.
+
+    On PostgreSQL the naive UTC UploadBatch.created_at is coerced to timestamptz
+    with timezone('UTC', …) so it COALESCEs cleanly with the timestamptz
+    Observation.created_at. On SQLite (tests) datetimes are naive ISO text, so
+    the raw columns are used directly."""
+    uploader = func.coalesce(UploadBatch.uploaded_by_id, Observation.uploaded_by_id)
+    batch_time = func.timezone('UTC', UploadBatch.created_at) \
+        if _is_postgres(ct_session) else UploadBatch.created_at
+    upload_time = func.coalesce(batch_time, Observation.created_at)
+    return uploader, upload_time
+
+
+def _upload_day_col(upload_time, ct_session):
+    """Date-truncation of upload_time, portable across PostgreSQL and SQLite."""
+    if _is_postgres(ct_session):
+        return cast(func.timezone('UTC', upload_time), Date)
+    return func.date(upload_time)
+
+
+def _upload_base_query(ct_session, columns, inst_condition_orm, inst_params):
+    """Base photo query joined to its upload batch (optional), observation and
+    location, with the standard institution + valid-location filtering."""
+    return (
+        ct_session.query(*columns)
+        .select_from(Photo)
+        .outerjoin(UploadBatch, Photo.upload_batch_id == UploadBatch.id)
+        .join(Observation, Photo.observation_id == Observation.id)
+        .join(Location, Observation.location_id == Location.id)
+        .filter(inst_condition_orm).params(**inst_params)
+        .filter(Location.id.in_(valid_location_id_subquery()))
+    )
+
+
+def query_upload_stats(ct_session, today, inst_condition_orm, inst_params):
+    """Number of PHOTOS uploaded per user with rolling windows anchored to
+    `today` (today / last 7 days / last month / last year / all time).
+
+    Windows are counted by UPLOAD TIME (see _upload_event_exprs), NOT by photo
+    capture time. Access is filtered via inst_condition_orm/inst_params. Returns
+    a list of Rows (user_id, d_today, d_week, d_month, d_year, total) sorted by
+    total desc.
+    """
+    uploader, upload_time = _upload_event_exprs(ct_session)
+    start_today = datetime.combine(today, datetime.min.time())
+    start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
+    start_month = datetime.combine(today - relativedelta(months=1), datetime.min.time())
+    start_year = datetime.combine(today - relativedelta(years=1), datetime.min.time())
+
+    def _window(threshold):
+        return func.count(case((upload_time >= threshold, Photo.id)))
+
+    query = _upload_base_query(
+        ct_session,
+        [
+            uploader.label('user_id'),
+            _window(start_today).label('d_today'),
+            _window(start_week).label('d_week'),
+            _window(start_month).label('d_month'),
+            _window(start_year).label('d_year'),
+            func.count(Photo.id).label('total'),
+        ],
+        inst_condition_orm, inst_params,
+    )
+    return query.group_by(uploader)\
+        .order_by(func.count(Photo.id).desc())\
+        .all()
+
+
+def query_upload_daily(ct_session, today, days, inst_condition_orm, inst_params):
+    """Total photos uploaded per calendar day (UTC) over the last `days` days,
+    summed across all users within scope. Returns a gap-filled list of
+    {'day': 'YYYY-MM-DD', 'count': n} (length == days), ready for charting."""
+    uploader, upload_time = _upload_event_exprs(ct_session)
+    start_date = today - timedelta(days=days - 1)
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    day_col = _upload_day_col(upload_time, ct_session)
+
+    rows = _upload_base_query(
+        ct_session,
+        [day_col.label('day'), func.count(Photo.id).label('count')],
+        inst_condition_orm, inst_params,
+    ).filter(upload_time >= start_dt)\
+        .group_by(day_col).order_by(day_col).all()
+
+    # day_col is a date on PostgreSQL and a 'YYYY-MM-DD' string on SQLite —
+    # normalise to a plain date for gap-filling.
+    def _as_date(v):
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        return datetime.strptime(str(v)[:10], '%Y-%m-%d').date()
+
+    counts = {_as_date(r.day): r.count for r in rows}
+    return [
+        {
+            'day': (start_date + timedelta(days=i)).strftime('%Y-%m-%d'),
+            'count': counts.get(start_date + timedelta(days=i), 0),
+        }
+        for i in range(days)
+    ]
+
+
+@camera_traps_bp.route('/upload-stats')
+@login_required
+@role_required('admin')
+def upload_stats(lang_code):
+    """Admin page: how many photos each user uploaded over rolling periods,
+    plus a daily-totals bar chart (30 / 90 / 365 days). No species filter;
+    ecoregion/institution scope filter is kept (per task)."""
+    ct_session = get_ct_session()
+    try:
+        today = date.today()
+        is_admin = True  # gated by @role_required('admin')
+
+        accessible_institutions = get_accessible_institutions(is_admin)
+        ecoregions = build_ecoregions(accessible_institutions, g.lang_code)
+
+        selected_scope, selected_inst_ids = resolve_scope(
+            request.args.get('scope', ''), accessible_institutions,
+            current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
+
+        user_inst_ids = [inst.id for inst in current_user.institutions] \
+            if current_user.is_authenticated else []
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
+        )
+        inst_condition_orm = text(inst_condition)
+
+        days = request.args.get('days', default=30, type=int)
+        if days not in ALLOWED_UPLOAD_CHART_DAYS:
+            days = 30
+
+        rows = query_upload_stats(ct_session, today, inst_condition_orm, inst_params)
+
+        # --- Fetch names from the main database (admin page → full names) ---
+        uploaders = []
+        if rows:
+            user_ids = [r.user_id for r in rows]
+            users = User.query.filter(User.id.in_(user_ids)).all()
+            name_map = {u.id: (u.full_name or u.username) for u in users}
+            for r in rows:
+                uploaders.append({
+                    'name': name_map.get(r.user_id, f"Користувач (ID: {r.user_id})"),
+                    'd_today': r.d_today or 0,
+                    'd_week': r.d_week or 0,
+                    'd_month': r.d_month or 0,
+                    'd_year': r.d_year or 0,
+                    'total': r.total or 0,
+                })
+
+        daily = query_upload_daily(ct_session, today, days, inst_condition_orm, inst_params)
+
+        return render_template(
+            'upload_stats.html',
+            uploaders=uploaders,
+            daily=daily,
+            days=days,
+            chart_day_options=ALLOWED_UPLOAD_CHART_DAYS,
+            institutions=accessible_institutions,
+            ecoregions=ecoregions,
+            selected_scope=selected_scope,
+            is_admin=is_admin,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error in upload_stats: {str(e)}")
+        flash(_('Помилка завантаження статистики завантажень.'), 'warning')
+        return render_template(
+            'upload_stats.html', uploaders=[], daily=[], days=30,
+            chart_day_options=ALLOWED_UPLOAD_CHART_DAYS,
+            institutions=[], ecoregions={}, selected_scope='global:', is_admin=True,
         )
     finally:
         close_ct_session()

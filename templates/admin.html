@@ -14,6 +14,10 @@
                class="btn btn-sm {% if flagged_count %}btn-warning{% else %}btn-secondary{% endif %}">
                 🚩 {{ _('На повторний розгляд') }}: {{ flagged_count }}
             </a>
+            <a href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code) }}"
+               class="btn btn-sm btn-info">
+                📊 {{ _('Статистика завантажень') }}
+            </a>
             {% if ai_available %}
             <a href="{{ url_for('camera_traps.ai_calibration', lang_code=g.lang_code) }}"
                class="btn btn-sm btn-info">
