@@ -1851,18 +1851,48 @@ def upload_fast(lang_code):
         for record in all_loc_inst_records:
             loc_to_inst.setdefault(record.location_id, []).append(record.institution_id)
 
-        locations_data = [{
-            'id': loc.id,
-            'name': loc.name,
-            'latitude': float(loc.latitude),
-            'longitude': float(loc.longitude),
-            'institution_ids': loc_to_inst.get(loc.id, [])
-        } for loc in locations]
+        # Per-location stats for the map filters: total uploaded photos and the
+        # capture-date span (placeholder 1900 dates excluded so they read as
+        # "undated"). One grouped query over observations.
+        loc_ids = [loc.id for loc in locations]
+        stats_map = {}
+        if loc_ids:
+            _min_valid = datetime(2010, 1, 1)
+            stat_rows = ct_session.query(
+                Observation.location_id,
+                func.sum(Observation.photo_count),
+                func.min(case((Observation.series_start_time >= _min_valid,
+                               Observation.series_start_time))),
+                func.max(case((Observation.series_end_time >= _min_valid,
+                               Observation.series_end_time))),
+            ).filter(Observation.location_id.in_(loc_ids))\
+             .group_by(Observation.location_id).all()
+            for lid, n, dmin, dmax in stat_rows:
+                stats_map[lid] = (int(n or 0), dmin, dmax)
+
+        max_photo_count = 0
+        locations_data = []
+        for loc in locations:
+            n, dmin, dmax = stats_map.get(loc.id, (0, None, None))
+            cnt = n or (loc.photo_count or 0)
+            if cnt > max_photo_count:
+                max_photo_count = cnt
+            locations_data.append({
+                'id': loc.id,
+                'name': loc.name,
+                'latitude': float(loc.latitude),
+                'longitude': float(loc.longitude),
+                'institution_ids': loc_to_inst.get(loc.id, []),
+                'photo_count': cnt,
+                'date_start': dmin.date().isoformat() if dmin else None,
+                'date_end': dmax.date().isoformat() if dmax else None,
+            })
 
         return render_template(
             'upload_fast.html',
             form=form,
             locations_data=locations_data,
+            max_photo_count=max_photo_count,
             geoserver_url=current_app.config['GEOSERVER_URL'],
             institutions=institutions_list,
         )

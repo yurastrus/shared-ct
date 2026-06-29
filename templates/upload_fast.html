@@ -71,6 +71,18 @@
   .qc-up-legend { font-size: .78rem; font-weight: 600; color: #6c757d; margin-bottom: 6px; }
   .qc-up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
   @media (max-width: 520px){ .qc-up-grid { grid-template-columns: 1fr; } }
+  /* Map filters (do NOT affect upload — map visibility only) */
+  #map-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+                 padding: 8px 10px; margin-bottom: 6px; background: #f8f9fa;
+                 border: 1px solid #e3e6ea; border-radius: 6px; font-size: .82rem; }
+  #map-filters label { margin: 0; color: #495057; font-weight: 600; white-space: nowrap; }
+  .map-filter-group { display: flex; align-items: center; gap: 6px; }
+  .map-filter-date { width: auto; }
+  .map-filter-range { width: 110px; vertical-align: middle; }
+  .map-filter-count-label { color: #6c757d; min-width: 70px; }
+  .map-filter-legend { display: inline-flex; align-items: center; gap: 5px; color: #6c757d; }
+  .legend-grey-dot { width: 11px; height: 11px; border-radius: 50%; background: #9e9e9e;
+                     border: 1px solid #7a7a7a; display: inline-block; }
 </style>
 {% endblock %}
 
@@ -304,6 +316,22 @@
         </div>
 
         <div class="right-panel">
+            <div id="map-filters">
+                <div class="map-filter-group">
+                    <label>{{ _('Дата зйомки') }}:</label>
+                    <input type="date" id="filter-date-start" class="form-control form-control-sm map-filter-date">
+                    <span>–</span>
+                    <input type="date" id="filter-date-end" class="form-control form-control-sm map-filter-date">
+                </div>
+                <div class="map-filter-group">
+                    <label>{{ _('Фото на локації') }}:</label>
+                    <input type="range" id="filter-count-min" class="map-filter-range" min="0" value="0">
+                    <input type="range" id="filter-count-max" class="map-filter-range" min="0">
+                    <span id="filter-count-label" class="map-filter-count-label">0 – 0</span>
+                </div>
+                <button type="button" id="filter-reset" class="btn btn-sm btn-outline-secondary">{{ _('Скинути фільтри') }}</button>
+                <span class="map-filter-legend"><span class="legend-grey-dot"></span>{{ _('без датованих фото') }}</span>
+            </div>
             <div id="map"></div>
         </div>
     </div>
@@ -376,6 +404,18 @@ $(document).ready(function () {
         iconRetinaUrl: CM + 'marker-icon-2x-red.png',
         shadowUrl: shadow, iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
     });
+    const greyIcon = L.icon({          // locations without dated photos
+        iconUrl:       CM + 'marker-icon-grey.png',
+        iconRetinaUrl: CM + 'marker-icon-2x-grey.png',
+        shadowUrl: shadow, iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+    });
+
+    const PHOTO_LABEL = '{{ _("завантажено фото") }}';
+    function tooltipHtml(loc) {
+        return `<strong>${loc.name}</strong><br><small>${PHOTO_LABEL}: ${loc.photo_count || 0}</small>`;
+    }
+    // Icon a location should use when NOT the active selection.
+    function iconForLoc(loc) { return loc.date_start ? defaultIcon : greyIcon; }
 
     function initMap() {
         map = L.map('map').setView([49.8, 23.6], 9);
@@ -390,9 +430,9 @@ $(document).ready(function () {
 
         const markersGroup = L.featureGroup();
         locationsData.forEach(loc => {
-            const marker = L.marker([loc.latitude, loc.longitude], { icon: defaultIcon });
+            const marker = L.marker([loc.latitude, loc.longitude], { icon: iconForLoc(loc) });
             marker.locationId = loc.id;
-            marker.bindTooltip(loc.name, { direction: 'top', offset: [0, -30] });
+            marker.bindTooltip(tooltipHtml(loc), { direction: 'top', offset: [0, -30] });
             marker.on('click', () => selectLocation(loc.id));
             markers[loc.id] = marker;
             markersGroup.addLayer(marker);
@@ -402,9 +442,70 @@ $(document).ready(function () {
     }
     initMap();
 
+    // ─── Map filters (visibility only; never touch the upload location list) ──
+    const MAX_PHOTO_COUNT = {{ max_photo_count|default(0) }};
+    function isoDaysAgo(days) {
+        const d = new Date(); d.setDate(d.getDate() - days);
+        return d.toISOString().slice(0, 10);
+    }
+    function initFilters() {
+        $('#filter-date-end').val(isoDaysAgo(0));
+        $('#filter-date-start').val(isoDaysAgo(365));
+        $('#filter-count-min').attr('max', MAX_PHOTO_COUNT).val(0);
+        $('#filter-count-max').attr('max', MAX_PHOTO_COUNT).val(MAX_PHOTO_COUNT);
+        syncCountLabel();
+    }
+    function syncCountLabel() {
+        let lo = +$('#filter-count-min').val(), hi = +$('#filter-count-max').val();
+        if (lo > hi) { [lo, hi] = [hi, lo]; }   // display normalised order
+        $('#filter-count-label').text(`${lo} – ${hi}`);
+    }
+    function rangeOverlap(aStart, aEnd, bStart, bEnd) {
+        return aStart <= bEnd && aEnd >= bStart;   // ISO 'YYYY-MM-DD' string compare
+    }
+    function applyMapFilters() {
+        const instId   = $('#institution-select').val();
+        const dStart   = $('#filter-date-start').val();
+        const dEnd     = $('#filter-date-end').val();
+        let cMin = +$('#filter-count-min').val(), cMax = +$('#filter-count-max').val();
+        if (cMin > cMax) { [cMin, cMax] = [cMax, cMin]; }
+
+        const visible = [];
+        locationsData.forEach(loc => {
+            const m = markers[loc.id];
+            if (!m) return;
+            const passInst  = !instId || (loc.institution_ids || []).includes(parseInt(instId));
+            const cnt       = loc.photo_count || 0;
+            const passCount = cnt >= cMin && cnt <= cMax;
+            const hasDate   = !!loc.date_start;
+            const passDate  = !hasDate || (!dStart || !dEnd ||
+                              rangeOverlap(loc.date_start, loc.date_end || loc.date_start, dStart, dEnd));
+
+            const show = passInst && passCount && passDate;
+            if (show) {
+                if (!map.hasLayer(m)) map.addLayer(m);
+                if (loc.id !== activeLocationId) m.setIcon(iconForLoc(loc));
+                visible.push(m);
+            } else if (map.hasLayer(m)) {
+                map.removeLayer(m);
+            }
+        });
+        if (visible.length) {
+            map.fitBounds(L.featureGroup(visible).getBounds().pad(0.1), { animate: false });
+        }
+    }
+    initFilters();
+    applyMapFilters();
+    $('#filter-date-start, #filter-date-end').on('change', applyMapFilters);
+    $('#filter-count-min, #filter-count-max').on('input', () => { syncCountLabel(); applyMapFilters(); });
+    $('#filter-reset').on('click', () => { initFilters(); applyMapFilters(); });
+
     function selectLocation(locationId) { $('#location-select').val(locationId).trigger('change'); }
     function updateMapMarker(locationId) {
-        if (activeLocationId && markers[activeLocationId]) markers[activeLocationId].setIcon(defaultIcon);
+        if (activeLocationId && markers[activeLocationId]) {
+            const prev = locationsData.find(l => String(l.id) === String(activeLocationId));
+            markers[activeLocationId].setIcon(prev ? iconForLoc(prev) : defaultIcon);
+        }
         activeLocationId = locationId;
         if (locationId && markers[locationId]) {
             markers[locationId].setIcon(selectedIcon);
@@ -422,24 +523,16 @@ $(document).ready(function () {
     $('#institution-select').on('change', function () {
         const instId = $(this).val();
         const currentLocId = $('#location-select').val();
+        // Rebuild the upload location list by institution (date/count filters are
+        // map-only and intentionally do NOT narrow this list).
         $('#location-select').empty().append(new Option('{{ _("-- Будь ласка, виберіть --") }}', '-1'));
-        const visibleMarkers = [];
         locationsData.forEach(loc => {
             const belongs = !instId || (loc.institution_ids && loc.institution_ids.includes(parseInt(instId)));
-            if (belongs) {
-                $('#location-select').append(new Option(loc.name, loc.id));
-                if (markers[loc.id]) {
-                    if (!map.hasLayer(markers[loc.id])) map.addLayer(markers[loc.id]);
-                    visibleMarkers.push(markers[loc.id]);
-                }
-            } else if (markers[loc.id] && map.hasLayer(markers[loc.id])) {
-                map.removeLayer(markers[loc.id]);
-            }
+            if (belongs) $('#location-select').append(new Option(loc.name, loc.id));
         });
         $('#location-select').append(new Option('{{ _("*** СТВОРИТИ НОВЕ МІСЦЕ ***") }}', '0'));
-        if (visibleMarkers.length > 0) {
-            map.fitBounds(L.featureGroup(visibleMarkers).getBounds().pad(0.1), { animate: false });
-        }
+        // Marker visibility/zoom is handled centrally (institution + date + count).
+        applyMapFilters();
         if ($('#location-select').find(`option[value="${currentLocId}"]`).length > 0) {
             $('#location-select').val(currentLocId).trigger('change.select2');
         } else {
