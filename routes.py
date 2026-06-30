@@ -130,6 +130,21 @@ def admin_panel(lang_code):
     )
 
 
+@camera_traps_bp.route('/admin/ai/pause-status', methods=['GET'])
+@login_required
+@role_required('admin')
+def admin_ai_pause_status(lang_code):
+    """Live AI-pause state for the admin indicator (polled ~every 30 s).
+    Lightweight single-row read; always 200 with a JSON body so the client JS
+    can render 'unknown' on any backend hiccup."""
+    from .ai_runner import get_ai_pause_status
+    try:
+        return jsonify(get_ai_pause_status()), 200
+    except Exception as e:
+        current_app.logger.warning(f"AI pause-status: {e}")
+        return jsonify({'paused': False, 'reason': None, 'seconds_left': None}), 200
+
+
 @camera_traps_bp.route('/observation/<int:obs_id>/flag', methods=['POST'])
 @login_required
 @role_required('ct_verifier')

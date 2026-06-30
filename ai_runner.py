@@ -201,6 +201,35 @@ def is_ai_paused() -> bool:
         return False
 
 
+def get_ai_pause_status() -> dict:
+    """Detail for the admin live indicator: whether classification is paused,
+    why, and how many seconds the lease still has. Safe: returns paused=False on
+    any error (missing table, DB hiccup) so the indicator degrades gracefully.
+
+    Shape: {'paused': bool, 'reason': str|None, 'seconds_left': int|None}."""
+    off = {'paused': False, 'reason': None, 'seconds_left': None}
+    if _ai_control_missing:
+        return off
+    try:
+        engine = get_ct_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT pause_reason,
+                       (pause_until IS NOT NULL AND pause_until > NOW()) AS paused,
+                       EXTRACT(EPOCH FROM (pause_until - NOW()))         AS secs_left
+                  FROM ai_control WHERE id = 1
+            """)).fetchone()
+        if row is None or not row.paused:
+            return off
+        return {
+            'paused': True,
+            'reason': row.pause_reason,
+            'seconds_left': int(row.secs_left) if row.secs_left is not None else None,
+        }
+    except Exception:
+        return off
+
+
 def request_run(user_id: int, n_observations: int) -> AIRunQueue:
     """Create a record in ai_run_queue with status 'pending'.
 

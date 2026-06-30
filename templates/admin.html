@@ -44,6 +44,23 @@
         </p>
         {% endif %}
 
+        {# ── Live pause indicator (polled ~30 s): classification yields while an upload is running ── #}
+        <style>
+          .ai-pause-flag { display:inline-flex; align-items:center; gap:.5rem;
+            margin:.25rem 0 .75rem; padding:.4rem .65rem; border-radius:6px;
+            background:#f1f3f5; font-size:.95rem; }
+          .ai-pause-flag--on { background:#fff3cd; }
+          .ai-pause-flag--on .ai-pause-flag__label { font-weight:600; color:#856404; }
+          .ai-pause-flag__box { width:1.05em; height:1.05em; accent-color:#e0a800; }
+          .ai-pause-flag__detail { font-size:.85rem; }
+        </style>
+        <label class="ai-pause-flag" id="ai-pause-flag"
+               data-url="{{ url_for('camera_traps.admin_ai_pause_status', lang_code=g.lang_code) }}">
+            <input type="checkbox" class="ai-pause-flag__box" disabled aria-readonly="true" />
+            <span class="ai-pause-flag__label">{{ _('Пауза класифікації через завантаження') }}</span>
+            <span class="ai-pause-flag__detail text-muted"></span>
+        </label>
+
         {# ── Overall progress ── #}
         <div class="ai-stats">
             <div class="ai-stat ai-stat--done">
@@ -544,6 +561,42 @@
     });
 
     fetchStatus();  // Initial state when the page loads.
+})();
+
+// ── AI pause indicator: poll the lease state every 30 s ────────────────────
+(function() {
+    const el = document.getElementById('ai-pause-flag');
+    if (!el) return;
+    const url = el.dataset.url;
+    const box = el.querySelector('.ai-pause-flag__box');
+    const detail = el.querySelector('.ai-pause-flag__detail');
+    const T = {
+        on:  '{{ _("активна — воркер призупинено") }}',
+        off: '{{ _("вимкнена — класифікація працює") }}',
+        err: '{{ _("стан невідомий") }}'
+    };
+    function fmtLeft(sec) {
+        if (sec === null || sec === undefined || sec < 0) return '';
+        const m = Math.floor(sec / 60), s = sec % 60;
+        return ' · {{ _("ще") }} ' + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    async function refresh() {
+        try {
+            const r = await fetch(url, { credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const d = await r.json();
+            const paused = !!d.paused;
+            box.checked = paused;
+            el.classList.toggle('ai-pause-flag--on', paused);
+            detail.textContent = paused ? (T.on + fmtLeft(d.seconds_left)) : T.off;
+        } catch (e) {
+            box.checked = false;
+            el.classList.remove('ai-pause-flag--on');
+            detail.textContent = T.err;
+        }
+    }
+    refresh();
+    setInterval(refresh, 30000);
 })();
 </script>
 {% endblock %}
