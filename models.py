@@ -703,6 +703,37 @@ class AIRunQueue(CTBase):
         return f'<AIRunQueue {self.id} {self.status} n={self.n_observations}>'
 
 
+class AIControl(CTBase):
+    """Single-row control table for the AI worker (global runtime state).
+
+    Currently holds a *pause lease*: while a camera-trap upload is in progress,
+    Flask sets ``pause_until`` to a near-future timestamp and keeps refreshing
+    it (heartbeat). The worker (cron) skips its run while ``pause_until`` is in
+    the future, so heavy classification does not compete with the upload for
+    DB / CPU / RAM.
+
+    A lease, not a plain boolean, on purpose: if the uploader process dies
+    without clearing the flag, the lease simply expires and the worker resumes
+    by itself — no stuck-forever pause. See app/camera_traps/ai_runner.py.
+
+    Exactly one row, id=1 (enforced by the CHECK constraint). Mirrored in the
+    worker's services/biomon_ai/db.py — keep both in sync on schema changes.
+    """
+    __tablename__ = 'ai_control'
+
+    id           = Column(Integer, primary_key=True, autoincrement=False)
+    pause_until  = Column(DateTime, nullable=True)                 # NULL = not paused
+    pause_reason = Column(String(64), nullable=True)               # e.g. 'upload', 'grouping'
+    updated_at   = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint('id = 1', name='ck_ai_control_singleton'),
+    )
+
+    def __repr__(self):
+        return f'<AIControl pause_until={self.pause_until} reason={self.pause_reason}>'
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # CLEANUP LOG: audit log for dry-run/execute orphan and failed-batch cleanup
 # ════════════════════════════════════════════════════════════════════════════

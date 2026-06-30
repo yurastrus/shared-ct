@@ -14,7 +14,8 @@ Exports:
 from typing import Optional
 
 from flask import current_app
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import ProgrammingError
 
 from .database import get_ct_engine, get_ct_session
 from .models import AIModel, AIModelLevel, AIRunQueue
@@ -67,6 +68,137 @@ def _reset_cache():
     global _tables_checked, _tables_exist
     _tables_checked = False
     _tables_exist = False
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Pause lease for the AI worker during uploads
+# ─────────────────────────────────────────────────────────────────────
+# Classification is a heavy cron job (loads a ~2 GB ViT, ~30 s, sustained CPU).
+# When a large camera-trap upload runs it competed for DB/CPU/RAM and made
+# uploads slow and error out. So Flask sets a short "pause lease" in
+# ai_control.pause_until while an upload is in progress and keeps refreshing it;
+# the worker skips its run while the lease is in the future. If the uploader
+# process dies, the lease expires on its own and the worker resumes — no manual
+# intervention and no stuck-forever pause.
+
+AI_PAUSE_UPLOAD_TTL_MIN = 10    # lease while photos upload (refreshed by activity)
+AI_PAUSE_GROUPING_TTL_MIN = 35  # lease covering background grouping (≥ 30-min stale threshold)
+
+# Process-lifetime flag: once we learn ai_control is absent (AI schema not yet
+# applied on this server), stop hammering the DB / log on every uploaded photo.
+_ai_control_missing: bool = False
+
+
+def _pause_enabled() -> bool:
+    """Pausing is a no-op unless the AI runner is configured (is_ai_available,
+    cached) AND the ai_control table exists. The missing-table flag avoids
+    retrying a failing UPDATE on every uploaded photo (e.g. on a dev machine or
+    in the window between code deploy and running scripts.init_ai_tables)."""
+    if _ai_control_missing:
+        return False
+    return is_ai_available()
+
+
+def pause_ai_classification(ttl_minutes: int = AI_PAUSE_UPLOAD_TTL_MIN,
+                            reason: str = 'upload') -> None:
+    """Set/extend the pause lease to NOW()+ttl. Idempotent; creates the singleton
+    row if missing. NEVER raises into the caller — a failure here must not break
+    an upload (the lease exists to *help* uploads, not add a failure mode)."""
+    if not _pause_enabled():
+        return
+    global _ai_control_missing
+    try:
+        engine = get_ct_engine()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_control (id, pause_until, pause_reason, updated_at)
+                VALUES (1, NOW() + (INTERVAL '1 minute' * :ttl), :reason, NOW())
+                ON CONFLICT (id) DO UPDATE
+                   SET pause_until  = EXCLUDED.pause_until,
+                       pause_reason = EXCLUDED.pause_reason,
+                       updated_at   = NOW()
+            """), {'ttl': ttl_minutes, 'reason': reason})
+    except ProgrammingError:
+        _ai_control_missing = True
+        current_app.logger.warning(
+            "AI pause: ai_control table is missing — pausing disabled "
+            "(run `python -m scripts.init_ai_tables` to enable)."
+        )
+    except Exception as e:
+        current_app.logger.warning(f"AI pause: could not set lease: {e}")
+
+
+def heartbeat_ai_pause(ttl_minutes: int = AI_PAUSE_UPLOAD_TTL_MIN) -> None:
+    """Refresh the lease ONLY if it is past its half-life. Called on every
+    uploaded photo, so it must be near-free: the WHERE is a single-row PK lookup
+    and an actual write happens at most ~once per (ttl/2) minutes. The lease row
+    is already armed by create_batch → pause_ai_classification(), so a plain
+    UPDATE (no upsert) is enough here."""
+    if not _pause_enabled():
+        return
+    try:
+        engine = get_ct_engine()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE ai_control
+                   SET pause_until = NOW() + (INTERVAL '1 minute' * :ttl),
+                       updated_at  = NOW()
+                 WHERE id = 1
+                   AND (pause_until IS NULL
+                        OR pause_until < NOW() + (INTERVAL '1 minute' * :half))
+            """), {'ttl': ttl_minutes, 'half': ttl_minutes / 2.0})
+    except Exception:
+        # Best-effort heartbeat: create_batch already armed the lease, and the
+        # TTL is the real backstop. Swallow to never disturb the upload.
+        pass
+
+
+def resume_ai_classification(force: bool = False) -> None:
+    """Clear the pause lease so the worker can resume immediately.
+
+    By default this is *conditional*: it clears only if no other upload batch is
+    still active (uploading / ready_to_group / grouping). This prevents one
+    finished upload from un-pausing classification while a concurrent upload is
+    still running. The lease TTL remains the ultimate backstop for crashed or
+    abandoned uploads — it expires on its own even if this is never called."""
+    if not _pause_enabled():
+        return
+    try:
+        engine = get_ct_engine()
+        with engine.begin() as conn:
+            if force:
+                conn.execute(text(
+                    "UPDATE ai_control SET pause_until=NULL, pause_reason=NULL, "
+                    "updated_at=NOW() WHERE id=1"
+                ))
+            else:
+                conn.execute(text("""
+                    UPDATE ai_control
+                       SET pause_until=NULL, pause_reason=NULL, updated_at=NOW()
+                     WHERE id=1
+                       AND NOT EXISTS (
+                           SELECT 1 FROM upload_batches
+                           WHERE status IN ('uploading', 'ready_to_group', 'grouping')
+                       )
+                """))
+    except Exception as e:
+        current_app.logger.warning(f"AI pause: could not clear lease: {e}")
+
+
+def is_ai_paused() -> bool:
+    """True if classification is currently paused (lease in the future). For
+    admin/status display. Safe: returns False on any error."""
+    if _ai_control_missing:
+        return False
+    try:
+        engine = get_ct_engine()
+        with engine.connect() as conn:
+            return bool(conn.execute(text(
+                "SELECT pause_until IS NOT NULL AND pause_until > NOW() "
+                "FROM ai_control WHERE id = 1"
+            )).scalar())
+    except Exception:
+        return False
 
 
 def request_run(user_id: int, n_observations: int) -> AIRunQueue:

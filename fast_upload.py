@@ -330,28 +330,45 @@ def _set_batch_status(batch_id: str, status: str,
 def _run_grouping_in_thread(app, batch_id: str) -> None:
     """Background thread body. Runs outside the HTTP context."""
     with app.app_context():
+        # Keep AI classification paused for the duration of grouping too —
+        # grouping is itself a heavy single-pass SQL over up to 100k rows. Use a
+        # longer lease (≥ the 30-min stale-grouping threshold) so it cannot
+        # expire mid-grouping; cleared in `finally` below for an immediate resume.
+        from .ai_runner import (
+            pause_ai_classification, resume_ai_classification,
+            AI_PAUSE_GROUPING_TTL_MIN,
+        )
+        pause_ai_classification(ttl_minutes=AI_PAUSE_GROUPING_TTL_MIN,
+                                reason='grouping')
         try:
-            _set_batch_status(batch_id, 'grouping')
-            group_batch_into_series_sql(batch_id)
-            _set_batch_status(batch_id, 'completed')
-        except (OperationalError, DBAPIError) as e:
-            # Transient DB errors — simple single retry.
-            current_app.logger.warning(
-                f"[fast-upload] Batch {batch_id} hit DB error, retry once: {e}"
-            )
             try:
+                _set_batch_status(batch_id, 'grouping')
                 group_batch_into_series_sql(batch_id)
                 _set_batch_status(batch_id, 'completed')
-            except Exception as e2:
-                current_app.logger.exception(
-                    f"[fast-upload] Batch {batch_id} failed after retry"
+            except (OperationalError, DBAPIError) as e:
+                # Transient DB errors — simple single retry.
+                current_app.logger.warning(
+                    f"[fast-upload] Batch {batch_id} hit DB error, retry once: {e}"
                 )
-                _set_batch_status(batch_id, 'failed', str(e2))
-        except Exception as e:
-            current_app.logger.exception(
-                f"[fast-upload] Batch {batch_id} failed during grouping"
-            )
-            _set_batch_status(batch_id, 'failed', str(e))
+                try:
+                    group_batch_into_series_sql(batch_id)
+                    _set_batch_status(batch_id, 'completed')
+                except Exception as e2:
+                    current_app.logger.exception(
+                        f"[fast-upload] Batch {batch_id} failed after retry"
+                    )
+                    _set_batch_status(batch_id, 'failed', str(e2))
+            except Exception as e:
+                current_app.logger.exception(
+                    f"[fast-upload] Batch {batch_id} failed during grouping"
+                )
+                _set_batch_status(batch_id, 'failed', str(e))
+        finally:
+            # Resume classification. Conditional: clears only if no other upload
+            # is still active (see resume_ai_classification). Runs even if
+            # grouping raised — but if this thread is hard-killed, the lease TTL
+            # is the backstop and the worker resumes within ≤ TTL minutes.
+            resume_ai_classification()
 
 
 def start_async_grouping(batch_id: str) -> None:

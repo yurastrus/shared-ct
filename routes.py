@@ -1710,9 +1710,15 @@ def create_batch(lang_code):
             
         from .utils import create_upload_batch
         batch_id = create_upload_batch(int(location_id), current_user.id, total_files)
-        
+
+        # Pause AI classification while this upload runs (lease-based; refreshed
+        # by process-single heartbeats and cleared after grouping). Best-effort —
+        # never blocks the upload. See ai_runner.pause_ai_classification.
+        from .ai_runner import pause_ai_classification
+        pause_ai_classification()
+
         return jsonify({
-            'success': True, 
+            'success': True,
             'batch_id': batch_id,
             'message': _('Batch створено успішно')
         }), 201
@@ -1740,15 +1746,20 @@ def process_single_upload(lang_code):
             
         from .utils import process_single_photo
         photo_id = process_single_photo(
-            uploaded_file, 
-            int(location_id), 
-            current_user.id, 
+            uploaded_file,
+            int(location_id),
+            current_user.id,
             batch_id,
             save_original=save_original
         )
-        
+
+        # Keep the AI-pause lease alive while the upload is in progress. Throttled
+        # (writes at most ~once per half-TTL) so it is near-free per photo.
+        from .ai_runner import heartbeat_ai_pause
+        heartbeat_ai_pause()
+
         return jsonify({
-            'success': True, 
+            'success': True,
             'photo_id': photo_id,
             'message': _('Файл успішно завантажено')
         }), 200
