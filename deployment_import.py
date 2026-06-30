@@ -226,10 +226,22 @@ def _round5(x):
 
 
 def build_location_index(session):
-    """{(round5(lat), round5(lon)): location_id}. Duplicate coordinates -> first entry + flag."""
+    """Two indexes over existing locations:
+      • coord_index: {(round5(lat), round5(lon)): location_id} — first entry wins;
+        any coordinate seen more than once is added to `ambiguous`.
+      • name_index:  {location.name: location_id} — the per-campaign identity.
+        Location names embed the campaign (e.g. '2025_Summer_<park>_<code>'), so
+        the same physical point recurs across seasons under DISTINCT names; the
+        name is therefore the reliable key for "is this deployment's own location
+        already present", whereas coordinates are shared across campaigns.
+    """
     index = {}
     ambiguous = set()
-    for loc in session.query(Location.id, Location.latitude, Location.longitude).all():
+    name_index = {}
+    for loc in session.query(Location.id, Location.name,
+                             Location.latitude, Location.longitude).all():
+        if loc.name is not None:
+            name_index[loc.name] = loc.id
         try:
             key = (_round5(loc.latitude), _round5(loc.longitude))
         except (TypeError, ValueError):
@@ -238,7 +250,7 @@ def build_location_index(session):
             ambiguous.add(key)
         else:
             index[key] = loc.id
-    return index, ambiguous
+    return index, ambiguous, name_index
 
 
 def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
@@ -259,7 +271,7 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
     park_institution_map = park_institution_map or {}
     sheets = sheets or DATA_SHEETS
     xl = pd.ExcelFile(xlsx_path)
-    loc_index, ambiguous = build_location_index(session)
+    loc_index, ambiguous, name_index = build_location_index(session)
 
     report = {
         'xlsx': xlsx_path,
@@ -330,46 +342,63 @@ def import_deployments(session, xlsx_path, sheets=None, dry_run=False,
                     ps['skipped_bad_coords'] += 1
                     continue
 
-            if not coords_finite:
+            # Resolve the deployment's location. The identity is the NAME
+            # (deployment_id): location names embed the campaign, so a camera
+            # point recurs across seasons under distinct names. Matching by name
+            # first prevents binding this deployment to ANOTHER campaign's
+            # location that merely shares these coordinates.
+            dep_name = coerce_str(row.get(name_col), 200) if name_col else None
+            location_id = name_index.get(dep_name) if dep_name else None
+
+            if location_id is not None:
+                pass  # the deployment's own (per-campaign) location already exists
+            elif not coords_finite:
                 # Deployment without GPS — import without a location; appears as qc_no_gps_coordinates in R analysis.
                 location_id = None
                 report['no_coords_deployments'] = report.get('no_coords_deployments', 0) + 1
                 ps['no_coords'] = ps.get('no_coords', 0) + 1
+            elif create_missing_locations:
+                # No location named after this deployment yet → create one
+                # (name = deployment_id) + institution link. A different
+                # campaign's location may sit at these exact coordinates; that is
+                # expected — one location per camera-season — not a conflict.
+                if not dep_name:
+                    report['skipped_no_name'] += 1
+                    ps['skipped_no_name'] += 1
+                    continue
+                inst_id = None
+                if park_col is not None:
+                    park = normalize_header(row.get(park_col)) if not _is_na(row.get(park_col)) else None
+                    inst_id = park_institution_map.get(park) if park else None
+                    if park and inst_id is None:
+                        report['unmapped_parks'].add(str(row.get(park_col)).strip())
+                new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
+                session.add(new_loc)
+                session.flush()  # get id
+                location_id = new_loc.id
+                name_index[dep_name] = location_id
+                loc_index.setdefault(key, location_id)  # first point owner keeps the coord slot
+                report['locations_created'] += 1
+                ps['locations_created'] += 1
+                if inst_id is not None:
+                    session.execute(location_institutions.insert().values(
+                        location_id=location_id, institution_id=inst_id))
+                else:
+                    report['locations_without_institution'] += 1
             else:
+                # Default mode (no creation): bind to an existing physical point
+                # by coordinates — legacy behaviour many historical deployments
+                # rely on (one shared location across seasons). Coordinates seen
+                # on more than one location are ambiguous and skipped.
                 if key in ambiguous:
                     report['ambiguous_location'] += 1
                     ps['ambiguous_location'] += 1
                     continue
                 location_id = loc_index.get(key)
                 if location_id is None:
-                    if not create_missing_locations:
-                        report['skipped_no_location'] += 1
-                        ps['skipped_no_location'] += 1
-                        continue
-                    # Create a new location (name = deployment_id) + institution link.
-                    dep_name = coerce_str(row.get(name_col), 200) if name_col else None
-                    if not dep_name:
-                        report['skipped_no_name'] += 1
-                        ps['skipped_no_name'] += 1
-                        continue
-                    inst_id = None
-                    if park_col is not None:
-                        park = normalize_header(row.get(park_col)) if not _is_na(row.get(park_col)) else None
-                        inst_id = park_institution_map.get(park) if park else None
-                        if park and inst_id is None:
-                            report['unmapped_parks'].add(str(row.get(park_col)).strip())
-                    new_loc = Location(name=dep_name, latitude=_round5(lat), longitude=_round5(lon))
-                    session.add(new_loc)
-                    session.flush()  # get id
-                    location_id = new_loc.id
-                    loc_index[key] = location_id
-                    report['locations_created'] += 1
-                    ps['locations_created'] += 1
-                    if inst_id is not None:
-                        session.execute(location_institutions.insert().values(
-                            location_id=location_id, institution_id=inst_id))
-                    else:
-                        report['locations_without_institution'] += 1
+                    report['skipped_no_location'] += 1
+                    ps['skipped_no_location'] += 1
+                    continue
 
             # Collect field values.
             values = {'location_id': location_id}
