@@ -42,6 +42,17 @@
         </select>
         {% endif %}
 
+        {# ── Sort order — available to every user, in both normal and review mode ── #}
+        <label for="sort-select" class="scope-filter-label">{{ _('Сортування:') }}</label>
+        <select id="sort-select" class="scope-filter-select form-control form-control-sm">
+            <option value="priority_random">{{ _('Пріоритет визначених (за замовчуванням)') }}</option>
+            <option value="random">{{ _('Випадково') }}</option>
+            <option value="date_desc">{{ _('Дата (спочатку нові)') }}</option>
+            <option value="date_asc">{{ _('Дата (спочатку старі)') }}</option>
+            <option value="photo_count_desc">{{ _('К-ть фото (спочатку більше)') }}</option>
+            <option value="photo_count_asc">{{ _('К-ть фото (спочатку менше)') }}</option>
+        </select>
+
         <div class="scope-bar-right">
             <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 0.95rem;"></span>
 
@@ -83,15 +94,6 @@
                     <label for="review-species-filter">{{ _('Вид:') }}</label>
                     <select id="review-species-filter" class="form-control form-control-sm">
                         <option value="">{{ _('-- Всі види --') }}</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="review-sort-filter">{{ _('Сортування:') }}</label>
-                    <select id="review-sort-filter" class="form-control form-control-sm">
-                        <option value="random">{{ _('Випадково') }}</option>
-                        <option value="date_desc">{{ _('Дата (спочатку нові)') }}</option>
-                        <option value="date_asc">{{ _('Дата (спочатку старі)') }}</option>
-                        <option value="photo_count_desc">{{ _('К-ть фото (спочатку більше)') }}</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -199,7 +201,8 @@
                         <!-- Animal categories in correct order -->
                         {% set category_translations = {
                             'mammals': _('Ссавці'),
-                            'birds': _('Птахи'), 
+                            'domestic': _('Свійські тварини'),
+                            'birds': _('Птахи'),
                             'other': _('Інші')
                         } %}
 
@@ -215,17 +218,6 @@
                                     </div>
                                 {% endfor %}
                             {% endif %}
-                        {% endfor %}
-
-                        <!-- Other categories at the end -->
-                        <h3 class="species-group-title">{{ _('Інші категорії') }}</h3>
-                        {% for value, label in other_special_choices %}
-                            <div class="species-option">
-                               <label>
-                                   <input type="radio" name="{{ form.species.name }}" value="{{ value }}">
-                                   {{ label }}
-                               </label>
-                            </div>
                         {% endfor %}
                     </div>
                 </div>
@@ -322,7 +314,8 @@ $(document).ready(function() {
     let currentObservation = null;
     let currentPhotoIndex = 0;
     let reviewMode = false;
-    let reviewFiltersData = { userId: '', speciesId: '', sortBy: 'random' };
+    let reviewFiltersData = { userId: '', speciesId: '' };
+    let sortBy = 'priority_random';
 
     const translations = {
         location: "{{ _('Локація') }}",
@@ -440,7 +433,12 @@ $(document).ready(function() {
     $('#apply-review-filters').on('click', function() {
         reviewFiltersData.userId = $('#review-user-filter').val();
         reviewFiltersData.speciesId = $('#review-species-filter').val();
-        reviewFiltersData.sortBy = $('#review-sort-filter').val();
+        loadNextObservation();
+    });
+
+    // Sort order — available to every user, in both normal and review mode.
+    $('#sort-select').on('change', function() {
+        sortBy = $(this).val();
         loadNextObservation();
     });
 
@@ -628,9 +626,11 @@ $(document).ready(function() {
             params.set('ai_species_id', aiSpeciesId);
         }
 
+        // Sort order — sent in both normal and review mode.
+        params.set('sort_by', sortBy);
+
         if (reviewMode) {
             params.set('review', 'true');
-            params.set('sort_by', reviewFiltersData.sortBy);
             if (reviewFiltersData.userId) params.append('review_user_id', reviewFiltersData.userId);
             if (reviewFiltersData.speciesId) params.append('review_species_id', reviewFiltersData.speciesId);
         }

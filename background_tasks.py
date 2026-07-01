@@ -251,7 +251,19 @@ def get_batch_statistics():
         close_ct_session()
 
 def get_cleanup_statistics():
-    """Return file deletion statistics without actually deleting anything."""
+    """Return file deletion statistics without actually deleting anything.
+
+    The eligibility query MUST mirror cleanup_old_photos() exactly, and sizes
+    are measured from the actual files on disk. Previously this used
+    `Observation.series_end_time < threshold_date` (when the series was
+    captured) instead of cleanup_old_photos()'s real criterion — the most
+    recent *identification* being old enough — and a flat 2 MB/photo guess.
+    Since identification can lag well behind capture, that counted many
+    series as "ready" that the real job would not touch yet, and the flat
+    per-photo guess didn't reflect actual file sizes — together inflating
+    the "estimated size to be freed" figure roughly 10x versus what
+    cleanup_old_photos() actually freed.
+    """
     ct_session = get_ct_session()
 
     try:
@@ -261,31 +273,51 @@ def get_cleanup_statistics():
 
         threshold_date = datetime.utcnow() - timedelta(days=cleanup_days)
 
-        # Find observations eligible for archival (no DB changes).
-        old_observations = ct_session.query(Observation).filter(
+        # Same join + HAVING as cleanup_old_photos(): eligibility is based on
+        # the most recent identification for the series, not its capture time.
+        old_observations = ct_session.query(Observation).join(
+            Photo, Observation.id == Photo.observation_id
+        ).join(
+            Identification, Photo.id == Identification.photo_id
+        ).options(
+            selectinload(Observation.photos)
+        ).filter(
             Observation.status == 'completed',
-            Observation.series_end_time < threshold_date,
             ~Observation.photos.any(
                 Photo.identifications.any(
                     Identification.species_id.in_([-2])
                 )
             )
+        ).group_by(
+            Observation.id
+        ).having(
+            func.max(Identification.created_at) < threshold_date
         ).all()
 
+        raw_dir = os.path.join(upload_path, 'pending_photos', 'raw') if upload_path else None
+        thumb_dir = os.path.join(upload_path, 'pending_photos', 'thumbnails') if upload_path else None
+
         total_photos = 0
-        estimated_size = 0
+        estimated_size_bytes = 0
 
         for observation in old_observations:
             for photo in observation.photos:
                 if not photo.is_favorite and photo.status == 'completed':
                     total_photos += 1
-                    # Rough size estimate (2 MB per photo).
-                    estimated_size += 2
+                    # cleanup_old_photos() deletes both the raw file and its
+                    # thumbnail — measure both from disk instead of guessing.
+                    if raw_dir and thumb_dir:
+                        for directory in (raw_dir, thumb_dir):
+                            path = os.path.join(directory, photo.system_filename)
+                            try:
+                                estimated_size_bytes += os.path.getsize(path)
+                            except OSError:
+                                pass  # file already gone — contributes 0
 
         return {
             'observations_count': len(old_observations),
             'photos_count': total_photos,
-            'estimated_size_mb': estimated_size
+            'estimated_size_mb': round(estimated_size_bytes / (1024 * 1024), 1)
         }
 
     except Exception as e:

@@ -1370,6 +1370,63 @@ def api_behavior_species(lang_code):
 #
 
 # Cache for species ranking
+# Domestic animals are stored as ordinary species rows (real species like
+# Canis familiaris/Felis catus, or negative-id placeholders like cow/sheep/
+# goat/horse) with no dedicated DB category, so list their IDs explicitly.
+DOMESTIC_SPECIES_IDS = {8, 39, -19, -11, -10, -7}
+
+
+def build_identify_species_groups(all_options, lang_code, species_ranking):
+    """Group active Species rows for the /identify species picker.
+
+    Routes by taxonomic category, not by ID sign, so negative-id placeholders
+    (e.g. "Сова", "Куницеві") land in their real category (birds/mammals)
+    instead of an undifferentiated "special options" bucket. Domestic animals
+    get their own group between mammals and birds. Every group is sorted by
+    identification frequency (species_ranking), most-used first.
+
+    Returns (grouped_species, empty_choices).
+    """
+    # 'domestic' sits between 'mammals' and 'birds' so its group renders
+    # between them in the template, which iterates this dict in order.
+    grouped_species = {'mammals': [], 'domestic': [], 'birds': [], 'other': []}
+    empty_choices = []
+
+    for s in all_options:
+        display_name = s.scientific_name
+        if lang_code == 'uk' and s.common_name_ua:
+            # For special options whose scientific name can be 'empty', 'vehicle', etc.
+            # we don't want to show it in brackets if a Ukrainian name is available.
+            if s.id < 0:
+                display_name = s.common_name_ua
+            else:
+                display_name = f"{s.common_name_ua} ({s.scientific_name})"
+        elif lang_code == 'en' and s.common_name_en:
+            if s.id < 0:
+                display_name = s.common_name_en
+            else:
+                display_name = f"{s.common_name_en} ({s.scientific_name})"
+
+        choice = (s.id, display_name)
+
+        if s.id == -1:  # Special handling for "Empty"
+            empty_choices.append(choice)
+        elif s.id in DOMESTIC_SPECIES_IDS:  # Domestic animals — own group
+            grouped_species['domestic'].append(choice)
+        elif s.category in grouped_species:  # mammals / birds / other
+            grouped_species[s.category].append(choice)
+        else:  # Unknown category — add to 'other'
+            grouped_species['other'].append(choice)
+
+    for category in grouped_species:
+        grouped_species[category].sort(
+            key=lambda x: species_ranking.get(x[0], 0),
+            reverse=True
+        )
+
+    return grouped_species, empty_choices
+
+
 _species_ranking_cache = {
     'data': None,
     'timestamp': None,
@@ -1499,52 +1556,13 @@ def identify(lang_code):
 
         # 1. Fetch all active options from the DB in a single query
         all_options = ct_session.query(Species).filter(Species.is_active==True).all()
-        
-        # 2. Prepare empty lists to be populated dynamically
-        grouped_species = {'mammals': [], 'birds': [], 'other': []}
-        empty_choices = []
-        other_special_choices = []
-        
-        # 3. Assign each option from the DB to the appropriate list
-        for s in all_options:
-            # Build the display name
-            display_name = s.scientific_name
-            if g.lang_code == 'uk' and s.common_name_ua:
-                # For special options whose scientific name can be 'empty', 'vehicle', etc.
-                # we don't want to show it in brackets if a Ukrainian name is available.
-                if s.id < 0:
-                    display_name = s.common_name_ua
-                else:
-                    display_name = f"{s.common_name_ua} ({s.scientific_name})"
-            elif g.lang_code == 'en' and s.common_name_en:
-                if s.id < 0:
-                    display_name = s.common_name_en
-                else:
-                    display_name = f"{s.common_name_en} ({s.scientific_name})"
 
-            choice = (s.id, display_name)
-
-            # Sorting logic
-            if s.id == -1: # Special handling for "Empty"
-                empty_choices.append(choice)
-            elif s.id < 0: # All other special options
-                other_special_choices.append(choice)
-            elif s.category in grouped_species: # Real animal species
-                grouped_species[s.category].append(choice)
-            else: # Unknown category — add to 'other'
-                if 'other' in grouped_species:
-                    grouped_species['other'].append(choice)
-
-        # 4. Sort real species by popularity (as before)
+        # 2. Group them by category (mammals/domestic/birds/other), sorted by
+        # identification frequency within each group.
         species_ranking = get_species_ranking()
-        for category in grouped_species:
-            grouped_species[category].sort(
-                key=lambda x: species_ranking.get(x[0], 0), 
-                reverse=True
-            )
-            
-        # 5. Sort other special options by ID for stable ordering
-        other_special_choices.sort(key=lambda x: x[0], reverse=True)
+        grouped_species, empty_choices = build_identify_species_groups(
+            all_options, g.lang_code, species_ranking
+        )
 
         # --- END OF NEW LOGIC ---
 
@@ -1583,7 +1601,6 @@ def identify(lang_code):
                              form=form,
                              grouped_species=grouped_species,
                              empty_choices=empty_choices,
-                             other_special_choices=other_special_choices,
                              can_review=can_review,
                              institutions=institutions,
                              ecoregions=ecoregions,
@@ -2908,6 +2925,59 @@ def get_location_details(lang_code, location_id):
     finally:
         close_ct_session()
 
+# Sort options for /api/next-observation-for-identification, shared between
+# normal mode and review mode (moderators previously had exclusive access to
+# sorting; now every user can pick the same options in either mode).
+IDENTIFY_SORT_OPTIONS = {
+    'priority_random', 'random', 'date_desc', 'date_asc',
+    'photo_count_desc', 'photo_count_asc',
+}
+
+
+def _identify_votes_subq(status_filter):
+    """Votes-per-series subquery (distinct identifying users), scoped to
+    observations matching status_filter — used by 'priority_random'."""
+    return (
+        select(
+            Photo.observation_id.label('observation_id'),
+            func.count(func.distinct(Identification.user_id)).label('votes'),
+        )
+        .select_from(Identification)
+        .join(Photo, Photo.id == Identification.photo_id)
+        .join(Observation, Observation.id == Photo.observation_id)
+        .where(status_filter)
+        .group_by(Photo.observation_id)
+        .subquery()
+    )
+
+
+def _apply_identify_sort(query, sort_by, status_filter):
+    """Apply one of IDENTIFY_SORT_OPTIONS to `query`.
+
+    'priority_random' (default) ranks series with existing votes first and,
+    among those, series with MORE photos first — so bigger series (holding
+    more photos to review/more disk space) get resolved sooner; within a
+    tier with no votes, order stays random (untouched series aren't biased
+    by size).
+    """
+    if sort_by == 'date_desc':
+        return query.order_by(Observation.series_start_time.desc())
+    elif sort_by == 'date_asc':
+        return query.order_by(Observation.series_start_time.asc())
+    elif sort_by == 'photo_count_desc':
+        return query.order_by(Observation.photo_count.desc())
+    elif sort_by == 'photo_count_asc':
+        return query.order_by(Observation.photo_count.asc())
+    elif sort_by == 'random':
+        return query.order_by(func.random())
+    else:  # 'priority_random'
+        votes_subq = _identify_votes_subq(status_filter)
+        query = query.outerjoin(votes_subq, votes_subq.c.observation_id == Observation.id)
+        votes = func.coalesce(votes_subq.c.votes, 0)
+        photo_count_tiebreak = case((votes > 0, Observation.photo_count))
+        return query.order_by(votes.desc(), photo_count_tiebreak.desc(), func.random())
+
+
 @camera_traps_bp.route('/api/next-observation-for-identification', methods=['GET'])
 @login_required
 def next_observation_for_identification(lang_code):
@@ -2917,7 +2987,9 @@ def next_observation_for_identification(lang_code):
         review_mode = request.args.get('review', 'false').lower() == 'true'
         review_user_id = request.args.get('review_user_id', type=int)
         review_species_id = request.args.get('review_species_id', type=int)
-        sort_by = request.args.get('sort_by', 'random') # Default: 'random'
+        sort_by = request.args.get('sort_by', 'priority_random')
+        if sort_by not in IDENTIFY_SORT_OPTIONS:
+            sort_by = 'priority_random'
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
         ai_species_id = request.args.get('ai_species_id', type=int)  # filter "AI: species"
@@ -3045,15 +3117,9 @@ def next_observation_for_identification(lang_code):
                     )
                 )
 
-            if sort_by == 'date_desc':
-                query = query.order_by(Observation.series_start_time.desc())
-            elif sort_by == 'date_asc':
-                query = query.order_by(Observation.series_start_time.asc())
-            elif sort_by == 'photo_count_desc':
-                query = query.order_by(Observation.photo_count.desc())
-            else: # 'random' or any other value
-                query = query.order_by(func.random())
-
+            query = _apply_identify_sort(
+                query, sort_by, Observation.status.in_(['pending', 'completed'])
+            )
             observation = query.first()
 
         else:
@@ -3073,29 +3139,8 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
-            # Prioritise series closest to consensus: disputed → with votes → recent,
-            # within a group — random. Aggregate scoped to pending series,
-            # because most identifications belong to already-completed ones.
-            pending_votes_subq = (
-                select(
-                    Photo.observation_id.label('observation_id'),
-                    func.count(func.distinct(Identification.user_id)).label('votes'),
-                )
-                .select_from(Identification)
-                .join(Photo, Photo.id == Identification.photo_id)
-                .join(Observation, Observation.id == Photo.observation_id)
-                .where(Observation.status == 'pending')
-                .group_by(Photo.observation_id)
-                .subquery()
-            )
-            query = query.outerjoin(
-                pending_votes_subq,
-                pending_votes_subq.c.observation_id == Observation.id
-            )
-            observation = query.order_by(
-                func.coalesce(pending_votes_subq.c.votes, 0).desc(),
-                func.random(),
-            ).first()
+            query = _apply_identify_sort(query, sort_by, Observation.status == 'pending')
+            observation = query.first()
         
         if not observation:
             if review_mode:
