@@ -98,10 +98,14 @@ def admin_panel(lang_code):
     # exception, get_batch_statistics returns {} — catching both cases).
     storage_stats = {}
     batch_stats = {}
+    disk_usage = {}
     try:
-        from .background_tasks import get_cleanup_statistics, get_batch_statistics
+        from .background_tasks import (
+            get_cleanup_statistics, get_batch_statistics, get_storage_disk_usage,
+        )
         storage_stats = get_cleanup_statistics() or {}
         batch_stats = get_batch_statistics() or {}
+        disk_usage = get_storage_disk_usage() or {}
     except Exception as e:
         current_app.logger.warning(f"CT admin: cannot load storage/batch stats: {e}")
 
@@ -126,6 +130,7 @@ def admin_panel(lang_code):
         ai_stats=ai_stats,
         storage_stats=storage_stats,
         batch_stats=batch_stats,
+        disk_usage=disk_usage,
         flagged_count=flagged_count,
     )
 

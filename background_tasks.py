@@ -250,6 +250,47 @@ def get_batch_statistics():
     finally:
         close_ct_session()
 
+def get_storage_disk_usage():
+    """Return free/total disk space for the filesystem holding the CT uploads.
+
+    A page-side equivalent of `df -h` for the photo storage, so admins don't
+    need to SSH in to check. The path comes from CAMERA_TRAP_CONFIG['UPLOAD_PATH']
+    (read from the host's .env). Returns a dict with byte counts, or {} if the
+    path is not configured / not reachable — the template renders '—' then.
+    """
+    try:
+        config = current_app.config['CAMERA_TRAP_CONFIG']
+        upload_path = config.get('UPLOAD_PATH')
+    except KeyError:
+        current_app.logger.warning("CAMERA_TRAP_CONFIG not defined; cannot report disk usage.")
+        return {}
+
+    if not upload_path:
+        current_app.logger.warning("UPLOAD_PATH not defined; cannot report disk usage.")
+        return {}
+
+    # disk_usage needs an existing path; walk up to the nearest existing parent
+    # so a not-yet-created uploads subfolder still reports the right filesystem.
+    probe = upload_path
+    while probe and not os.path.exists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            break
+        probe = parent
+
+    try:
+        usage = shutil.disk_usage(probe)
+    except OSError as e:
+        current_app.logger.warning(f"Cannot stat disk for '{upload_path}': {e}")
+        return {}
+
+    return {
+        'path': upload_path,
+        'total_bytes': usage.total,
+        'used_bytes': usage.used,
+        'free_bytes': usage.free,
+    }
+
 def get_cleanup_statistics():
     """Return file deletion statistics without actually deleting anything.
 

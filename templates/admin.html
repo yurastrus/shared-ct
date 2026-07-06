@@ -187,6 +187,20 @@
         </p>
 
         <div class="ai-stats">
+            {% set free_bytes = disk_usage.get('free_bytes') if disk_usage else none %}
+            <div class="ai-stat {% if free_bytes is not none and free_bytes < 5368709120 %}ai-stat--pending{% else %}ai-stat--done{% endif %}"
+                 {% if disk_usage and disk_usage.get('total_bytes') %}title="{{ disk_usage.get('path', '') }} — {{ '%.1f'|format(disk_usage.total_bytes / 1073741824) }} {{ _('ГБ') }} {{ _('всього') }}"{% endif %}>
+                <div class="ai-stat__num">
+                    {%- if free_bytes is not none -%}
+                        {%- if free_bytes >= 1073741824 -%}
+                            {{ '%.1f'|format(free_bytes / 1073741824) }} {{ _('ГБ') }}
+                        {%- else -%}
+                            {{ '%.0f'|format(free_bytes / 1048576) }} {{ _('МБ') }}
+                        {%- endif -%}
+                    {%- else -%}—{%- endif -%}
+                </div>
+                <div class="ai-stat__label">{{ _('Доступно місця у сховищі') }}</div>
+            </div>
             <div class="ai-stat ai-stat--pending">
                 <div class="ai-stat__num">{{ '{:,}'.format(storage_stats.get('observations_count', 0)).replace(',', ' ') }}</div>
                 <div class="ai-stat__label">{{ _('Серій готових до архівації') }}</div>
