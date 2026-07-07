@@ -2,7 +2,7 @@
 import os, shutil
 from datetime import datetime, timedelta
 from flask import current_app
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from sqlalchemy.orm import selectinload
 
 from .database import get_ct_session, close_ct_session
@@ -70,7 +70,18 @@ def cleanup_old_photos():
                 Photo.identifications.any(
                     Identification.species_id.in_([-2])
                 )
-            )
+            ),
+            # A series is only truly archivable if it has at least one photo the
+            # job will actually archive: status='completed' AND not a favorite.
+            # A series whose photos are ALL favorites can never reach
+            # status='archived' (favorites are never deleted — see the favorite
+            # guard in cleanup_old_photos), so without this it lingers in the
+            # "ready to archive" admin counter forever while the job keeps
+            # skipping it. Observed with series 1862 (a single completed
+            # favorite photo → counter stuck at 1, 0.0 MB, never clears).
+            Observation.photos.any(
+                and_(Photo.status == 'completed', Photo.is_favorite.is_(False))
+            ),
         ).group_by(
             Observation.id
         ).having(
@@ -328,7 +339,18 @@ def get_cleanup_statistics():
                 Photo.identifications.any(
                     Identification.species_id.in_([-2])
                 )
-            )
+            ),
+            # A series is only truly archivable if it has at least one photo the
+            # job will actually archive: status='completed' AND not a favorite.
+            # A series whose photos are ALL favorites can never reach
+            # status='archived' (favorites are never deleted — see the favorite
+            # guard in cleanup_old_photos), so without this it lingers in the
+            # "ready to archive" admin counter forever while the job keeps
+            # skipping it. Observed with series 1862 (a single completed
+            # favorite photo → counter stuck at 1, 0.0 MB, never clears).
+            Observation.photos.any(
+                and_(Photo.status == 'completed', Photo.is_favorite.is_(False))
+            ),
         ).group_by(
             Observation.id
         ).having(
