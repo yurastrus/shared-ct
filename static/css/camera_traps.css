@@ -2063,6 +2063,14 @@ body.dark-theme .message-container.error {
     .filter-actions           { flex-direction: column; width: 100%; }
     .filter-actions .btn      { width: 100%; }
 
+    /* Stack filter panels full-width. The base .filters-panel sets
+       align-items:flex-end (for the desktop row); left as-is once the panel
+       becomes a column it shoves every group to the right and shrinks it to
+       content. Force stretch, and neutralise the dashboard's row flex-basis. */
+    .filters-panel            { flex-direction: column; align-items: stretch; }
+    .dashboard-wrapper .filter-group:has(input[type="date"]),
+    .dashboard-wrapper .filter-group:has(select) { flex: 0 0 auto; min-width: 0; }
+
     /* Comparison */
     .scope-filters,
     .indices-grid,
