@@ -90,6 +90,12 @@
   @media (max-width: 992px) {
     .upload-layout .right-panel #map { flex: none; height: 360px; }
   }
+  /* Map filter bar: let groups wrap and range sliders go full-width on phones
+     (otherwise the fixed 220px sliders + date inputs overflow the viewport). */
+  @media (max-width: 600px) {
+    .map-filter-group { flex-wrap: wrap; }
+    .map-filter-range { width: 100%; }
+  }
 </style>
 {% endblock %}
 
@@ -385,6 +391,12 @@ $(document).ready(function () {
     const uploadedFilesUrl   = (id) => `/${LANG}/camera-traps/api/batch/${id}/uploaded-files`;
     const GEOSERVER_BASE_URL = '{{ geoserver_url }}';
 
+    // Storage gate — set server-side from free disk space. When false, the upload
+    // button stays disabled with a message (a new upload needs ≥ {{ min_free_mb }} MB free).
+    const UPLOAD_ALLOWED      = {{ 'true' if upload_allowed else 'false' }};
+    const UPLOAD_BTN_TEXT     = {{ _("Завантажити та обробити") | tojson }};
+    const UPLOAD_BLOCKED_TEXT = {{ ((_("Завантаження недоступне") ~ " (" ~ free_mb ~ " " ~ _("МБ місця") ~ ")") if free_mb is not none else _("Завантаження недоступне")) | tojson }};
+
     const PARALLEL_DEFAULT = 4;
     const POLL_INTERVAL_MS = 2000;
     const RESUME_LS_KEY    = 'ct_fast_upload_batch_v1';
@@ -523,6 +535,11 @@ $(document).ready(function () {
     }
 
     function checkReady() {
+        if (!UPLOAD_ALLOWED) {
+            $('#upload-btn').prop('disabled', true)
+                .text(UPLOAD_BLOCKED_TEXT).addClass('upload-btn--blocked');
+            return;
+        }
         const locId = $('#location-id').val();
         const hasLoc   = locId && locId !== '-1' && locId !== '0' && locId !== '';
         const hasFiles = selectedFiles.length > 0;
@@ -858,8 +875,13 @@ $(document).ready(function () {
 
     function resetUploadUi() {
         $('#upload-progress').hide();
+        if (!UPLOAD_ALLOWED) {
+            $('#upload-btn').prop('disabled', true)
+                .text(UPLOAD_BLOCKED_TEXT).addClass('upload-btn--blocked');
+            return;
+        }
         $('#upload-btn').prop('disabled', selectedFiles.length === 0)
-            .text('{{ _("Завантажити та обробити") }}');
+            .text(UPLOAD_BTN_TEXT);
     }
 
     async function runFullUpload(files, locationId, existingBatchId) {
@@ -925,9 +947,9 @@ $(document).ready(function () {
             }, 800);
         } catch (e) {
             console.error('[upload-fast]', e);
-            $('#error-alert').show().text(
-                `{{ _("Помилка:") }} ${e.message || e.statusText || 'unknown'}`
-            );
+            const serverMsg = (e && e.responseJSON && e.responseJSON.error)
+                              || e.message || e.statusText || 'unknown';
+            $('#error-alert').show().text(`{{ _("Помилка:") }} ${serverMsg}`);
             resetUploadUi();
         }
     }
@@ -935,7 +957,14 @@ $(document).ready(function () {
     function startUpload(files, locationId)               { runFullUpload(files, locationId, null); }
     function resumeUpload(files, locationId, batchId)     { runFullUpload(files, locationId, batchId); }
 
+    // On load: if storage is below the minimum, show the button blocked + message.
+    if (!UPLOAD_ALLOWED) {
+        $('#upload-btn').prop('disabled', true)
+            .text(UPLOAD_BLOCKED_TEXT).addClass('upload-btn--blocked');
+    }
+
     $('#upload-btn').on('click', function () {
+        if (!UPLOAD_ALLOWED) return;   // guard — storage below minimum
         const locationId = $('#location-id').val();
         if (!selectedFiles.length) return alert('{{ _("Виберіть файли для завантаження.") }}');
         if (!locationId || locationId === '-1' || locationId === '0') {

@@ -4258,6 +4258,18 @@ msgstr "%(n)s d."
 msgid "Завантажено фото"
 msgstr "Photos uploaded"
 
+#: app/camera_traps/routes.py
+msgid "Недостатньо місця у сховищі — потрібно щонайменше 500 МБ вільного простору."
+msgstr "Not enough storage space — at least 500 MB of free space is required."
+
+#: app/camera_traps/templates/upload_fast.html
+msgid "Завантаження недоступне"
+msgstr "Upload unavailable"
+
+#: app/camera_traps/templates/upload_fast.html
+msgid "МБ місця"
+msgstr "MB free"
+
 #~ msgid ""
 #~ "Тут відображаться фото, які ще не "
 #~ "були автоматично очищені системою, а "

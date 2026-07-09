@@ -1732,6 +1732,14 @@ def upload(lang_code):
     finally:
         close_ct_session()
 
+# Minimum free disk space (on the photo-storage filesystem) required to START a
+# new upload batch. An already-running upload is NOT affected — the check fires
+# only at batch creation, so an in-progress upload finishes even if space then
+# drops below this. Mirrored in the upload_fast page (button gate).
+MIN_UPLOAD_FREE_MB = 500
+MIN_UPLOAD_FREE_BYTES = MIN_UPLOAD_FREE_MB * 1024 * 1024
+
+
 @camera_traps_bp.route('/api/create-batch', methods=['POST'])
 @login_required
 @role_required('manager')
@@ -1741,10 +1749,20 @@ def create_batch(lang_code):
         data = request.json
         location_id = data.get('location_id')
         total_files = data.get('total_files', 0)
-        
+
         if not location_id:
             return jsonify({'error': _('Location ID is required')}), 400
-            
+
+        # Storage guard: refuse to start a NEW upload when free space is below the
+        # minimum (an in-progress upload is unaffected — this only runs here). If
+        # free space can't be determined, allow the upload rather than false-block.
+        from .background_tasks import get_storage_disk_usage
+        _free = (get_storage_disk_usage() or {}).get('free_bytes')
+        if _free is not None and _free < MIN_UPLOAD_FREE_BYTES:
+            return jsonify({
+                'error': _('Недостатньо місця у сховищі — потрібно щонайменше 500 МБ вільного простору.')
+            }), 507
+
         from .utils import create_upload_batch
         batch_id = create_upload_batch(int(location_id), current_user.id, total_files)
 
@@ -1936,6 +1954,14 @@ def upload_fast(lang_code):
                 'date_end': dmax.date().isoformat() if dmax else None,
             })
 
+        # Storage gate for the upload button: if free space is below the minimum,
+        # the page still opens but the button is shown disabled with a message.
+        # (The authoritative check is server-side in create_batch.)
+        from .background_tasks import get_storage_disk_usage
+        _free = (get_storage_disk_usage() or {}).get('free_bytes')
+        upload_allowed = (_free is None) or (_free >= MIN_UPLOAD_FREE_BYTES)
+        free_mb = int(_free // (1024 * 1024)) if _free is not None else None
+
         return render_template(
             'upload_fast.html',
             form=form,
@@ -1943,6 +1969,9 @@ def upload_fast(lang_code):
             max_photo_count=max_photo_count,
             geoserver_url=current_app.config['GEOSERVER_URL'],
             institutions=institutions_list,
+            upload_allowed=upload_allowed,
+            free_mb=free_mb,
+            min_free_mb=MIN_UPLOAD_FREE_MB,
         )
     finally:
         close_ct_session()

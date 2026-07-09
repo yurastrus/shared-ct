@@ -94,6 +94,7 @@
 
         {% if ai_recent %}
         <h3 class="hub-subsection-title">{{ _('Останні запити') }}</h3>
+        <div class="table-scroll">
         <table class="ai-queue-table">
             <thead>
                 <tr>
@@ -135,6 +136,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% endif %}
     </section>
     {% endif %}

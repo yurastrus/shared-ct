@@ -66,6 +66,7 @@
         <!-- Per-user table -->
         <div class="dashboard-section" style="margin-top: 20px;">
             {% if uploaders %}
+            <div class="table-scroll">
             <table class="uploads-table" id="uploads-table">
                 <thead>
                     <tr>
@@ -92,6 +93,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% else %}
             <div class="info-message">{{ _('За цими фільтрами немає даних про завантаження.') }}</div>
             {% endif %}

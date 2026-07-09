@@ -70,7 +70,8 @@
   @media (max-width: 900px){
     .dep-layout { grid-template-columns: 1fr; }
     .dep-map-col { position: static; }
-    #dep-map, .dep-table-wrap { height: auto; }
+    #dep-map { height: 360px; }   /* keep a real height — Leaflet needs it, height:auto → 0px */
+    .dep-table-wrap { height: auto; }
   }
 </style>
 {% endblock %}

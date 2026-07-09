@@ -3804,7 +3804,7 @@ msgstr ""
 #: app/camera_traps/templates/species_dashboard.html:236
 #, python-format
 msgid "95%% Довірчий інтервал"
-msgstr ""
+msgstr "95% Довірчий інтервал"
 
 #: app/camera_traps/templates/species_detailed.html:3
 #: app/camera_traps/templates/species_detailed.html:15
