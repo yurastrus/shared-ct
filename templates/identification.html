@@ -131,6 +131,21 @@
                         </button>
                         
                         <div id="photo-info" class="photo-info"></div>
+
+                        <!-- Автопрокрутка серії (клієнтський плеєр на тумбнейлах) -->
+                        <div id="autoplay-controls" class="autoplay-controls" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; font-size:0.9rem;">
+                            <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; user-select:none;">
+                                <input type="checkbox" id="autoplay-toggle-input" class="form-check-input" style="margin:0;">
+                                🎞 {{ _('Автопрокрутка') }}
+                            </label>
+                            <span style="display:flex; align-items:center; gap:6px;">
+                                {{ _('Швидкість') }}:
+                                <input type="range" id="autoplay-speed" min="1" max="15" step="1" value="5" style="vertical-align:middle;">
+                                <input type="number" id="autoplay-speed-num" min="1" max="15" step="1" value="5" class="form-control form-control-sm" style="width:64px; display:inline-block;">
+                                {{ _('кадр/с') }}
+                            </span>
+                            <span id="autoplay-buffer" class="autoplay-buffer" title="{{ _('Буферизація…') }}" style="min-width:1.2em;"></span>
+                        </div>
                     </div>
 
                     <div class="identification-form-main">
@@ -595,6 +610,127 @@ $(document).ready(function() {
         nextBtn.toggle(currentPhotoIndex < photoCount - 1);
     }
 
+    // ── Автопрокрутка серії (клієнтський «плеєр» на тумбнейлах) ──────────────
+    // Тумблер = play/pause (стан у localStorage). Наприкінці серії — луп.
+    // Пробіл або клік по фото → пауза (тумблер вимикається); далі — стрілками.
+    // Ковзне вікно предзавантаження тримає кадри готовими наперед, щоб на
+    // довгих серіях не гальмувало і кадри «встигали» вантажитись.
+    const AUTOPLAY_AHEAD = 25;      // скільки кадрів тримати готовими попереду
+    const AUTOPLAY_BEHIND = 5;      // скільки лишати позаду, решту — відпускати
+    const AUTOPLAY_FPS_MIN = 1;
+    const AUTOPLAY_FPS_MAX = 15;
+
+    let autoPlay = localStorage.getItem('ct-autoplay') === '1';
+    let autoPlayFps = parseInt(localStorage.getItem('ct-autoplay-fps'), 10);
+    if (!(autoPlayFps >= AUTOPLAY_FPS_MIN && autoPlayFps <= AUTOPLAY_FPS_MAX)) autoPlayFps = 5;
+    let autoPlayRAF = null;
+    let autoPlayLastTick = 0;
+    const prefetchCache = new Map();   // index → Image (декодовані кадри у вікні)
+
+    function isPrefetched(index) {
+        const img = prefetchCache.get(index);
+        return !!(img && img.complete && img.naturalWidth > 0);
+    }
+
+    function ensurePrefetch(centerIndex) {
+        if (!currentObservation || !currentObservation.photos) return;
+        const photos = currentObservation.photos;
+        const n = photos.length;
+        // Підвантажити кадри попереду голови відтворення.
+        for (let k = 0; k <= AUTOPLAY_AHEAD; k++) {
+            const idx = (centerIndex + k) % n;
+            if (!prefetchCache.has(idx)) {
+                const img = new Image();
+                img.src = photos[idx].thumbnail_url;
+                prefetchCache.set(idx, img);
+            }
+        }
+        // Відпустити кадри поза вікном [-BEHIND … +AHEAD], щоб не роздути пам'ять.
+        for (const idx of Array.from(prefetchCache.keys())) {
+            let dist = idx - centerIndex;
+            if (dist < 0) dist += n;
+            if (dist > AUTOPLAY_AHEAD && dist < n - AUTOPLAY_BEHIND) {
+                prefetchCache.delete(idx);
+            }
+        }
+    }
+
+    function resetPrefetch() {
+        stopAutoPlay();
+        prefetchCache.clear();
+        autoPlayLastTick = 0;
+    }
+
+    function autoPlayStep(ts) {
+        if (!autoPlay || !currentObservation || !currentObservation.photos) { autoPlayRAF = null; return; }
+        const n = currentObservation.photos.length;
+        if (n <= 1) { autoPlayRAF = null; return; }  // нема що прокручувати
+
+        const interval = 1000 / autoPlayFps;
+        if (!autoPlayLastTick) autoPlayLastTick = ts;
+
+        if (ts - autoPlayLastTick >= interval) {
+            const nextIndex = (currentPhotoIndex + 1) % n;   // луп у кінці серії
+            if (isPrefetched(nextIndex)) {
+                currentPhotoIndex = nextIndex;
+                displayCurrentPhoto();
+                autoPlayLastTick = ts;
+                $('#autoplay-buffer').text('');
+            } else {
+                // Буфер не встиг — не рухаємось, чекаємо (індикатор ⏳).
+                $('#autoplay-buffer').text('⏳');
+                autoPlayLastTick = ts - interval + 60;  // повторна спроба ~за кадр
+            }
+            ensurePrefetch(currentPhotoIndex);
+        }
+        autoPlayRAF = requestAnimationFrame(autoPlayStep);
+    }
+
+    function startAutoPlay() {
+        if (autoPlayRAF || !currentObservation) return;
+        autoPlayLastTick = 0;
+        ensurePrefetch(currentPhotoIndex);
+        autoPlayRAF = requestAnimationFrame(autoPlayStep);
+    }
+
+    function stopAutoPlay() {
+        if (autoPlayRAF) { cancelAnimationFrame(autoPlayRAF); autoPlayRAF = null; }
+        $('#autoplay-buffer').text('');
+    }
+
+    function setAutoPlay(on) {
+        autoPlay = !!on;
+        localStorage.setItem('ct-autoplay', autoPlay ? '1' : '0');
+        $('#autoplay-toggle-input').prop('checked', autoPlay);
+        if (autoPlay) startAutoPlay(); else stopAutoPlay();
+    }
+
+    function setAutoPlayFps(v) {
+        v = parseInt(v, 10);
+        if (!(v >= AUTOPLAY_FPS_MIN && v <= AUTOPLAY_FPS_MAX)) v = autoPlayFps;
+        v = Math.max(AUTOPLAY_FPS_MIN, Math.min(AUTOPLAY_FPS_MAX, v));
+        autoPlayFps = v;
+        localStorage.setItem('ct-autoplay-fps', String(v));
+        $('#autoplay-speed').val(v);
+        $('#autoplay-speed-num').val(v);
+    }
+
+    // Ініціалізація контролів зі збереженого стану.
+    setAutoPlayFps(autoPlayFps);
+    $('#autoplay-toggle-input').prop('checked', autoPlay);
+
+    $('#autoplay-toggle-input').on('change', function() {
+        setAutoPlay($(this).is(':checked'));
+    });
+    $('#autoplay-speed, #autoplay-speed-num').on('input change', function() {
+        setAutoPlayFps($(this).val());
+    });
+
+    // Пауза: клік по фото вимикає автопрокрутку (далі — стрілками вручну).
+    photoDisplay.on('click', function() {
+        if (autoPlay) setAutoPlay(false);
+    });
+
         // При першому завантаженні (з посилання «Визначити» зі сторінки зафлагованих)
         // start_obs_id використовується один раз, далі обнуляється.
         // Зберігаємо у змінній поза функцією, щоб стан зберігався між викликами.
@@ -647,6 +783,7 @@ $(document).ready(function() {
             .then(data => {
                 currentObservation = data;
                 currentPhotoIndex = 0;
+                resetPrefetch();  // нова серія — скинути кеш предзавантаження
                 observationIdInput.val(data.observation_id);
                 displayCurrentPhoto();
                 
@@ -664,6 +801,9 @@ $(document).ready(function() {
 
                 // 2. Restore checkbox state after form reset.
                 updateReviewModeUI();
+
+                // Якщо тумблер увімкнений — нова серія одразу в автопрокрутці.
+                if (autoPlay) startAutoPlay();
             })
             .catch(error => {
                 wrapper.hide();
@@ -704,11 +844,22 @@ $(document).ready(function() {
         }
     });
     
-    $(document).on('keydown', function(e) { 
-        if (wrapper.is(':visible')) { 
-            if (e.key === "ArrowRight") nextBtn.click(); 
-            if (e.key === "ArrowLeft") prevBtn.click(); 
-        } 
+    $(document).on('keydown', function(e) {
+        if (!wrapper.is(':visible')) return;
+        // Не перехоплювати клавіші, коли фокус у полі вводу (коментар, к-ть тощо).
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+        // Пробіл — пауза автопрокрутки (і не гортати сторінку).
+        if (e.key === " " || e.code === "Space") {
+            if (autoPlay) { e.preventDefault(); setAutoPlay(false); }
+            return;
+        }
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+            if (autoPlay) setAutoPlay(false);  // ручна навігація зупиняє «плеєр»
+            if (e.key === "ArrowRight") nextBtn.click();
+            else prevBtn.click();
+        }
     });
 
     skipBtn.on('click', loadNextObservation);
