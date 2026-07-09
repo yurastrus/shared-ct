@@ -1751,6 +1751,8 @@ def create_batch(lang_code):
         total_files = data.get('total_files', 0)
 
         if not location_id:
+            current_app.logger.warning(
+                f"[ct-upload] create-batch rejected (no location_id) user={current_user.id}")
             return jsonify({'error': _('Location ID is required')}), 400
 
         # Storage guard: refuse to start a NEW upload when free space is below the
@@ -1759,6 +1761,9 @@ def create_batch(lang_code):
         from .background_tasks import get_storage_disk_usage
         _free = (get_storage_disk_usage() or {}).get('free_bytes')
         if _free is not None and _free < MIN_UPLOAD_FREE_BYTES:
+            current_app.logger.warning(
+                f"[ct-upload] create-batch BLOCKED (low storage) user={current_user.id} "
+                f"location_id={location_id} free_mb={_free // (1024 * 1024)} min_mb={MIN_UPLOAD_FREE_MB}")
             return jsonify({
                 'error': _('Недостатньо місця у сховищі — потрібно щонайменше %(min)s МБ вільного простору.',
                            min=MIN_UPLOAD_FREE_MB)
@@ -1766,6 +1771,9 @@ def create_batch(lang_code):
 
         from .utils import create_upload_batch
         batch_id = create_upload_batch(int(location_id), current_user.id, total_files)
+        current_app.logger.info(
+            f"[ct-upload] create-batch OK user={current_user.id} location_id={location_id} "
+            f"total_files={total_files} batch={batch_id}")
 
         # Pause AI classification while this upload runs (lease-based; refreshed
         # by process-single heartbeats and cleared after grouping). Best-effort —
@@ -1780,8 +1788,10 @@ def create_batch(lang_code):
         }), 201
         
     except Exception as e:
-        current_app.logger.error(f"Error creating batch: {e}")
-        return jsonify({'error': _('Помилка створення batch')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] create-batch FAILED user={getattr(current_user, 'id', '?')} "
+            f"location_id={locals().get('location_id')!r} total_files={locals().get('total_files')!r}")
+        return jsonify({'error': _('Помилка створення batch') + f' [{type(e).__name__}]'}), 500
 
 @camera_traps_bp.route('/upload/process-single', methods=['POST'])
 @login_required
@@ -1795,9 +1805,14 @@ def process_single_upload(lang_code):
         save_original = request.form.get('save_original', 'true').lower() == 'true'
         
         if not all([location_id, batch_id, uploaded_file]):
+            current_app.logger.warning(
+                f"[ct-upload] process-single rejected (missing params) user={current_user.id} "
+                f"location_id={location_id!r} batch={batch_id!r} has_file={bool(uploaded_file)}")
             return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
-            
+
         if not uploaded_file.filename:
+            current_app.logger.warning(
+                f"[ct-upload] process-single rejected (empty filename) user={current_user.id} batch={batch_id!r}")
             return jsonify({'error': _('Файл не передано')}), 400
             
         from .utils import process_single_photo
@@ -1821,10 +1836,18 @@ def process_single_upload(lang_code):
         }), 200
         
     except ValueError as e:
+        # Expected/validation errors (e.g. bad filename pattern, duplicate) — the
+        # client auto-retries transient ones, so log at debug to avoid flooding.
+        current_app.logger.debug(
+            f"[ct-upload] process-single ValueError user={getattr(current_user, 'id', '?')} "
+            f"batch={locals().get('batch_id')!r} file={getattr(locals().get('uploaded_file'), 'filename', '?')!r}: {e}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        current_app.logger.error(f"Error processing single file: {e}")
-        return jsonify({'error': _('Помилка обробки файлу')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] process-single FAILED user={getattr(current_user, 'id', '?')} "
+            f"batch={locals().get('batch_id')!r} location_id={locals().get('location_id')!r} "
+            f"file={getattr(locals().get('uploaded_file'), 'filename', '?')!r}")
+        return jsonify({'error': _('Помилка обробки файлу') + f' [{type(e).__name__}]'}), 500
 
 @camera_traps_bp.route('/api/finalize-batch', methods=['POST'])
 @login_required
@@ -1848,10 +1871,15 @@ def finalize_batch(lang_code):
         }), 200
         
     except ValueError as e:
+        current_app.logger.warning(
+            f"[ct-upload] finalize-batch rejected user={getattr(current_user, 'id', '?')} "
+            f"batch={locals().get('batch_id')!r}: {e}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        current_app.logger.error(f"Error finalizing batch: {e}")
-        return jsonify({'error': _('Помилка завершення batch')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] finalize-batch FAILED user={getattr(current_user, 'id', '?')} "
+            f"batch={locals().get('batch_id')!r}")
+        return jsonify({'error': _('Помилка завершення batch') + f' [{type(e).__name__}]'}), 500
 
 @camera_traps_bp.route('/api/batch-status/<batch_id>')
 @login_required
@@ -1863,13 +1891,16 @@ def get_batch_status_api(lang_code, batch_id):
         status = get_batch_status(batch_id)
         
         if not status:
+            current_app.logger.warning(
+                f"[ct-upload] batch-status not found user={getattr(current_user, 'id', '?')} batch={batch_id!r}")
             return jsonify({'error': _('Batch не знайдено')}), 404
-            
+
         return jsonify(status), 200
-        
+
     except Exception as e:
-        current_app.logger.error(f"Error getting batch status: {e}")
-        return jsonify({'error': _('Помилка отримання статусу batch')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] batch-status FAILED user={getattr(current_user, 'id', '?')} batch={batch_id!r}")
+        return jsonify({'error': _('Помилка отримання статусу batch') + f' [{type(e).__name__}]'}), 500
 
 # ═════════════════════════════════════════════════════════════════════════════
 # /upload-fast — parallel path for large photo sets (10k–100k+).
@@ -2018,8 +2049,10 @@ def finalize_batch_async(lang_code):
         }), 202
 
     except Exception as e:
-        current_app.logger.exception(f"Error in finalize_batch_async: {e}")
-        return jsonify({'error': _('Помилка фіналізації batch')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] finalize-async FAILED user={getattr(current_user, 'id', '?')} "
+            f"batch={locals().get('batch_id')!r}")
+        return jsonify({'error': _('Помилка фіналізації batch') + f' [{type(e).__name__}]'}), 500
 
 
 @camera_traps_bp.route('/api/batch/<batch_id>/uploaded-files', methods=['GET'])
@@ -3284,13 +3317,28 @@ def create_location(lang_code):
         institution_id = data.get('institution_id')
 
         if not all([name, lat, lon]):
+            current_app.logger.warning(
+                f"[ct-upload] create-location rejected (missing fields) user={current_user.id} "
+                f"name={name!r} lat={lat!r} lon={lon!r}")
             return jsonify({'success': False, 'message': _('Назва та координати є обов\'язковими.')}), 400
 
+        try:
+            lat_f, lon_f = float(lat), float(lon)
+        except (TypeError, ValueError):
+            current_app.logger.warning(
+                f"[ct-upload] create-location rejected (bad coords) user={current_user.id} "
+                f"name={name!r} lat={lat!r} lon={lon!r}")
+            return jsonify({'success': False,
+                            'message': _('Координати мають бути числами (напр. 49.85 / 23.65).')}), 400
+
         existing = ct_session.query(Location).filter(
-            func.round(Location.latitude, 5) == round(float(lat), 5),
-            func.round(Location.longitude, 5) == round(float(lon), 5)
+            func.round(Location.latitude, 5) == round(lat_f, 5),
+            func.round(Location.longitude, 5) == round(lon_f, 5)
         ).first()
         if existing:
+            current_app.logger.info(
+                f"[ct-upload] create-location duplicate user={current_user.id} "
+                f"lat={lat_f} lon={lon_f} existing_id={existing.id} existing_name={existing.name!r}")
             return jsonify({'success': False, 'message': _('Місце з такими координатами вже існує: ') + existing.name}), 409
 
         new_location = Location(
@@ -3312,11 +3360,18 @@ def create_location(lang_code):
             )
 
         ct_session.commit()
+        current_app.logger.info(
+            f"[ct-upload] create-location OK user={current_user.id} id={new_location.id} "
+            f"name={new_location.name!r} lat={lat_f} lon={lon_f} institution_id={institution_id}")
         return jsonify({'success': True, 'message': _('Нове місце успішно створено!'), 'location': {'id': new_location.id, 'name': new_location.name}}), 201
     except Exception as e:
         ct_session.rollback()
-        current_app.logger.error(f"Error creating location: {e}")
-        return jsonify({'success': False, 'message': _('Помилка створення місця.')}), 500
+        current_app.logger.exception(
+            f"[ct-upload] create-location FAILED user={getattr(current_user, 'id', '?')} "
+            f"name={locals().get('name')!r} lat={locals().get('lat')!r} lon={locals().get('lon')!r} "
+            f"institution_id={locals().get('institution_id')!r}")
+        return jsonify({'success': False,
+                        'message': _('Помилка створення місця.') + f' [{type(e).__name__}]'}), 500
     finally:
         close_ct_session()
 

@@ -401,6 +401,37 @@ $(document).ready(function () {
     const POLL_INTERVAL_MS = 2000;
     const RESUME_LS_KEY    = 'ct_fast_upload_batch_v1';
 
+    // ─── Error reporting (greppable) ─────────────────────────────────────────
+    // Every AJAX failure on this page funnels through describeAjaxError() so the
+    // UI shows an actionable message (HTTP code + server text) instead of a bare
+    // "Помилка", and logClientError() drops one console line tagged
+    // "[upload-fast]" for quick DevTools / bug hunting. Handles jqXHR *and* plain
+    // Error objects, and JSON *and* non-JSON bodies (CSRF/413/proxy/HTML pages).
+    const MSG_UNKNOWN_ERR = {{ _("Невідома помилка") | tojson }};
+    const MSG_NO_CONN     = {{ _("Немає зв'язку з сервером (перевірте мережу)") | tojson }};
+
+    function describeAjaxError(xhr, fallback) {
+        const status = (xhr && typeof xhr.status === 'number') ? xhr.status : null;
+        let msg = '';
+        if (xhr && xhr.responseJSON) {
+            msg = xhr.responseJSON.error || xhr.responseJSON.message || '';
+        }
+        if (!msg && xhr && typeof xhr.responseText === 'string' && xhr.responseText) {
+            // Non-JSON body (CSRF token expired, 413 too large, nginx 502/504, HTML
+            // error page) — strip tags and take a short readable snippet.
+            msg = xhr.responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+        }
+        if (!msg) msg = (xhr && xhr.statusText) || (xhr && xhr.message) || fallback || MSG_UNKNOWN_ERR;
+        if (status === 0) return `${MSG_NO_CONN} — ${msg}`;   // network / timeout / CORS
+        return status ? `[HTTP ${status}] ${msg}` : msg;
+    }
+
+    function logClientError(context, xhr, extra) {
+        const status = (xhr && typeof xhr.status === 'number') ? xhr.status : 'n/a';
+        const detail = (xhr && (xhr.responseJSON || xhr.responseText || xhr.statusText || xhr.message)) || '';
+        console.error(`[upload-fast][${context}] HTTP=${status} ${extra || ''}`.trim(), detail, xhr);
+    }
+
     // ─── State ────────────────────────────────────────────────────────────
     const locationsData = {{ locations_data|tojson }};
     let selectedFiles   = [];
@@ -618,7 +649,8 @@ $(document).ready(function () {
                 }
             },
             error: function (xhr) {
-                const err = xhr.responseJSON ? xhr.responseJSON.message : '{{ _("Помилка") }}';
+                logClientError('create-location', xhr, `name="${name}" lat=${latitude} lon=${longitude}`);
+                const err = describeAjaxError(xhr, {{ _("Помилка створення місця") | tojson }});
                 $('#location-feedback').removeClass('alert-success').addClass('alert alert-danger').text(err);
             }
         });
@@ -838,8 +870,7 @@ $(document).ready(function () {
                         retryQueue.push(file); // one more chance.
                     } else {
                         errorCount++;
-                        console.warn(`[upload-fast] gave up on ${file.name}:`,
-                            xhr.responseJSON ? xhr.responseJSON.error : 'failed');
+                        logClientError('process-single', xhr, `gave up on "${file.name}" after retries`);
                     }
                 }
                 // processed was already incremented in phase 1 — do not double-count.
@@ -850,14 +881,23 @@ $(document).ready(function () {
         return { successCount, errorCount, skippedCount };
     }
 
-    /** Poll /api/batch-status until status is completed or failed. */
+    /** Poll /api/batch-status until status is completed or failed.
+     *  Status-endpoint errors are tolerated (transient), but give up after
+     *  MAX_POLL_FAILS in a row so a persistently broken endpoint surfaces an
+     *  error instead of spinning silently forever. */
+    const MAX_POLL_FAILS = 15;   // ~30 s at POLL_INTERVAL_MS
     function pollUntilDone(batchId) {
         return new Promise((resolve, reject) => {
+            let consecutiveFails = 0;
             const tick = () => {
                 $.get(batchStatusUrlBase + batchId)
                     .done(data => {
+                        consecutiveFails = 0;
                         if (data.status === 'completed') return resolve(data);
-                        if (data.status === 'failed') return reject(new Error(data.error_message || 'Grouping failed'));
+                        if (data.status === 'failed') {
+                            logClientError('grouping', null, `batch=${batchId} msg=${data.error_message || ''}`);
+                            return reject(new Error(data.error_message || '{{ _("Групування серій не вдалося") }}'));
+                        }
                         // ready_to_group / grouping — show phase 2.
                         $('#progress-text').text(
                             data.status === 'grouping'
@@ -867,7 +907,15 @@ $(document).ready(function () {
                         $('#progress-bar').css('width', '90%');
                         setTimeout(tick, POLL_INTERVAL_MS);
                     })
-                    .fail(() => setTimeout(tick, POLL_INTERVAL_MS));
+                    .fail(xhr => {
+                        consecutiveFails++;
+                        logClientError('batch-status', xhr, `batch=${batchId} fail#${consecutiveFails}`);
+                        if (consecutiveFails >= MAX_POLL_FAILS) {
+                            return reject(new Error(describeAjaxError(xhr,
+                                {{ _("Втрачено зв'язок під час групування серій") | tojson }})));
+                        }
+                        setTimeout(tick, POLL_INTERVAL_MS);
+                    });
             };
             tick();
         });
@@ -946,9 +994,8 @@ $(document).ready(function () {
                 }
             }, 800);
         } catch (e) {
-            console.error('[upload-fast]', e);
-            const serverMsg = (e && e.responseJSON && e.responseJSON.error)
-                              || e.message || e.statusText || 'unknown';
+            logClientError('upload', e, `batch=${batchId} loc=${locationId} files=${files.length}`);
+            const serverMsg = describeAjaxError(e, e && e.message);
             $('#error-alert').show().text(`{{ _("Помилка:") }} ${serverMsg}`);
             resetUploadUi();
         }
