@@ -2078,6 +2078,9 @@ body.dark-theme .message-container.error {
     .filters-panel            { flex-direction: column; align-items: stretch; }
     .dashboard-wrapper .filter-group:has(input[type="date"]),
     .dashboard-wrapper .filter-group:has(select) { flex: 0 0 auto; min-width: 0; }
+    /* Row flex-basis (e.g. .filter-group-select's 250px) becomes a HEIGHT once
+       the panel is a column and inflates it with empty space — reset to content. */
+    .filter-group-select      { flex: 0 0 auto; }
 
     /* Comparison */
     .scope-filters,
