@@ -166,16 +166,46 @@ def extract_datetime_from_exif(file_stream):
     return None
 
 def create_thumbnail(source, thumbnail_path):
-    """Create a thumbnail for an image. source can be a file path or a file stream."""
+    """Create a thumbnail for an image. source can be a file path or a file stream.
+
+    Returns True if the thumbnail file was written, False on ANY failure
+    (unreadable source, disk full, etc.). The caller MUST treat False as "the
+    file is not on disk" — historically this swallowed the error and returned
+    silently, so on a full disk the write failed but the caller went on to
+    create the Photo DB row anyway → an orphan (DB row, no file) that jams AI
+    classification forever. See also _verify_files_on_disk().
+    """
     try:
         size = current_app.config['CAMERA_TRAP_CONFIG']['THUMBNAIL_SIZE']
         with Image.open(source) as img:
             img.thumbnail(size)
             img.save(thumbnail_path, "JPEG", quality=85)
+        return True
     except Exception as e:
         # Use the .name attribute if source is a stream, otherwise source itself
         source_name = getattr(source, 'name', source)
         current_app.logger.error(f"Failed to create thumbnail for {source_name}: {e}")
+        return False
+
+
+def _verify_files_on_disk(paths):
+    """Raise IOError if any of `paths` is missing or empty (0 bytes).
+
+    The safety gate before a Photo DB row is created: a row must NEVER exist
+    unless its file(s) genuinely landed on disk. Guards against disk-full
+    (ENOSPC) and any silently-swallowed write error — otherwise the photo
+    becomes an orphan (DB says 'uploaded', no file), which the AI worker skips
+    forever (series stuck 'pending') and the archival cleanup never touches.
+    """
+    for p in paths:
+        try:
+            if os.path.getsize(p) > 0:
+                continue
+        except OSError:
+            pass  # missing file → getsize raises → fall through to the error
+        raise IOError(
+            f"File was not written to disk (disk full?): {os.path.basename(p)}"
+        )
 
 def create_upload_batch(location_id, user_id, total_files=None):
     """Create a new batch for file uploads."""
@@ -385,6 +415,18 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
                 current_app.logger.error(f"Image validation error for {original_filename}: {e}")
                 file.seek(0)
                 create_thumbnail(file, thumb_path)
+
+        # ─── VERIFY FILES ACTUALLY LANDED ON DISK ─────────────────────────
+        # Before creating the DB row, confirm the file(s) exist and are
+        # non-empty. On a full disk the writes above can fail (create_thumbnail
+        # swallows the error; a partial file.save may leave a 0-byte file), and
+        # without this check a Photo row would be created with no file behind it
+        # — an orphan that jams AI classification and never gets cleaned up
+        # (root cause of the 2026-07-08 disk-full incident). A failure here
+        # propagates to the except below → rollback (incl. the processed_files
+        # increment) + removal of any partial files → no orphan row.
+        required_paths = [raw_path, thumb_path] if save_original else [thumb_path]
+        _verify_files_on_disk(required_paths)
 
         # Create database record
         photo = Photo(
