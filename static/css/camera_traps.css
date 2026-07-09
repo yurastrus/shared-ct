@@ -1140,7 +1140,11 @@ body.dark-theme .ai-pred-badge {
 
 #overlap-table th,
 #overlap-table td { text-align: center !important; vertical-align: middle !important; }
-.form-check-label { font-size: 0.9em; color: var(--text-primary); white-space: nowrap; }
+/* No white-space:nowrap here — long labels (e.g. import-classification radio
+   options) must wrap on narrow screens instead of overflowing. Short labels
+   still stay on one line because they fit. (.behavior-checkboxes keeps its own
+   scoped nowrap.) */
+.form-check-label { font-size: 0.9em; color: var(--text-primary); }
 .results-area     { display: none; margin-top: 30px; }
 
 /* Responsive-table wrapper: lets a wide table scroll horizontally on narrow
