@@ -40,8 +40,11 @@
             color: #495057;
             margin-bottom: 4px;
         }
-        /* Уніфікуємо всі поля під один стиль */
-        .sidebar-group .form-control,
+        /* Уніфікуємо всі поля під один стиль.
+           :not(.select2-hidden-accessible) — інакше це правило (вища специфічність,
+           ніж select2-івське width:1px) розхововує прихований оригінальний <select>
+           до 100% ширини; він position:absolute → розпирає сторінку по горизонталі. */
+        .sidebar-group .form-control:not(.select2-hidden-accessible),
         .sidebar-group .select2-container {
             width: 100% !important;
             font-size: 0.88rem;
