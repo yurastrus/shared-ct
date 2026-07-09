@@ -1760,7 +1760,8 @@ def create_batch(lang_code):
         _free = (get_storage_disk_usage() or {}).get('free_bytes')
         if _free is not None and _free < MIN_UPLOAD_FREE_BYTES:
             return jsonify({
-                'error': _('Недостатньо місця у сховищі — потрібно щонайменше 500 МБ вільного простору.')
+                'error': _('Недостатньо місця у сховищі — потрібно щонайменше %(min)s МБ вільного простору.',
+                           min=MIN_UPLOAD_FREE_MB)
             }), 507
 
         from .utils import create_upload_batch
