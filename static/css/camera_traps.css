@@ -2086,6 +2086,10 @@ body.dark-theme .message-container.error {
     .scope-filters,
     .indices-grid,
     .venn-grid                { grid-template-columns: 1fr; }
+    /* Stacked on mobile: the "Спільні" heading is centred for the desktop row;
+       left-align it so all three panels read consistently once stacked.
+       (Same specificity as the base .venn-panel.shared h4 rule, but later.) */
+    .venn-panel.shared h4     { text-align: left; }
     .scope-divider            { display: none; }
 
     /* Charts */
