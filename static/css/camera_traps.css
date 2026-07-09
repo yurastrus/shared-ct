@@ -1076,6 +1076,14 @@ body.dark-theme .ai-pred-badge {
     width: 100%;
     box-sizing: border-box;
 }
+/* Grid/flex items holding a Chart.js canvas must be allowed to shrink below the
+   canvas's drawn width — otherwise the default min-width:auto keeps the track
+   wide and the chart overflows the card to the right on narrow screens. */
+.chart-section,
+.chart-card,
+.chart-container,
+.chart-wrap,
+.chart-wrap-tall { min-width: 0; }
 .daily-activity-page .chart-container {
     background: var(--card-bg);
     padding: 20px;
