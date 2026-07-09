@@ -20,6 +20,9 @@
             padding: 1.25rem;
             position: sticky;
             top: 1rem;
+            min-width: 0; /* let the grid column shrink; a select2 with a long
+                             option (nowrap) would otherwise blow the track wider
+                             than the viewport and scroll the whole page */
         }
         .heatmap-sidebar h2 {
             font-size: 1.1rem;
