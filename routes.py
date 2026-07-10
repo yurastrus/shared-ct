@@ -3574,9 +3574,66 @@ def get_review_filters(lang_code):
     finally:
         close_ct_session()
 
+def _gallery_species_name(species, with_scientific=False):
+    """Localised display name for a species, incl. negative-id special
+    categories (Human, Empty, Vehicle, …). ``with_scientific`` appends the
+    Latin name in parentheses — used for the filter dropdown, not photo
+    captions."""
+    if species is None:
+        return _('Невідомий вид')
+    common = species.common_name_ua if g.lang_code == 'uk' else \
+        (species.common_name_en if g.lang_code == 'en' else None)
+    if not common:
+        return species.scientific_name
+    # Special categories (id < 0) carry no meaningful scientific name.
+    if species.id < 0 or not with_scientific:
+        return common
+    return f"{common} ({species.scientific_name})"
+
+
+def _observation_consensus_species(ct_session, observation_ids):
+    """Map ``observation_id -> consensus species_id`` for the given series.
+
+    Uses the canonical consensus rule shared with analytics/export (see the
+    ObservationConsensus CTE in daily_analytics.py): per series the species
+    with the most distinct user votes wins, ties broken by the largest
+    reported quantity. Series with no identifications (or a NULL/"Other"
+    winner) are simply absent from the result.
+    """
+    observation_ids = [oid for oid in set(observation_ids) if oid is not None]
+    if not observation_ids:
+        return {}
+
+    rows = ct_session.query(
+        Photo.observation_id,
+        Identification.species_id,
+        func.count(distinct(Identification.user_id)).label('vote_count'),
+        func.max(Identification.quantity).label('max_quantity'),
+    ).join(Identification, Identification.photo_id == Photo.id)\
+     .filter(Photo.observation_id.in_(observation_ids))\
+     .group_by(Photo.observation_id, Identification.species_id).all()
+
+    # observation_id -> (vote_count, max_quantity, species_id); keep the best.
+    best = {}
+    for obs_id, species_id, vote_count, max_quantity in rows:
+        if species_id is None:
+            continue
+        candidate = (vote_count, max_quantity or 0, species_id)
+        current = best.get(obs_id)
+        if current is None or candidate[:2] > current[:2]:
+            best[obs_id] = candidate
+    return {obs_id: val[2] for obs_id, val in best.items()}
+
+
 @camera_traps_bp.route('/gallery')
 def gallery(lang_code):
-    """Gallery of classified photos with access-rights filtering."""
+    """Gallery of classified photos with access-rights filtering.
+
+    The species filter is keyed by the per-series (observation) consensus —
+    the same rule analytics/export use — so a favourite photo is always
+    listed under the authoritative species of its series, never under a
+    single dissenting identification.
+    """
     ct_session = get_ct_session()
     try:
         # Determine user permissions
@@ -3588,44 +3645,34 @@ def gallery(lang_code):
 
         can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
-        # Base query for the species list
-        species_query = ct_session.query(Species)\
-            .join(Identification, Species.id == Identification.species_id)\
-            .join(Photo, Identification.photo_id == Photo.id)\
+        # Observations that own at least one accessible favourite photo.
+        obs_rows = ct_session.query(Photo.observation_id)\
             .join(Observation, Photo.observation_id == Observation.id)\
             .join(Location, Observation.location_id == Location.id)\
             .filter(
                 Photo.is_favorite == True,
                 Photo.status.in_(['completed', 'pending', 'archived']),
                 text(inst_condition)
-            ).params(**inst_params)
+            ).params(**inst_params).distinct().all()
 
+        consensus = _observation_consensus_species(ct_session, [r[0] for r in obs_rows])
+        species_ids = {sid for sid in consensus.values() if sid is not None}
         if not can_manage_favorites:
-            species_query = species_query.filter(Species.id > 0)
+            # Hide special categories (Empty, Human, Vehicle, …) from regular users.
+            species_ids = {sid for sid in species_ids if sid > 0}
 
-        species_objects = species_query.distinct().order_by(Species.common_name_ua).all()
+        species_objects = ct_session.query(Species)\
+            .filter(Species.id.in_(species_ids))\
+            .order_by(Species.common_name_ua).all() if species_ids else []
 
         species_list = [{'id': 0, 'text': _('-- Всі види --')}]
-        
-        for s in species_query:
-            display_name = s.scientific_name
-            if g.lang_code == 'uk' and s.common_name_ua:
-                if s.id < 0:
-                    display_name = s.common_name_ua
-                else:
-                    display_name = f"{s.common_name_ua} ({s.scientific_name})"
-            elif g.lang_code == 'en' and s.common_name_en:
-                if s.id < 0:
-                    display_name = s.common_name_en
-                else:
-                    display_name = f"{s.common_name_en} ({s.scientific_name})"
-            
-            species_list.append({'id': s.id, 'text': display_name})
+        for s in species_objects:
+            species_list.append({'id': s.id, 'text': _gallery_species_name(s, with_scientific=True)})
 
-        return render_template('gallery.html', 
-                             available_species=species_list, 
+        return render_template('gallery.html',
+                             available_species=species_list,
                              can_manage_favorites=can_manage_favorites)
-        
+
     except Exception as e:
         current_app.logger.error(f"Error loading gallery: {e}")
         flash(_('Помилка завантаження галереї.'), 'danger')
@@ -3635,107 +3682,108 @@ def gallery(lang_code):
 
 @camera_traps_bp.route('/api/gallery/photos')
 def get_gallery_photos(lang_code):
-   """API for fetching gallery photos respecting access rights."""
-   ct_session = get_ct_session()
-   try:
-       species_id = request.args.get('species_id', type=int)
-       if species_id is None:
-           return jsonify({'error': 'Species ID is required'}), 400
+    """API for fetching gallery photos respecting access rights.
 
-       # Access rights
-       user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
-       is_admin = current_user.is_authenticated and current_user.has_role('admin')
+    Photos are both filtered and labelled by the per-series (observation)
+    consensus species, so selecting a species returns exactly the favourite
+    photos whose series resolved to that species — not every photo that
+    happens to carry one identification of it.
+    """
+    ct_session = get_ct_session()
+    try:
+        species_id = request.args.get('species_id', type=int)
+        if species_id is None:
+            return jsonify({'error': 'Species ID is required'}), 400
 
-       # Build filter
-       inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
+        # Access rights
+        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
+        can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
 
-       can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
+        # All accessible favourite photos; species filtering is applied below
+        # against the series consensus, not any single identification.
+        photos = ct_session.query(Photo)\
+            .join(Observation, Photo.observation_id == Observation.id)\
+            .join(Location, Observation.location_id == Location.id)\
+            .filter(
+                Photo.is_favorite == True,
+                Photo.status.in_(['completed', 'pending', 'archived']),
+                text(inst_condition)
+            ).params(**inst_params)\
+            .order_by(Photo.captured_at.desc()).all()
 
-       # Build query
-       query = ct_session.query(Photo)\
-           .join(Identification, Photo.id == Identification.photo_id)\
-           .join(Species, Identification.species_id == Species.id)\
-           .join(Observation, Photo.observation_id == Observation.id)\
-           .join(Location, Observation.location_id == Location.id)\
-           .filter(
-               Photo.is_favorite == True,
-               Photo.status.in_(['completed', 'pending', 'archived']),
-               text(inst_condition)
-           ).params(**inst_params)
+        consensus = _observation_consensus_species(
+            ct_session, {p.observation_id for p in photos})
 
-       # Filter by species
-       if species_id > 0:
-           query = query.filter(Species.id == species_id)
+        # Resolve the consensus species objects we will actually display.
+        needed_ids = {sid for sid in consensus.values() if sid is not None}
+        species_by_id = {
+            s.id: s for s in ct_session.query(Species)
+            .filter(Species.id.in_(needed_ids)).all()
+        } if needed_ids else {}
 
-       # Hide special categories (Empty, Human, etc.) for regular users
-       if not can_manage_favorites:
-           query = query.filter(Species.id > 0)
+        selected = []
+        for photo in photos:
+            cons_id = consensus.get(photo.observation_id)
+            if cons_id is None or cons_id not in species_by_id:
+                continue  # series has no resolvable consensus species
+            # Hide special categories (id < 0) from regular users.
+            if not can_manage_favorites and cons_id <= 0:
+                continue
+            # species_id == 0 means "all species"; otherwise require an exact match.
+            if species_id != 0 and cons_id != species_id:
+                continue
+            selected.append((photo, species_by_id[cons_id]))
 
-       photos = query.order_by(Photo.captured_at.desc()).all()
+        if not selected:
+            return jsonify({'message': _('Для вибраного виду немає фото у вибраному.')}), 404
 
-       if not photos:
-           return jsonify({'message': _('Для вибраного виду немає фото у вибраному.')}), 404
+        photos_data = []
+        for photo, species in selected:
+            # Attribution shown only to managers: earliest identification author.
+            added_by_username = None
+            if can_manage_favorites:
+                first_identification = ct_session.query(Identification)\
+                    .filter(Identification.photo_id == photo.id)\
+                    .order_by(Identification.created_at)\
+                    .first()
+                if first_identification:
+                    user = User.query.get(first_identification.user_id)
+                    if user:
+                        added_by_username = user.username
 
-       photos_data = []
-       for photo in photos:
-           # Fetch info about who marked the photo as favourite
-           first_identification = ct_session.query(Identification)\
-               .filter(Identification.photo_id == photo.id)\
-               .order_by(Identification.created_at)\
-               .first()
-           
-           # Show the name only to managers/admins
-           added_by_username = None
-           if can_manage_favorites and first_identification:
-               user = User.query.get(first_identification.user_id)
-               if user:
-                   added_by_username = user.username
+            photo_data = {
+                'id': photo.id,
+                'thumbnail_url': url_for('camera_traps.serve_thumbnail',
+                                       lang_code=g.lang_code,
+                                       filename=photo.system_filename,
+                                       _external=True),
+                'raw_url': url_for('camera_traps.serve_raw_photo',
+                                 lang_code=g.lang_code,
+                                 filename=photo.system_filename,
+                                 _external=True),
+                'captured_at': photo.captured_at.strftime('%d.%m.%Y %H:%M:%S'),
+                'location_name': photo.observation.location.name,
+                'species_name': _gallery_species_name(species),
+                'observation_id': photo.observation_id,
+                'sequence_number': photo.sequence_number
+            }
+            if added_by_username:
+                photo_data['added_by'] = added_by_username
+            photos_data.append(photo_data)
 
-           # Build species display name
-           species_name = "Невідомий вид"
-           if first_identification and first_identification.species:
-               species = first_identification.species
-               if g.lang_code == 'uk' and species.common_name_ua:
-                   species_name = species.common_name_ua
-               elif g.lang_code == 'en' and species.common_name_en:
-                   species_name = species.common_name_en
-               else:
-                   species_name = species.scientific_name
+        return jsonify({
+            'photos': photos_data,
+            'total_count': len(photos_data),
+            'can_manage_favorites': can_manage_favorites
+        })
 
-           photo_data = {
-               'id': photo.id,
-               'thumbnail_url': url_for('camera_traps.serve_thumbnail', 
-                                      lang_code=g.lang_code, 
-                                      filename=photo.system_filename, 
-                                      _external=True),
-               'raw_url': url_for('camera_traps.serve_raw_photo',
-                                lang_code=g.lang_code,
-                                filename=photo.system_filename,
-                                _external=True),
-               'captured_at': photo.captured_at.strftime('%d.%m.%Y %H:%M:%S'),
-               'location_name': photo.observation.location.name,
-               'species_name': species_name,
-               'observation_id': photo.observation_id,
-               'sequence_number': photo.sequence_number
-           }
-           
-           # Include added_by only for managers
-           if added_by_username:
-               photo_data['added_by'] = added_by_username
-               
-           photos_data.append(photo_data)
-
-       return jsonify({
-           'photos': photos_data,
-           'total_count': len(photos_data),
-           'can_manage_favorites': can_manage_favorites
-       })
-
-   except Exception as e:
-       current_app.logger.error(f"Error getting gallery photos: {e}")
-       return jsonify({'error': 'Server error'}), 500
-   finally:
-       close_ct_session()
+    except Exception as e:
+        current_app.logger.error(f"Error getting gallery photos: {e}")
+        return jsonify({'error': 'Server error'}), 500
+    finally:
+        close_ct_session()
 
 @camera_traps_bp.route('/api/gallery/remove-favorite', methods=['POST'])
 @login_required
