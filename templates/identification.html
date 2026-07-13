@@ -325,6 +325,7 @@ $(document).ready(function() {
     const existingIdentificationsBlock = $('#existing-identifications');
     const existingIdentificationsList = $('#existing-identifications-list');
     let remainingIdentificationsCount = 0;
+    let alreadyIdentifiedCount = 0;  // subset of the above already identified by others
 
     let currentObservation = null;
     let currentPhotoIndex = 0;
@@ -341,8 +342,26 @@ $(document).ready(function() {
         loadError: "{{ _('Не вдалося завантажити дані.') }}",
         congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
         noReviewSeries: "{{ _('Немає серій для перегляду, які б відповідали критеріям.') }}",
-        counterText: "{{ _('Залишилось вам:') }}"
+        counterText: "{{ _('Залишилось вам:') }}",
+        alreadyIdentifiedTitle: "{{ _('У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою думку.') }}"
     };
+
+    // Render the "Залишилось вам: N (M)" counter from the current state.
+    function renderCounter() {
+        const counterElement = $('#identification-counter');
+        if (reviewMode || remainingIdentificationsCount <= 0) {
+            counterElement.hide();
+            return;
+        }
+        let text = `${translations.counterText} ${remainingIdentificationsCount}`;
+        if (alreadyIdentifiedCount > 0) {
+            text += ` (${alreadyIdentifiedCount})`;
+            counterElement.attr('title', translations.alreadyIdentifiedTitle);
+        } else {
+            counterElement.removeAttr('title');
+        }
+        counterElement.text(text).show();
+    }
 
     function loadAndDisplayCounter() {
         const counterElement = $('#identification-counter');
@@ -374,12 +393,8 @@ $(document).ready(function() {
             })
             .then(data => {
                 remainingIdentificationsCount = data.remaining_count;
-                if (remainingIdentificationsCount > 0) {
-                    counterElement.text(`${translations.counterText} ${remainingIdentificationsCount}`);
-                    counterElement.show();
-                } else {
-                    counterElement.hide();
-                }
+                alreadyIdentifiedCount = data.already_identified_count || 0;
+                renderCounter();
             })
             .catch(error => {
                 console.error('Could not load identification counter:', error);
@@ -930,13 +945,13 @@ $(document).ready(function() {
         .then(data => {
             if (!reviewMode && remainingIdentificationsCount > 0) {
                 remainingIdentificationsCount--; // Decrement the counter.
-                const counterElement = $('#identification-counter');
-                if (remainingIdentificationsCount > 0) {
-                   counterElement.text(`${translations.counterText} ${remainingIdentificationsCount}`);
-                } else {
-                   // If this was the last series, hide the counter.
-                   counterElement.hide();
+                // If the series we just identified already carried someone
+                // else's vote, it also leaves the "(N) already identified" subset.
+                if (currentObservation && currentObservation.has_other_identifications
+                        && alreadyIdentifiedCount > 0) {
+                    alreadyIdentifiedCount--;
                 }
+                renderCounter();
             }
             loadNextObservation();
         })

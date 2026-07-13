@@ -3281,7 +3281,13 @@ def next_observation_for_identification(lang_code):
         response_data = {
             'observation_id': observation.id,
             'location_name': observation.location.name,
-            'photos': photos_data
+            'photos': photos_data,
+            # True when this series already has someone else's identification
+            # (in normal mode the query excludes series this user touched, so any
+            # identification present is from another user). Lets the front end keep
+            # the "(N) already identified" counter accurate on submit without a
+            # round trip.
+            'has_other_identifications': any(p.identifications for p in photos_sorted),
         }
 
         # AI prediction for this observation (if present): pass to the front end
@@ -5229,7 +5235,18 @@ def api_get_identification_stats(lang_code):
 
         remaining_count = query.count()
 
-        return jsonify({'remaining_count': remaining_count})
+        # Subset of the remaining series that ALREADY carry someone else's
+        # identification (≥1 identification exists). Because `query` excludes any
+        # series this user has touched, every identification here is from another
+        # user — so these are series the current user could still add their vote to.
+        already_identified_count = query.filter(
+            Observation.photos.any(Photo.identifications.any())
+        ).count()
+
+        return jsonify({
+            'remaining_count': remaining_count,
+            'already_identified_count': already_identified_count,
+        })
 
     except Exception as e:
         current_app.logger.error(f"Error getting identification stats for user {current_user.id}: {e}")
