@@ -5,6 +5,7 @@ from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from app.camera_traps.domain import _
 from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, Date
+from sqlalchemy.exc import SQLAlchemyError
 import io
 import csv
 import os
@@ -15,7 +16,7 @@ from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
 from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
 from .database import get_ct_session, close_ct_session
-from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, LocationMonthlyActivity, UploadBatch
+from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
 from .models import Deployment
 from app.models import User, Institution
@@ -2537,6 +2538,27 @@ def stats_locations(lang_code):
         close_ct_session()
 
 # --- API FOR THE SPECIES DETAIL ANALYSIS PAGE ---
+def _serialize_mann_kendall(mk_row):
+    """Turn a SpeciesTrendTest row into the JSON payload for the trend page.
+
+    Numbers are returned raw (formatted client-side); ``verdict`` is the
+    localized human-readable trend direction so the template needs no branching.
+    """
+    verdicts = {
+        'increasing': _("зростаючий тренд"),
+        'decreasing': _("спадний тренд"),
+        'no_trend': _("статистично значущого тренду немає"),
+    }
+    return {
+        'trend': mk_row.trend,
+        'verdict': verdicts.get(mk_row.trend, mk_row.trend),
+        'tau': float(mk_row.mk_tau) if mk_row.mk_tau is not None else None,
+        'p': float(mk_row.mk_p) if mk_row.mk_p is not None else None,
+        'sen_slope': float(mk_row.sen_slope) if mk_row.sen_slope is not None else None,
+        'n_years': mk_row.n_years,
+    }
+
+
 @camera_traps_bp.route('/api/stats/species-dynamics')
 def api_species_dynamics(lang_code):
     """API for fetching chart data from pre-computed analytics tables."""
@@ -2617,7 +2639,37 @@ def api_species_dynamics(lang_code):
             'upper_ci': float(r.upper_ci)
         } for r in yearly_q]
 
-        return jsonify({'seasonal_activity': seasonal_data, 'yearly_trend': yearly_data})
+        # 3. Mann–Kendall trend test (pre-computed for this scope, if available).
+        # A row exists ONLY when there were enough years of data, so "row → show,
+        # no row → show nothing" keeps the page from breaking on thin scopes.
+        #
+        # Defensive: the precompute table may not exist yet (fresh deploy before
+        # `python -m scripts.init_trend_tests` / before the first recalculation).
+        # A missing/failed lookup must NOT break the whole trend page — it just
+        # means "no Mann–Kendall block". Roll back so the failed query does not
+        # poison the scoped session's transaction.
+        mann_kendall = None
+        try:
+            mk_row = ct_session.query(SpeciesTrendTest).filter(
+                SpeciesTrendTest.species_id == species_id,
+                SpeciesTrendTest.scope_type == scope_type,
+                SpeciesTrendTest.scope_id == scope_id
+            ).first()
+            mann_kendall = _serialize_mann_kendall(mk_row) if mk_row else None
+        except SQLAlchemyError:
+            ct_session.rollback()
+            current_app.logger.warning(
+                "species_trend_tests unavailable (table missing or query failed) — "
+                "skipping Mann–Kendall block. Run scripts.init_trend_tests and "
+                "recalculate analytics to enable it.",
+                exc_info=True,
+            )
+
+        return jsonify({
+            'seasonal_activity': seasonal_data,
+            'yearly_trend': yearly_data,
+            'mann_kendall': mann_kendall,
+        })
     except Exception as e:
         current_app.logger.error(f"Error in api_species_dynamics: {e}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

@@ -15,7 +15,7 @@ from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import (
     Observation, Photo, Identification, Species, Location,
     LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend,
-    location_institutions
+    SpeciesTrendTest, location_institutions
 )
 from .validity import valid_location_id_subquery
 
@@ -171,6 +171,108 @@ def _run_bootstrap(species_id, location_data, scope_locations, all_years, scope_
     ]
 
 
+# Minimum number of distinct years with data for the Mann–Kendall test to be
+# meaningful. Below this we do NOT persist a result at all (see
+# _calculate_mann_kendall / _mk_test_for_scope) — thin institution/ecoregion
+# scopes therefore get no row and the UI shows nothing for them.
+# NB: 5 rather than 4 on purpose — with the exact test scipy uses at small n,
+# a perfectly monotonic 4-point series still gives p ≈ 0.083 (> 0.05), i.e. a
+# 4-year series is structurally incapable of a significant result. Requiring 5
+# avoids showing a test that can never detect a trend.
+MK_MIN_YEARS = 5
+# Two-sided significance level used to classify the trend direction.
+MK_ALPHA = 0.05
+
+
+def _calculate_mann_kendall(years, values, min_years=MK_MIN_YEARS):
+    """Non-parametric Mann–Kendall trend test over an annual series.
+
+    Pure function (no DB), mirroring _run_bootstrap so it can be unit-tested
+    without any DB fixtures.
+
+    Args:
+        years:  sequence of ints (the x axis; need not be contiguous).
+        values: matching sequence of floats (mean_dr_index per year).
+        min_years: guard — fewer distinct years than this → insufficient data.
+
+    Returns:
+        dict with keys n_years, mk_tau, mk_p, trend, sen_slope, when the series
+        is long enough; trend is one of 'increasing' | 'decreasing' | 'no_trend'.
+        Returns None when there is not enough data (caller then stores nothing).
+
+    Notes / edge cases:
+        * Gaps between years are fine — Mann–Kendall uses only the ordering.
+        * Ties are handled by Kendall's tau-b (scipy.stats.kendalltau).
+        * A degenerate/flat series yields a NaN p-value → treated as 'no_trend'.
+    """
+    # Pair, drop any None, sort by year so the series is well defined.
+    pairs = sorted(
+        (int(y), float(v))
+        for y, v in zip(years, values)
+        if y is not None and v is not None
+    )
+    if len(pairs) < min_years:
+        return None
+
+    xs = [p[0] for p in pairs]
+    ys = [p[1] for p in pairs]
+
+    from scipy.stats import kendalltau, theilslopes
+
+    tau, p_value = kendalltau(xs, ys)
+
+    # Flat / degenerate series → tau or p is NaN. Treat as "no significant trend"
+    # rather than crashing or emitting NaN into the DB.
+    if tau is None or np.isnan(tau) or p_value is None or np.isnan(p_value):
+        return {
+            'n_years': len(pairs),
+            'mk_tau': 0.0,
+            'mk_p': 1.0,
+            'trend': 'no_trend',
+            'sen_slope': 0.0,
+        }
+
+    # Theil–Sen slope (robust magnitude of the trend, DR index per year).
+    sen_slope = float(theilslopes(ys, xs)[0])
+
+    if p_value < MK_ALPHA and tau > 0:
+        trend = 'increasing'
+    elif p_value < MK_ALPHA and tau < 0:
+        trend = 'decreasing'
+    else:
+        trend = 'no_trend'
+
+    return {
+        'n_years': len(pairs),
+        'mk_tau': float(tau),
+        'mk_p': float(p_value),
+        'trend': trend,
+        'sen_slope': sen_slope,
+    }
+
+
+def _mk_test_for_scope(species_id, scope_type, scope_id, scope_trends):
+    """Build a SpeciesTrendTest from the per-year trend objects of one scope.
+
+    ``scope_trends`` is the list returned by _run_bootstrap for this scope.
+    Returns a SpeciesTrendTest, or None when there is not enough data (in which
+    case nothing is stored for this {species, scope}).
+    """
+    if not scope_trends:
+        return None
+    years = [t.year for t in scope_trends]
+    values = [float(t.mean_dr_index) for t in scope_trends]
+    mk = _calculate_mann_kendall(years, values)
+    if mk is None:
+        return None
+    return SpeciesTrendTest(
+        species_id=species_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        **mk,
+    )
+
+
 def _calculate_yearly_trends_with_bootstrap():
     """Calculate yearly trends with bootstrap for three scopes:
       - global (all locations)
@@ -184,6 +286,8 @@ def _calculate_yearly_trends_with_bootstrap():
         logging.info("Starting yearly trend calculation with bootstrap...")
 
         session.query(SpeciesYearlyTrend).delete()
+        # Mann–Kendall results are recomputed from scratch on every run too.
+        session.query(SpeciesTrendTest).delete()
         session.commit()
 
         # Load the location → institution mapping from ct_db.
@@ -210,6 +314,7 @@ def _calculate_yearly_trends_with_bootstrap():
                      f"{len(eco_locations)} ecoregions.")
 
         final_trends = []
+        final_trend_tests = []
 
         for species_id in species_ids:
             logging.info(f"  Processing species ID: {species_id}...")
@@ -233,30 +338,43 @@ def _calculate_yearly_trends_with_bootstrap():
             available_locs = set(location_data.keys())
             all_years = sorted(set(r.year for r in yearly_rows))
 
+            def _add_scope(scope_type, scope_id, scope_locs):
+                """Run bootstrap for one scope, collect its yearly trends AND the
+                Mann–Kendall test over them. Skips MK automatically (stores no
+                row) when the series is too short."""
+                scope_trends = _run_bootstrap(
+                    species_id, location_data, scope_locs,
+                    all_years, scope_type, scope_id, N_ITERATIONS)
+                if not scope_trends:
+                    return
+                final_trends.extend(scope_trends)
+                mk = _mk_test_for_scope(species_id, scope_type, scope_id, scope_trends)
+                if mk is not None:
+                    final_trend_tests.append(mk)
+
             # 1. Global
-            final_trends.extend(_run_bootstrap(
-                species_id, location_data, list(available_locs),
-                all_years, 'global', '', N_ITERATIONS))
+            _add_scope('global', '', list(available_locs))
 
             # 2. Per institution
             for inst_id, locs in inst_locations.items():
                 scope_locs = list(available_locs & locs)
                 if scope_locs:
-                    final_trends.extend(_run_bootstrap(
-                        species_id, location_data, scope_locs,
-                        all_years, 'institution', str(inst_id), N_ITERATIONS))
+                    _add_scope('institution', str(inst_id), scope_locs)
 
             # 3. Per ecoregion
             for eco_uk, locs in eco_locations.items():
                 scope_locs = list(available_locs & locs)
                 if scope_locs:
-                    final_trends.extend(_run_bootstrap(
-                        species_id, location_data, scope_locs,
-                        all_years, 'ecoregion', eco_uk, N_ITERATIONS))
+                    _add_scope('ecoregion', eco_uk, scope_locs)
 
         if final_trends:
             logging.info(f"Saving {len(final_trends)} trend records...")
             session.bulk_save_objects(final_trends)
+            session.commit()
+
+        if final_trend_tests:
+            logging.info(f"Saving {len(final_trend_tests)} Mann–Kendall trend-test records...")
+            session.bulk_save_objects(final_trend_tests)
             session.commit()
 
         return True

@@ -4,6 +4,26 @@
 
 {% block ct_head_extra %}
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        /* Mann–Kendall trend-test summary, shown under the annual-trend chart
+           only when a result was pre-computed for the selected scope. */
+        .mk-stats-block { margin-top: 1.25rem; }
+        .mk-stats-card {
+            border: 1px solid #dee2e6; border-left: 4px solid #6c757d;
+            border-radius: 6px; padding: 0.85rem 1rem; background: #f8f9fa;
+            max-width: 640px;
+        }
+        .mk-stats-card.mk-increasing { border-left-color: #198754; }
+        .mk-stats-card.mk-decreasing { border-left-color: #dc3545; }
+        .mk-stats-card.mk-no_trend   { border-left-color: #6c757d; }
+        .mk-stats-title { font-weight: 600; margin: 0 0 0.5rem 0; }
+        .mk-stats-verdict { font-weight: 600; }
+        .mk-stats-card.mk-increasing .mk-stats-verdict { color: #198754; }
+        .mk-stats-card.mk-decreasing .mk-stats-verdict { color: #dc3545; }
+        .mk-stats-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+        .mk-stats-table td { padding: 0.2rem 0.5rem 0.2rem 0; }
+        .mk-stats-table td:first-child { color: #6c757d; white-space: nowrap; }
+    </style>
 {% endblock %}
 
 {% block ct_content %}
@@ -196,7 +216,10 @@ $(document).ready(function() {
                     <div class="chart-container"><canvas id="yearlyTrendChart"></canvas></div>
                 </div>
             </div>
+            <div id="mk-stats" class="mk-stats-block"></div>
         `);
+
+        renderMannKendall(data.mann_kendall);
         
         if (seasonalChartInstance) seasonalChartInstance.destroy();
         if (yearlyChartInstance) yearlyChartInstance.destroy();
@@ -274,6 +297,33 @@ $(document).ready(function() {
         }
     }
     
+    // Render the Mann–Kendall summary under the trend chart. If nothing was
+    // pre-computed for this species/scope (too few years of data), render
+    // NOTHING — no empty box, no error — so the page never looks broken.
+    function renderMannKendall(mk) {
+        const container = document.getElementById('mk-stats');
+        if (!container) return;
+        if (!mk) { container.innerHTML = ''; return; }
+
+        const fmt = (v, digits) => (v === null || v === undefined) ? '—' : Number(v).toFixed(digits);
+        const pText = (mk.p === null || mk.p === undefined)
+            ? '—'
+            : (mk.p < 0.001 ? '< 0.001' : Number(mk.p).toFixed(3));
+
+        container.innerHTML = `
+            <div class="mk-stats-card mk-${mk.trend}">
+                <p class="mk-stats-title">{{ _("Тест Манна–Кендалла (тренд-тест)") }}</p>
+                <table class="mk-stats-table">
+                    <tr><td>{{ _("Висновок") }}:</td><td class="mk-stats-verdict">${mk.verdict}</td></tr>
+                    <tr><td>{{ _("Кореляція Кендалла (τ)") }}:</td><td>${fmt(mk.tau, 2)}</td></tr>
+                    <tr><td>{{ _("Рівень значущості (p)") }}:</td><td>${pText}</td></tr>
+                    <tr><td>{{ _("Нахил Сена (зміна DR за рік)") }}:</td><td>${fmt(mk.sen_slope, 3)}</td></tr>
+                    <tr><td>{{ _("Років у ряді") }}:</td><td>${mk.n_years}</td></tr>
+                </table>
+            </div>
+        `;
+    }
+
     function processSeasonalData(rawData) {
         const datasets = {};
         const colors = ['#0d6efd', '#6c757d', '#198754', '#dc3545', '#ffc107', '#0dcaf0'];

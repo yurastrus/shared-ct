@@ -405,6 +405,46 @@ class SpeciesYearlyTrend(CTBase):
     def __repr__(self):
         return f'<Trend: SpID {self.species_id}, Year {self.year}, {self.scope_type}:{self.scope_id}>'
 
+class SpeciesTrendTest(CTBase):
+    """Non-parametric trend test (Mann–Kendall) over the annual mean_dr_index
+    series, one row per {species, scope}.
+
+    Computed alongside SpeciesYearlyTrend during the analytics recalculation
+    (see analytics_calculator._calculate_yearly_trends_with_bootstrap) and only
+    stored when the series has enough distinct years (n_years >= MK_MIN_YEARS);
+    scopes with too little data (many thin institutions/ecoregions) simply get
+    no row, so the UI shows nothing for them instead of a broken/empty block.
+
+    scope_type / scope_id mirror SpeciesYearlyTrend exactly, so the display API
+    can look this up with the same key it already uses for the trend chart.
+
+    trend: 'increasing' | 'decreasing' | 'no_trend'
+      mk_tau  — Kendall's tau-b (ties-safe), from scipy.stats.kendalltau
+      mk_p    — two-sided p-value of the test
+      sen_slope — Theil–Sen slope (units of DR index per year)
+
+    NB: ct_db is not managed by Alembic. On a fresh dev DB this table is created
+    by CTBase.metadata.create_all(); on production run
+    `python -m scripts.init_trend_tests` once (CREATE TABLE IF NOT EXISTS).
+    """
+    __tablename__ = 'species_trend_tests'
+
+    species_id = Column(Integer, ForeignKey('species.id'), primary_key=True)
+    scope_type = Column(String(20), primary_key=True)
+    scope_id = Column(String(100), primary_key=True)
+
+    n_years = Column(Integer, nullable=False)
+    mk_tau = Column(Numeric(10, 4), nullable=True)
+    mk_p = Column(Numeric(10, 6), nullable=True)
+    trend = Column(String(20), nullable=False)
+    sen_slope = Column(Numeric(12, 6), nullable=True)
+    calculated_at = Column(DateTime, default=datetime.utcnow)
+
+    species = relationship('Species')
+
+    def __repr__(self):
+        return f'<TrendTest: SpID {self.species_id}, {self.scope_type}:{self.scope_id}, {self.trend}>'
+
 class CalculationLog(CTBase):
     """Service table for tracking data state and recalculation needs."""
     __tablename__ = 'calculation_log'
