@@ -92,11 +92,48 @@ class Biotope(CTBase):
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
 
+    # Landcover classes (ESA WorldCover) that resolve to this biotope during
+    # automatic assignment. See BiotopeLandcoverMap and biotope_autoassign.py.
+    landcover_map = relationship(
+        'BiotopeLandcoverMap',
+        back_populates='biotope',
+        cascade='all, delete-orphan',
+    )
+
     def get_name(self, lang_code):
         return self.name_ua if lang_code == 'uk' else self.name_en
 
     def __repr__(self):
         return f'<Biotope {self.name_en}>'
+
+
+class BiotopeLandcoverMap(CTBase):
+    """Mapping ESA WorldCover class code → Biotope.
+
+    Used by the admin "auto-assign biotopes" tool (see biotope_autoassign.py):
+    for each location it samples the landcover histogram in a radius around the
+    point, takes the top-N classes, and assigns the biotopes those classes map
+    to. A landcover class maps to at most one biotope (``worldcover_class`` is
+    unique); a biotope may cover several classes. Rows with no mapping are simply
+    absent — such classes are ignored during assignment.
+
+    The table is not managed by Alembic (ct_db uses create_all); it is created
+    and seeded by scripts/init_biotope_autoassign.py.
+    """
+    __tablename__ = 'biotope_landcover_map'
+
+    id = Column(Integer, primary_key=True)
+    worldcover_class = Column(Integer, nullable=False, unique=True)
+    biotope_id = Column(
+        Integer,
+        ForeignKey('biotopes.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+
+    biotope = relationship('Biotope', back_populates='landcover_map')
+
+    def __repr__(self):
+        return f'<BiotopeLandcoverMap wc={self.worldcover_class} → biotope_id={self.biotope_id}>'
 
 class Deployment(CTBase):
     """Camera trap deployment at a location for a specific period (camera-season).

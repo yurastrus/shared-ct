@@ -181,6 +181,92 @@
         </div>
     </section>
 
+    {# ── Auto-assign biotopes from landcover ── #}
+    <section class="hub-section">
+        <h2 class="hub-section-title">🗺️ {{ _('Біотопи з лендковеру') }}</h2>
+        <p class="ai-meta text-muted">
+            {{ _('Автоматичне призначення біотопів локаціям за даними ESA WorldCover (Google Earth Engine). Для кожної точки береться гістограма класів покриву в заданому радіусі, і топ-N класів переводяться в біотопи через таблицю відповідностей нижче. Наявні біотопи не стираються — додаються лише відсутні.') }}
+        </p>
+
+        {% if not gee_available %}
+        <div class="admin-action" style="opacity:.65;">
+            <div class="admin-action__info">
+                <p class="admin-action__title">{{ _('Автопризначення недоступне') }}</p>
+                <p class="admin-action__desc">
+                    {{ _('Google Earth Engine не налаштований на цьому сервері (немає пакета earthengine-api або сервісного ключа GEE_SERVICE_ACCOUNT_KEY). Функція вимкнена.') }}
+                </p>
+            </div>
+        </div>
+        {% else %}
+        <div class="admin-actions">
+            <div class="admin-action">
+                <div class="admin-action__info">
+                    <p class="admin-action__title">{{ _('Запустити автопризначення') }}</p>
+                    <p class="admin-action__desc">{{ _('Фоновий процес. Може зайняти кілька хвилин залежно від кількості локацій.') }}</p>
+                    <p class="admin-action__desc" id="biotope-autoassign-status-line" style="margin-top:.35rem;"></p>
+                </div>
+                <form id="biotope-autoassign-form" action="{{ url_for('camera_traps.biotope_auto_assign', lang_code=g.lang_code) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <label class="admin-action__desc d-block mb-1">
+                        {{ _('Радіус (м):') }}
+                        <input type="number" id="biotope-radius" name="radius_m"
+                               value="{{ biotope_autoassign_radius }}" min="10" max="5000" step="10"
+                               style="width:6rem;">
+                    </label>
+                    <label class="admin-action__desc d-block mb-1">
+                        {{ _('Топ-N біотопів:') }}
+                        <input type="number" id="biotope-top-n" name="top_n"
+                               value="{{ biotope_autoassign_top_n }}" min="1" max="10" step="1"
+                               style="width:6rem;">
+                    </label>
+                    <label class="admin-action__desc d-block mb-2" style="cursor:pointer;">
+                        <input type="checkbox" id="biotope-only-missing" name="only_missing_locations" value="true">
+                        {{ _('Лише локації без біотопів') }}
+                    </label>
+                    <button type="submit" id="biotope-autoassign-btn" class="btn btn-info"
+                            onclick="return confirm('{{ _('Запустити автопризначення біотопів для локацій? Наявні біотопи збережуться, додадуться лише відсутні.') }}')">
+                        {{ _('Запустити') }}
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Landcover class → biotope mapping editor ── #}
+        <h3 class="admin-action__title" style="margin-top:1rem;">{{ _('Відповідність: клас лендковеру → біотоп') }}</h3>
+        <p class="ai-meta text-muted">
+            {{ _('Класи ESA WorldCover. Оберіть, який біотоп відповідає кожному класу. Класи без відповідності ігноруються при автопризначенні. Зміни зберігаються одразу.') }}
+        </p>
+        <table class="table table-sm" id="biotope-mapping-table" style="max-width:640px;">
+            <thead>
+                <tr>
+                    <th style="width:4rem;">{{ _('Код') }}</th>
+                    <th>{{ _('Клас лендковеру') }}</th>
+                    <th>{{ _('Біотоп') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in biotope_landcover_rows %}
+                <tr>
+                    <td>{{ row.code }}</td>
+                    <td>{{ row.name_ua if g.lang_code == 'uk' else row.name_en }}</td>
+                    <td>
+                        <select class="biotope-map-select" data-wc="{{ row.code }}" style="max-width:16rem;">
+                            <option value="">— {{ _('не задано') }} —</option>
+                            {% for b in biotope_list %}
+                            <option value="{{ b.id }}" {% if row.biotope_id == b.id %}selected{% endif %}>
+                                {{ b.name_ua if g.lang_code == 'uk' else b.name_en }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <span class="biotope-map-saved" style="display:none;color:#28a745;">✓</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
     {# ── Storage and batches (health metrics) ── #}
     <section class="hub-section">
         <h2 class="hub-section-title">💾 {{ _('Сховище та батчі') }}</h2>
@@ -577,6 +663,124 @@
     });
 
     fetchStatus();  // Initial state when the page loads.
+})();
+
+// ── Biotope auto-assignment: AJAX start + status polling ──────────────────
+(function() {
+    const LANG = '{{ g.lang_code }}';
+    const csrfToken = '{{ csrf_token() }}';
+    const statusUrl = `/${LANG}/camera-traps/admin/biotopes/auto-assign/status`;
+    const form = document.getElementById('biotope-autoassign-form');
+    const btn = document.getElementById('biotope-autoassign-btn');
+    const line = document.getElementById('biotope-autoassign-status-line');
+    if (form && btn && line) {
+        const runUrl = form.getAttribute('action');
+        let pollTimer = null;
+
+        function fmtTime(iso) {
+            if (!iso) return null;
+            const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+            return isNaN(d.getTime()) ? null : d.toLocaleString();
+        }
+
+        function render(data) {
+            const st = (data && data.status) || 'idle';
+            const last = fmtTime(data && data.last_calculated_at);
+            const running = st === 'running';
+            btn.disabled = running;
+            btn.textContent = running ? '{{ _("Виконується…") }}' : '{{ _("Запустити") }}';
+            if (running) {
+                line.textContent = '⏳ {{ _("Автопризначення виконується у фоні…") }}';
+                line.style.color = '#0c5460';
+            } else if (st === 'failed') {
+                line.textContent = '⚠️ {{ _("Останній запуск завершився помилкою.") }}'
+                    + (data.error_message ? ' (' + data.error_message + ')' : '');
+                line.style.color = '#dc3545';
+            } else if (last) {
+                line.textContent = '✓ {{ _("Останній успішний запуск:") }} ' + last
+                    + (data.error_message ? ' — ' + data.error_message : '');
+                line.style.color = '#6c757d';
+            } else {
+                line.textContent = '{{ _("Ще не запускалося.") }}';
+                line.style.color = '#6c757d';
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const r = await fetch(statusUrl, { credentials: 'same-origin' });
+                const data = await r.json().catch(() => ({}));
+                render(data);
+                if (data.status === 'running') startPolling();
+                else stopPolling();
+            } catch (e) { /* status is not critical */ }
+        }
+        function startPolling() { if (!pollTimer) pollTimer = setInterval(fetchStatus, 3000); }
+        function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+        form.addEventListener('submit', async function(ev) {
+            ev.preventDefault();
+            btn.disabled = true;
+            line.textContent = '{{ _("Запуск…") }}';
+            line.style.color = '#0c5460';
+            try {
+                await fetch(runUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        radius_m: parseInt(document.getElementById('biotope-radius').value, 10),
+                        top_n: parseInt(document.getElementById('biotope-top-n').value, 10),
+                        only_missing_locations:
+                            (document.getElementById('biotope-only-missing') || {}).checked === true
+                    }),
+                    credentials: 'same-origin'
+                });
+                startPolling();
+                fetchStatus();
+            } catch (e) {
+                line.textContent = '⚠️ {{ _("Не вдалося запустити автопризначення.") }}';
+                line.style.color = '#dc3545';
+                btn.disabled = false;
+            }
+        });
+
+        fetchStatus();
+    }
+
+    // Mapping editor: save each class→biotope change immediately.
+    const mapUrl = `/${LANG}/camera-traps/admin/biotopes/mapping`;
+    document.querySelectorAll('.biotope-map-select').forEach(function(sel) {
+        sel.addEventListener('change', async function() {
+            const wc = parseInt(sel.dataset.wc, 10);
+            const val = sel.value === '' ? null : parseInt(sel.value, 10);
+            const savedMark = sel.parentElement.querySelector('.biotope-map-saved');
+            try {
+                const r = await fetch(mapUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ worldcover_class: wc, biotope_id: val }),
+                    credentials: 'same-origin'
+                });
+                if (!r.ok) throw new Error('save failed');
+                if (savedMark) {
+                    savedMark.style.display = 'inline';
+                    setTimeout(() => { savedMark.style.display = 'none'; }, 1500);
+                }
+            } catch (e) {
+                sel.style.outline = '2px solid #dc3545';
+                setTimeout(() => { sel.style.outline = ''; }, 2000);
+            }
+        });
+    });
 })();
 
 // ── AI pause indicator: poll the lease state every 30 s ────────────────────
