@@ -124,33 +124,16 @@ def admin_panel(lang_code):
 
     # Biotope auto-assignment (landcover → biotope). The button is only usable
     # when Earth Engine is available (package + service-account key); otherwise
-    # the whole section renders disabled. The class→biotope mapping grid is
-    # loaded for the editor. All of this is best-effort: any failure leaves the
-    # section hidden rather than breaking the admin page.
+    # the whole section renders disabled. The class→biotope mapping itself is
+    # managed directly in the DB (biotope_landcover_map), not in this UI. This is
+    # best-effort: any failure leaves the section hidden rather than breaking the
+    # admin page.
     gee_available = False
-    biotope_list = []
-    biotope_landcover_rows = []
     try:
         from .biotope_autoassign import (
-            gee_landcover_available, get_biotope_mapping, WORLDCOVER_CLASSES,
-            DEFAULT_RADIUS_M, DEFAULT_TOP_N,
+            gee_landcover_available, DEFAULT_RADIUS_M, DEFAULT_TOP_N,
         )
         gee_available = gee_landcover_available()
-        ct_session = get_ct_session()
-        try:
-            biotope_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
-            biotope_list = [
-                {'id': b.id, 'name_ua': b.name_ua, 'name_en': b.name_en}
-                for b in biotope_list
-            ]
-        finally:
-            close_ct_session()
-        mapping = get_biotope_mapping()
-        biotope_landcover_rows = [
-            {'code': code, 'name_ua': names[0], 'name_en': names[1],
-             'biotope_id': mapping.get(code)}
-            for code, names in sorted(WORLDCOVER_CLASSES.items())
-        ]
     except Exception as e:
         current_app.logger.warning(f"CT admin: cannot load biotope auto-assign context: {e}")
         DEFAULT_RADIUS_M, DEFAULT_TOP_N = 100, 3
@@ -167,8 +150,6 @@ def admin_panel(lang_code):
         disk_usage=disk_usage,
         flagged_count=flagged_count,
         gee_available=gee_available,
-        biotope_list=biotope_list,
-        biotope_landcover_rows=biotope_landcover_rows,
         biotope_autoassign_radius=DEFAULT_RADIUS_M,
         biotope_autoassign_top_n=DEFAULT_TOP_N,
     )
@@ -5128,48 +5109,6 @@ def biotope_auto_assign_status(lang_code):
         return jsonify({'error': _('Помилка отримання статусу')}), 500
 
 
-@camera_traps_bp.route('/admin/biotopes/mapping', methods=['POST'])
-@login_required
-@role_required('admin')
-def biotope_landcover_mapping_save(lang_code):
-    """Save one landcover-class → biotope mapping row (AJAX).
-
-    Body: ``{worldcover_class: int, biotope_id: int|null}``. A null biotope_id
-    clears the mapping for that class.
-    """
-    from .biotope_autoassign import set_biotope_mapping, WORLDCOVER_CLASSES
-
-    data = request.get_json(silent=True) or {}
-    try:
-        wc = int(data.get('worldcover_class'))
-    except (TypeError, ValueError):
-        return jsonify({'error': _('Некоректний клас лендковеру.')}), 400
-    if wc not in WORLDCOVER_CLASSES:
-        return jsonify({'error': _('Невідомий клас лендковеру.')}), 400
-
-    raw_bid = data.get('biotope_id')
-    biotope_id = None
-    if raw_bid not in (None, '', 'null'):
-        try:
-            biotope_id = int(raw_bid)
-        except (TypeError, ValueError):
-            return jsonify({'error': _('Некоректний біотоп.')}), 400
-        # Validate the biotope exists.
-        ct_session = get_ct_session()
-        try:
-            exists = ct_session.query(Biotope.id).filter(Biotope.id == biotope_id).first()
-        finally:
-            close_ct_session()
-        if not exists:
-            return jsonify({'error': _('Біотоп не знайдено.')}), 400
-
-    try:
-        set_biotope_mapping(wc, biotope_id)
-    except Exception as e:
-        current_app.logger.exception(f"biotope mapping save failed: {e}")
-        return jsonify({'error': _('Не вдалося зберегти відповідність.')}), 500
-
-    return jsonify({'success': True, 'worldcover_class': wc, 'biotope_id': biotope_id}), 200
 
 @camera_traps_bp.route('/data-export')
 @login_required

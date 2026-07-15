@@ -232,39 +232,9 @@
         </div>
         {% endif %}
 
-        {# ── Landcover class → biotope mapping editor ── #}
-        <h3 class="admin-action__title" style="margin-top:1rem;">{{ _('Відповідність: клас лендковеру → біотоп') }}</h3>
-        <p class="ai-meta text-muted">
-            {{ _('Класи ESA WorldCover. Оберіть, який біотоп відповідає кожному класу. Класи без відповідності ігноруються при автопризначенні. Зміни зберігаються одразу.') }}
+        <p class="ai-meta text-muted" style="margin-top:.75rem;">
+            {{ _('Відповідність «клас лендковеру → біотоп» задається в базі даних (таблиця biotope_landcover_map).') }}
         </p>
-        <table class="table table-sm" id="biotope-mapping-table" style="max-width:640px;">
-            <thead>
-                <tr>
-                    <th style="width:4rem;">{{ _('Код') }}</th>
-                    <th>{{ _('Клас лендковеру') }}</th>
-                    <th>{{ _('Біотоп') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in biotope_landcover_rows %}
-                <tr>
-                    <td>{{ row.code }}</td>
-                    <td>{{ row.name_ua if g.lang_code == 'uk' else row.name_en }}</td>
-                    <td>
-                        <select class="biotope-map-select" data-wc="{{ row.code }}" style="max-width:16rem;">
-                            <option value="">— {{ _('не задано') }} —</option>
-                            {% for b in biotope_list %}
-                            <option value="{{ b.id }}" {% if row.biotope_id == b.id %}selected{% endif %}>
-                                {{ b.name_ua if g.lang_code == 'uk' else b.name_en }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <span class="biotope-map-saved" style="display:none;color:#28a745;">✓</span>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
     </section>
 
     {# ── Storage and batches (health metrics) ── #}
@@ -751,36 +721,6 @@
 
         fetchStatus();
     }
-
-    // Mapping editor: save each class→biotope change immediately.
-    const mapUrl = `/${LANG}/camera-traps/admin/biotopes/mapping`;
-    document.querySelectorAll('.biotope-map-select').forEach(function(sel) {
-        sel.addEventListener('change', async function() {
-            const wc = parseInt(sel.dataset.wc, 10);
-            const val = sel.value === '' ? null : parseInt(sel.value, 10);
-            const savedMark = sel.parentElement.querySelector('.biotope-map-saved');
-            try {
-                const r = await fetch(mapUrl, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ worldcover_class: wc, biotope_id: val }),
-                    credentials: 'same-origin'
-                });
-                if (!r.ok) throw new Error('save failed');
-                if (savedMark) {
-                    savedMark.style.display = 'inline';
-                    setTimeout(() => { savedMark.style.display = 'none'; }, 1500);
-                }
-            } catch (e) {
-                sel.style.outline = '2px solid #dc3545';
-                setTimeout(() => { sel.style.outline = ''; }, 2000);
-            }
-        });
-    });
 })();
 
 // ── AI pause indicator: poll the lease state every 30 s ────────────────────
