@@ -84,17 +84,38 @@ WORLDCOVER_CLASSES: dict[int, tuple[str, str]] = {
     100: ('Мохи та лишайники', 'Moss and lichen'),
 }
 
+#: General landcover biotopes seeded into the ``biotopes`` table so every
+#: ecologically-relevant ESA WorldCover class (for Ukraine) has a biotope to map
+#: to: ``(name_ua, name_en)``. Created idempotently (ON CONFLICT (name_ua)) by
+#: scripts/init_biotope_autoassign.py. "Лука" (class 30) is a pre-existing
+#: standard biotope, so it is not created here — only mapped. Snow/ice (70),
+#: mangroves (95) and moss/lichen (100) are omitted as irrelevant for Ukraine.
+DEFAULT_LANDCOVER_BIOTOPES: list[tuple[str, str]] = [
+    ('Ліс', 'Forest'),
+    ('Чагарники', 'Shrubland'),
+    ('Рілля', 'Cropland'),
+    ('Забудова', 'Built-up'),
+    ('Оголений ґрунт', 'Bare / sparse vegetation'),
+    ('Водойми', 'Water bodies'),
+    ('Водно-болотне угіддя', 'Wetland'),
+]
+
 #: Seed defaults: ESA WorldCover class → biotope ``name_ua`` (see
-#: scripts/init_biotope_autoassign.py). Deliberately conservative — WorldCover
-#: cannot distinguish coniferous / deciduous / mixed forest, so class 10 maps to
-#: the generic "Мішаний ліс"; "Берег річки" and forest sub-types are left for
-#: the admin to refine. Only classes with a confident match are seeded; the rest
-#: (shrubland, cropland, built-up, bare, snow, mangroves, moss) stay unmapped.
+#: scripts/init_biotope_autoassign.py). Maps each class to a GENERAL biotope,
+#: because WorldCover is too coarse to tell coniferous/deciduous/mixed forest
+#: apart, or a pond from a lake, or peatland from a marsh. The specific biotopes
+#: (forest sub-types, Стави, Торфовище, Берег річки) stay in the table for manual
+#: tagging. Every name here must exist in DEFAULT_LANDCOVER_BIOTOPES or already
+#: in the biotopes table ("Лука").
 DEFAULT_SEED_BY_NAME_UA: dict[int, str] = {
-    10: 'Мішаний ліс',
+    10: 'Ліс',
+    20: 'Чагарники',
     30: 'Лука',
-    80: 'Стави',
-    90: 'Торфовище',
+    40: 'Рілля',
+    50: 'Забудова',
+    60: 'Оголений ґрунт',
+    80: 'Водойми',
+    90: 'Водно-болотне угіддя',
 }
 
 
