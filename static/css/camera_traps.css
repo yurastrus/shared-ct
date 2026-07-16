@@ -825,9 +825,12 @@ main { position: relative; }   /* anchor for absolute children */
     border-radius: var(--radius-md);
     font-size: 0.85rem;
     color: #1e40af;
+    flex-wrap: wrap;   /* let the text drop below the icon rather than overflow */
 }
 .ai-pred-icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
-.ai-pred-text  { line-height: 1.3; }
+/* min-width:0 + wrap so a long predicted species name shrinks/wraps inside the
+   badge instead of forcing it (and the page) wider than the viewport. */
+.ai-pred-text  { line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
 body.dark-theme .ai-pred-badge {
     background: linear-gradient(135deg, #1e3a5f 0%, #3b2e5f 100%);
     border-color: #5fa3ff;
