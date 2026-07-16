@@ -910,6 +910,9 @@ def institution_stats(lang_code):
             total_series = c['total']
             pct_verified = round(c['completed'] * 100.0 / total_series, 1) if total_series else 0
             pct_pending = round(c['pending'] * 100.0 / total_series, 1) if total_series else 0
+            # "In progress" = has identifications but not yet completed/archived.
+            # Derived as the remainder so the three percentages always sum to 100.
+            pct_in_progress = round(100.0 - pct_verified - pct_pending, 1) if total_series else 0
             institutions_stats.append({
                 'name': name_map.get(r.institution_id, f"#{r.institution_id}"),
                 'd_today': r.d_today or 0,
@@ -918,6 +921,7 @@ def institution_stats(lang_code):
                 'd_year': r.d_year or 0,
                 'total': r.total or 0,
                 'pct_verified': pct_verified,
+                'pct_in_progress': pct_in_progress,
                 'pct_pending': pct_pending,
             })
 

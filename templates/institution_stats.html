@@ -70,6 +70,7 @@
                         <th data-type="num">{{ _('Рік') }}</th>
                         <th data-type="num" class="sorted-desc">{{ _('Усього') }}</th>
                         <th data-type="num">{{ _('% верифіковано') }}</th>
+                        <th data-type="num">{{ _('% в роботі') }}</th>
                         <th data-type="num">{{ _('% в очікуванні') }}</th>
                     </tr>
                 </thead>
@@ -83,6 +84,7 @@
                         <td>{{ inst.d_year }}</td>
                         <td class="col-total">{{ inst.total }}</td>
                         <td>{{ inst.pct_verified }}%</td>
+                        <td>{{ inst.pct_in_progress }}%</td>
                         <td>{{ inst.pct_pending }}%</td>
                     </tr>
                     {% endfor %}
