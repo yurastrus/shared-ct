@@ -2115,8 +2115,16 @@ body.dark-theme .message-container.error {
     .dashboard-wrapper .stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
 
     /* Gallery / identification */
+    /* minmax(0,1fr) not 1fr: a plain 1fr track keeps min-width:auto and blows
+       out to the widest content (e.g. a long species name), scrolling the whole
+       page sideways. minmax(0,…) lets the track shrink to the viewport. */
     .gallery-layout,
-    .identification-layout    { grid-template-columns: 1fr; }
+    .identification-layout    { grid-template-columns: minmax(0, 1fr); }
+    .identification-layout > .viewer-and-form,
+    .identification-layout > .right-column { min-width: 0; }
+    /* Long species names wrap instead of forcing horizontal overflow. */
+    .species-option label,
+    .identification-species   { overflow-wrap: anywhere; }
     .right-column             { order: -1; }
     .action-buttons-container { position: static; }
     .species-selection-panel  { max-height: none; }
