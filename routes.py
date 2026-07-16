@@ -818,7 +818,8 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
         _window(start_month).label('d_month'),
         _window(start_year).label('d_year'),
         func.count(distinct(Photo.observation_id)).label('total'),
-    ).join(Photo, Identification.photo_id == Photo.id)\
+    ).select_from(Identification)\
+        .join(Photo, Identification.photo_id == Photo.id)\
         .join(Observation, Photo.observation_id == Observation.id)\
         .join(Location, Observation.location_id == Location.id)\
         .join(location_institutions, location_institutions.c.location_id == Location.id)\
