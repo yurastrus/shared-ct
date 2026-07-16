@@ -70,12 +70,6 @@
                 <span class="hub-card__desc">{{ _('Аналіз поведінкових тегів окремого виду.') }}</span>
             </a>
 
-            <a class="hub-card" href="{{ url_for('camera_traps.institution_stats', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🏛️</span>
-                <span class="hub-card__title">{{ _('Верифікації по установах') }}</span>
-                <span class="hub-card__desc">{{ _('Статистика опрацьованих серій за установами (день/тиждень/місяць) та загальні лічильники фото й серій.') }}</span>
-            </a>
-
         </div>
     </section>
 
@@ -122,6 +116,11 @@
                 <span class="hub-card__icon">✅</span>
                 <span class="hub-card__title">{{ _('Якість даних') }}</span>
                 <span class="hub-card__desc">{{ _('Карта та графіки контролю якості деплойментів.') }}</span>
+            </a>
+            <a class="hub-card" href="{{ url_for('camera_traps.institution_stats', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🏛️</span>
+                <span class="hub-card__title">{{ _('Верифікації по установах') }}</span>
+                <span class="hub-card__desc">{{ _('Опрацьовані серії за установами та лічильники фото.') }}</span>
             </a>
             {% endif %}
 

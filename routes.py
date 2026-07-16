@@ -830,6 +830,8 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
 
 
 @camera_traps_bp.route('/institution-stats')
+@login_required
+@role_required('manager')
 def institution_stats(lang_code):
     """Verification statistics aggregated per institution (rolling today / week /
     month / year / all-time), plus system-wide totals: total photos, total series,
