@@ -1790,6 +1790,10 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 }
 .species-option label:hover              { background-color: var(--bg-secondary); }
 .species-option input[type="radio"]      { margin-right: 6px; flex-shrink: 0; width: 13px; height: 13px; margin-top: 0; margin-bottom: 0; }
+/* The name is a real flex item (not a bare text node) so it can shrink below its
+   content width and wrap — otherwise a long species name forces the label, the
+   panel, and the whole page wider than the viewport. */
+.species-option label .species-name      { min-width: 0; overflow-wrap: anywhere; }
 
 .behavior-checkboxes {
     display: flex;
@@ -2122,8 +2126,6 @@ body.dark-theme .message-container.error {
     .identification-layout    { grid-template-columns: minmax(0, 1fr); }
     .identification-layout > .viewer-and-form,
     .identification-layout > .right-column { min-width: 0; }
-    /* Long species names wrap instead of forcing horizontal overflow. */
-    .species-option label,
     .identification-species   { overflow-wrap: anywhere; }
     .right-column             { order: -1; }
     .action-buttons-container { position: static; }
