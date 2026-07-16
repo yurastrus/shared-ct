@@ -830,6 +830,49 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
         .all()
 
 
+def query_institution_series_counts(ct_session, inst_condition_orm, inst_params):
+    """Per-institution series counts (all-time, access-scoped):
+    {institution_id: {'total', 'completed', 'pending'}}.
+
+    total     — all observations in the institution's locations;
+    completed — status in ('completed', 'archived');
+    pending   — series with no identifications yet (mirrors the dashboard's
+                ~Observation.photos.any(Photo.identifications.any()) definition,
+                run as a separate grouped query since it needs an EXISTS filter).
+    """
+    base = ct_session.query(
+        location_institutions.c.institution_id.label('institution_id'),
+        func.count(distinct(Observation.id)).label('total'),
+        func.count(distinct(case(
+            (Observation.status.in_(['completed', 'archived']), Observation.id)
+        ))).label('completed'),
+    ).select_from(Observation)\
+        .join(Location, Observation.location_id == Location.id)\
+        .join(location_institutions, location_institutions.c.location_id == Location.id)\
+        .filter(inst_condition_orm).params(**inst_params)\
+        .filter(Location.id.in_(valid_location_id_subquery()))\
+        .group_by(location_institutions.c.institution_id).all()
+
+    pending = ct_session.query(
+        location_institutions.c.institution_id.label('institution_id'),
+        func.count(distinct(Observation.id)).label('pending'),
+    ).select_from(Observation)\
+        .join(Location, Observation.location_id == Location.id)\
+        .join(location_institutions, location_institutions.c.location_id == Location.id)\
+        .filter(~Observation.photos.any(Photo.identifications.any()))\
+        .filter(inst_condition_orm).params(**inst_params)\
+        .filter(Location.id.in_(valid_location_id_subquery()))\
+        .group_by(location_institutions.c.institution_id).all()
+
+    counts = {}
+    for r in base:
+        counts[r.institution_id] = {'total': r.total or 0, 'completed': r.completed or 0, 'pending': 0}
+    for r in pending:
+        counts.setdefault(r.institution_id, {'total': 0, 'completed': 0, 'pending': 0})
+        counts[r.institution_id]['pending'] = r.pending or 0
+    return counts
+
+
 @camera_traps_bp.route('/institution-stats')
 @login_required
 @role_required('manager')
@@ -852,6 +895,7 @@ def institution_stats(lang_code):
         inst_condition_orm = text(inst_condition)
 
         rows = query_institution_stats(ct_session, today, inst_condition_orm, inst_params)
+        series_counts = query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
 
         # Map institution_id -> localised name (institutions live in the main DB).
         name_map = {}
@@ -862,6 +906,10 @@ def institution_stats(lang_code):
 
         institutions_stats = []
         for r in rows:
+            c = series_counts.get(r.institution_id, {'total': 0, 'completed': 0, 'pending': 0})
+            total_series = c['total']
+            pct_verified = round(c['completed'] * 100.0 / total_series, 1) if total_series else 0
+            pct_pending = round(c['pending'] * 100.0 / total_series, 1) if total_series else 0
             institutions_stats.append({
                 'name': name_map.get(r.institution_id, f"#{r.institution_id}"),
                 'd_today': r.d_today or 0,
@@ -869,6 +917,8 @@ def institution_stats(lang_code):
                 'd_month': r.d_month or 0,
                 'd_year': r.d_year or 0,
                 'total': r.total or 0,
+                'pct_verified': pct_verified,
+                'pct_pending': pct_pending,
             })
 
         # --- System-wide totals (access-scoped, all-time) ---
