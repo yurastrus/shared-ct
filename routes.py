@@ -792,6 +792,130 @@ def contributors(lang_code):
         close_ct_session()
 
 
+def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
+    """Verification statistics per INSTITUTION with rolling windows.
+
+    Mirror of query_contributor_stats but grouped by institution instead of user.
+    Metric — distinct observations that received an identification within the
+    window, counted by Identification.created_at (processing time). A location may
+    belong to several institutions (M2M via location_institutions), so an
+    observation can count toward each of them.
+    """
+    start_today = datetime.combine(today, datetime.min.time())
+    start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
+    start_month = datetime.combine(today - relativedelta(months=1), datetime.min.time())
+    start_year = datetime.combine(today - relativedelta(years=1), datetime.min.time())
+
+    def _window(threshold):
+        return func.count(distinct(
+            case((Identification.created_at >= threshold, Photo.observation_id))
+        ))
+
+    return ct_session.query(
+        location_institutions.c.institution_id.label('institution_id'),
+        _window(start_today).label('d_today'),
+        _window(start_week).label('d_week'),
+        _window(start_month).label('d_month'),
+        _window(start_year).label('d_year'),
+        func.count(distinct(Photo.observation_id)).label('total'),
+    ).join(Photo, Identification.photo_id == Photo.id)\
+        .join(Observation, Photo.observation_id == Observation.id)\
+        .join(Location, Observation.location_id == Location.id)\
+        .join(location_institutions, location_institutions.c.location_id == Location.id)\
+        .filter(inst_condition_orm).params(**inst_params)\
+        .filter(Location.id.in_(valid_location_id_subquery()))\
+        .group_by(location_institutions.c.institution_id)\
+        .order_by(func.count(distinct(Photo.observation_id)).desc())\
+        .all()
+
+
+@camera_traps_bp.route('/institution-stats')
+def institution_stats(lang_code):
+    """Verification statistics aggregated per institution (rolling today / week /
+    month / year / all-time), plus system-wide totals: total photos, total series,
+    pending series (no identifications yet) and completed series. Sibling of the
+    contributors page but grouped by institution instead of by person. Data is
+    limited to the viewer's access scope (get_institution_filter)."""
+    ct_session = get_ct_session()
+    try:
+        today = date.today()
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        user_inst_ids = [inst.id for inst in current_user.institutions] \
+            if current_user.is_authenticated else []
+
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=None, table_alias='locations'
+        )
+        inst_condition_orm = text(inst_condition)
+
+        rows = query_institution_stats(ct_session, today, inst_condition_orm, inst_params)
+
+        # Map institution_id -> localised name (institutions live in the main DB).
+        name_map = {}
+        inst_ids = [r.institution_id for r in rows if r.institution_id]
+        if inst_ids:
+            for i in Institution.query.filter(Institution.id.in_(inst_ids)).all():
+                name_map[i.id] = (i.name_en or i.name_uk) if g.lang_code == 'en' else (i.name_uk or i.name_en)
+
+        institutions_stats = []
+        for r in rows:
+            institutions_stats.append({
+                'name': name_map.get(r.institution_id, f"#{r.institution_id}"),
+                'd_today': r.d_today or 0,
+                'd_week': r.d_week or 0,
+                'd_month': r.d_month or 0,
+                'd_year': r.d_year or 0,
+                'total': r.total or 0,
+            })
+
+        # --- System-wide totals (access-scoped, all-time) ---
+        def _scoped(q):
+            return q.filter(inst_condition_orm).params(**inst_params)\
+                    .filter(Location.id.in_(valid_location_id_subquery()))
+
+        total_photos = _scoped(
+            ct_session.query(func.count(Photo.id))
+            .join(Observation, Photo.observation_id == Observation.id)
+            .join(Location, Observation.location_id == Location.id)
+        ).scalar() or 0
+
+        total_series = _scoped(
+            ct_session.query(func.count(distinct(Observation.id)))
+            .join(Location, Observation.location_id == Location.id)
+        ).scalar() or 0
+
+        completed_series = _scoped(
+            ct_session.query(func.count(distinct(Observation.id)))
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Observation.status.in_(['completed', 'archived']))
+        ).scalar() or 0
+
+        pending_series = _scoped(
+            ct_session.query(func.count(Observation.id))
+            .join(Location, Observation.location_id == Location.id)
+            .filter(~Observation.photos.any(Photo.identifications.any()))
+        ).scalar() or 0
+
+        totals = {
+            'photos': total_photos,
+            'series': total_series,
+            'completed': completed_series,
+            'pending': pending_series,
+        }
+
+        return render_template(
+            'institution_stats.html',
+            institutions_stats=institutions_stats,
+            totals=totals,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error in institution_stats: {str(e)}")
+        flash(_('Помилка завантаження статистики установ.'), 'warning')
+        return render_template('institution_stats.html', institutions_stats=[], totals=None)
+    finally:
+        close_ct_session()
+
+
 #
 # --- UPLOAD STATISTICS (admin) ---
 #

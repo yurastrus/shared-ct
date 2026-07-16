@@ -1,0 +1,122 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Статистика верифікацій по установах') }}{% endblock %}
+
+{% block ct_head_extra %}
+<style>
+    .inst-totals { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 8px; }
+    .inst-total-card {
+        flex: 1 1 150px; min-width: 0; background: #f6f8fa; border: 1px solid #e0e0e0;
+        border-radius: 8px; padding: 12px 16px; text-align: center;
+    }
+    .inst-total-card .num { font-size: 1.6rem; font-weight: 700; color: #0d6efd; }
+    .inst-total-card .lbl { font-size: 0.85rem; color: #555; margin-top: 2px; }
+    .inst-total-card.pending .num { color: #d39e00; }
+    .inst-total-card.completed .num { color: #198754; }
+
+    .inst-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .inst-table th, .inst-table td {
+        padding: 8px 12px; border-bottom: 1px solid #e0e0e0; text-align: right;
+    }
+    .inst-table th:first-child, .inst-table td:first-child { text-align: left; }
+    .inst-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .inst-table th.sorted-asc::after { content: " \25B2"; }
+    .inst-table th.sorted-desc::after { content: " \25BC"; }
+    .inst-table tbody tr:hover { background: #f6f8fa; }
+    .col-total { font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+    <div class="dashboard-wrapper">
+
+        <div class="page-header">
+            <h1>{{ _('Статистика верифікацій по установах') }}</h1>
+            <h4>{{ _('Кількість опрацьованих серій за ковзні періоди, згруповано за установами.') }}</h4>
+        </div>
+
+        {% if totals %}
+        <div class="inst-totals">
+            <div class="inst-total-card">
+                <div class="num">{{ totals.photos }}</div>
+                <div class="lbl">{{ _('Фото в системі') }}</div>
+            </div>
+            <div class="inst-total-card">
+                <div class="num">{{ totals.series }}</div>
+                <div class="lbl">{{ _('Серій усього') }}</div>
+            </div>
+            <div class="inst-total-card pending">
+                <div class="num">{{ totals.pending }}</div>
+                <div class="lbl">{{ _('Серій в очікуванні') }}</div>
+            </div>
+            <div class="inst-total-card completed">
+                <div class="num">{{ totals.completed }}</div>
+                <div class="lbl">{{ _('Серій завершено') }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="dashboard-section" style="margin-top: 20px;">
+            {% if institutions_stats %}
+            <div class="table-scroll">
+            <table class="inst-table" id="inst-table">
+                <thead>
+                    <tr>
+                        <th data-type="text">{{ _('Установа') }}</th>
+                        <th data-type="num">{{ _('Сьогодні') }}</th>
+                        <th data-type="num">{{ _('Тиждень') }}</th>
+                        <th data-type="num">{{ _('Місяць') }}</th>
+                        <th data-type="num">{{ _('Рік') }}</th>
+                        <th data-type="num" class="sorted-desc">{{ _('Усього') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inst in institutions_stats %}
+                    <tr>
+                        <td>{{ inst.name }}</td>
+                        <td>{{ inst.d_today }}</td>
+                        <td>{{ inst.d_week }}</td>
+                        <td>{{ inst.d_month }}</td>
+                        <td>{{ inst.d_year }}</td>
+                        <td class="col-total">{{ inst.total }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <div class="info-message">{{ _('Немає даних про верифікації в межах вашого доступу.') }}</div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var table = document.getElementById('inst-table');
+    if (!table) return;
+    var headers = table.querySelectorAll('thead th');
+    var tbody = table.querySelector('tbody');
+    headers.forEach(function (th, idx) {
+        th.addEventListener('click', function () {
+            var type = th.getAttribute('data-type') || 'text';
+            var asc = !th.classList.contains('sorted-asc');
+            headers.forEach(function (h) { h.classList.remove('sorted-asc', 'sorted-desc'); });
+            th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+            var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+            rows.sort(function (a, b) {
+                var x = a.children[idx].textContent.trim();
+                var y = b.children[idx].textContent.trim();
+                if (type === 'num') { x = parseFloat(x) || 0; y = parseFloat(y) || 0; return asc ? x - y : y - x; }
+                return asc ? x.localeCompare(y) : y.localeCompare(x);
+            });
+            rows.forEach(function (r) { tbody.appendChild(r); });
+        });
+    });
+})();
+</script>
+{% endblock %}
