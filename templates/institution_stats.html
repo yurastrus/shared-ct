@@ -13,6 +13,7 @@
     .inst-total-card .lbl { font-size: 0.85rem; color: #555; margin-top: 2px; }
     .inst-total-card.pending .num { color: #d39e00; }
     .inst-total-card.completed .num { color: #198754; }
+    .inst-total-card.in-progress .num { color: #6f42c1; }
 
     .inst-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     .inst-table th, .inst-table td {
@@ -46,13 +47,17 @@
                 <div class="num">{{ totals.series }}</div>
                 <div class="lbl">{{ _('Серій усього') }}</div>
             </div>
-            <div class="inst-total-card pending">
-                <div class="num">{{ totals.pending }}</div>
-                <div class="lbl">{{ _('Серій в очікуванні') }}</div>
-            </div>
             <div class="inst-total-card completed">
                 <div class="num">{{ totals.completed }}</div>
                 <div class="lbl">{{ _('Серій завершено') }}</div>
+            </div>
+            <div class="inst-total-card in-progress">
+                <div class="num">{{ totals.in_progress }}</div>
+                <div class="lbl">{{ _('Серій в процесі') }}</div>
+            </div>
+            <div class="inst-total-card pending">
+                <div class="num">{{ totals.pending }}</div>
+                <div class="lbl">{{ _('Серій в очікуванні') }}</div>
             </div>
         </div>
         {% endif %}

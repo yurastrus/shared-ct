@@ -958,6 +958,7 @@ def institution_stats(lang_code):
             'series': total_series,
             'completed': completed_series,
             'pending': pending_series,
+            'in_progress': total_series - completed_series - pending_series,
         }
 
         return render_template(
