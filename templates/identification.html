@@ -815,6 +815,14 @@ $(document).ready(function() {
                 form[0].reset();
                 $('#comment-counter').text('0');  // #47: reset the comment character counter.
 
+                // Автопрокрутка: контроли швидкості й тумблер живуть усередині
+                // <form>, тож form.reset() вище скидає повзунок на HTML-дефолт
+                // (5 к/с), хоча фактична швидкість (autoPlayFps) не змінилась.
+                // Пересинхронізувати відображення з реальним станом.
+                $('#autoplay-speed').val(autoPlayFps);
+                $('#autoplay-speed-num').val(autoPlayFps);
+                $('#autoplay-toggle-input').prop('checked', autoPlay);
+
                 // AI prediction: pre-fill species + show badge.
                 applyAIPrediction(data.ai_prediction);
 
