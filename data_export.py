@@ -104,7 +104,22 @@ def get_ct_occurrence_data(filters, limit=None):
             taxo_where = " AND " + " AND ".join(taxo_conditions) if taxo_conditions else ""
 
             filter_type = filters.get('filter_type', 'species_only')
-            species_filter_condition = "AND c.species_id > 0" if filter_type == 'species_only' else ""
+            # Standardised on the joined species alias ``s`` (was ``c.species_id``):
+            # all record producers below join ``species s``, so ``s.id`` works
+            # uniformly for consensus / conflict / AI rows.
+            species_filter_condition = "AND s.id > 0" if filter_type == 'species_only' else ""
+
+            # --- Export completeness mode (#new filter) ---
+            #   consensus  — only series that reached expert consensus (default; legacy behaviour)
+            #   human_any  — every series with >=1 human identification: consensus → 1 row,
+            #                unresolved/conflicting → one row per competing species, all sharing
+            #                the same ``observationID`` so R can group them
+            #   human_ai   — human_any PLUS series with no human input at all, exported with the
+            #                AI prediction (best model by accuracy_rank), flagged as AI in the
+            #                identification columns + real confidence value
+            export_mode = filters.get('export_mode', 'consensus')
+            if export_mode not in ('consensus', 'human_any', 'human_ai'):
+                export_mode = 'consensus'
 
             # --- Institution filter ---
             institution_ids = filters.get('institution_ids')
@@ -119,9 +134,19 @@ def get_ct_occurrence_data(filters, limit=None):
             else:
                 inst_cond = ""
 
-            # --- Main SQL query (CTE pipeline) ---
+            # Filter fragment shared by every record producer (date + taxon +
+            # institution + QC + validity). Each producer joins ``o``/``l``/``s``,
+            # so the same fragment drops into all of them.
+            common_conditions = f"""
+                        l.is_valid IS NOT FALSE  -- exclude admin-invalidated locations
+                        AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+                        {species_filter_condition}
+                        {taxo_where}
+                        {inst_cond}
+                        {qc_cond}"""
 
-            base_query_cte = f"""
+            # --- Shared CTEs (built from the identifications table) ---
+            shared_ctes = """
                 WITH ObservationConsensus AS (
                     SELECT
                         p.observation_id, i.species_id,
@@ -138,7 +163,8 @@ def get_ct_occurrence_data(filters, limit=None):
                         ) as rn
                     FROM ObservationConsensus
                 ),
-                -- --- NEW BLOCK: Collect IDs of users who voted for the winning species ---
+                -- IDs of users who voted for each species in a series (per species,
+                -- so it serves both the winning row and each competing conflict row).
                 WinningIdentifiers AS (
                     SELECT
                         p.observation_id,
@@ -147,36 +173,125 @@ def get_ct_occurrence_data(filters, limit=None):
                     FROM identifications i
                     JOIN photos p ON i.photo_id = p.id
                     GROUP BY p.observation_id, i.species_id
-                ),
-                -- --- END OF NEW BLOCK ---
-                BaseData AS (
+                )
+            """
+
+            # Producer C — consensus rows (status completed/archived), one per series.
+            producer_consensus = f"""
                     SELECT
                         o.id as observation_id,
-                        c.species_id as winning_species_id,
-                        c.max_quantity,
+                        s.id as species_id,
                         s.scientific_name, s.kingdom, s.phylum, s."class", s.order_rank,
                         s.family, s.genus, s.establishment_means,
                         o.series_start_time,
                         l.latitude as lat, l.longitude as lon, l.name as location_name, l.state_province,
-                        wi.identifier_user_ids -- <-- ADDED: Get the string of IDs
+                        rc.max_quantity,
+                        wi.identifier_user_ids,
+                        'human_consensus'::text as row_kind,
+                        NULL::double precision as ai_confidence,
+                        NULL::text as ai_model_name
                     FROM observations o
-                    JOIN RankedConsensus c ON o.id = c.observation_id AND c.rn = 1
+                    JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
                     JOIN locations l ON o.location_id = l.id
-                    JOIN species s ON s.id = c.species_id
-                    -- <-- CHANGED: Join the new CTE to get the correct users -->
-                    LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND c.species_id = wi.species_id
-                    WHERE
-                        o.status IN ('completed', 'archived')
-                        AND l.is_valid IS NOT FALSE  -- exclude admin-invalidated locations
-                        AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
-                        {species_filter_condition}
-                        {taxo_where}
-                        {inst_cond}
-                        {qc_cond}
+                    JOIN species s ON s.id = rc.species_id
+                    LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND rc.species_id = wi.species_id
+                    WHERE o.status IN ('completed', 'archived')
+                        AND {common_conditions}
+            """
+
+            # Producer H — unresolved/conflicting human series (status pending with
+            # >=1 identification): one row per competing species.
+            producer_conflict = f"""
+                    SELECT
+                        o.id as observation_id,
+                        s.id as species_id,
+                        s.scientific_name, s.kingdom, s.phylum, s."class", s.order_rank,
+                        s.family, s.genus, s.establishment_means,
+                        o.series_start_time,
+                        l.latitude as lat, l.longitude as lon, l.name as location_name, l.state_province,
+                        oc.max_quantity,
+                        wi.identifier_user_ids,
+                        'human_conflict'::text as row_kind,
+                        NULL::double precision as ai_confidence,
+                        NULL::text as ai_model_name
+                    FROM observations o
+                    JOIN ObservationConsensus oc ON o.id = oc.observation_id
+                    JOIN locations l ON o.location_id = l.id
+                    JOIN species s ON s.id = oc.species_id
+                    LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND oc.species_id = wi.species_id
+                    WHERE o.status = 'pending'
+                        AND {common_conditions}
+            """
+
+            # Producer A — AI-only series (no human identification at all), exported
+            # with the prediction from the highest-ranked model that resolved a species.
+            ai_pick_cte = """
+                , AIPick AS (
+                    SELECT
+                        ap.observation_id,
+                        ap.prediction_species_id,
+                        ap.prediction_score,
+                        COALESCE(ap.animal_count, 1) as animal_count,
+                        am.name as model_name, am.version as model_version,
+                        lvl.code as level_code,
+                        ROW_NUMBER() OVER(
+                            PARTITION BY ap.observation_id
+                            ORDER BY COALESCE(lvl.accuracy_rank, 0) DESC,
+                                     ap.prediction_score DESC NULLS LAST
+                        ) as rn
+                    FROM ai_predictions ap
+                    JOIN ai_models am ON ap.model_id = am.id
+                    LEFT JOIN ai_model_levels lvl ON am.level_id = lvl.id
+                    WHERE ap.prediction_species_id IS NOT NULL
+                )
+            """
+            producer_ai = f"""
+                    SELECT
+                        o.id as observation_id,
+                        s.id as species_id,
+                        s.scientific_name, s.kingdom, s.phylum, s."class", s.order_rank,
+                        s.family, s.genus, s.establishment_means,
+                        o.series_start_time,
+                        l.latitude as lat, l.longitude as lon, l.name as location_name, l.state_province,
+                        aip.animal_count as max_quantity,
+                        NULL::text as identifier_user_ids,
+                        'ai'::text as row_kind,
+                        aip.prediction_score as ai_confidence,
+                        (aip.model_name || ' ' || aip.model_version
+                            || COALESCE(' (' || aip.level_code || ')', '')) as ai_model_name
+                    FROM observations o
+                    JOIN AIPick aip ON o.id = aip.observation_id AND aip.rn = 1
+                    JOIN locations l ON o.location_id = l.id
+                    JOIN species s ON s.id = aip.prediction_species_id
+                    WHERE NOT EXISTS (
+                            SELECT 1 FROM identifications i2
+                            JOIN photos p2 ON i2.photo_id = p2.id
+                            WHERE p2.observation_id = o.id
+                          )
+                        AND {common_conditions}
+            """
+
+            # Assemble the CTE header + UNION of the producers required by the mode.
+            cte_header = shared_ctes
+            producers = [producer_consensus]
+            if export_mode in ('human_any', 'human_ai'):
+                producers.append(producer_conflict)
+            if export_mode == 'human_ai':
+                cte_header = shared_ctes + ai_pick_cte
+                producers.append(producer_ai)
+
+            base_query_cte = f"""
+                {cte_header},
+                BaseData AS (
+                    {' UNION ALL '.join(producers)}
                 )
             """
 
-            aggregation = filters.get('aggregation')
+            # Variant A: aggregation is meaningful only when there is exactly one
+            # species per series. In human_any/human_ai a conflicting series expands
+            # into several rows sharing an observationID, which independence-interval
+            # reduction would tear apart — so aggregation is forced off there.
+            aggregation = filters.get('aggregation') if export_mode == 'consensus' else 'none'
             sql_query = ""
             count_query_str = ""
 
@@ -286,22 +401,58 @@ def get_ct_occurrence_data(filters, limit=None):
                 except IndexError:
                     specific_epithet = None
 
-                identifiedBy = 'Human Expert'  # fallback
+                # Resolve the human identifiers' display names (if any).
+                identifiedBy_human = ''
                 user_ids_str = row['identifier_user_ids']
                 if user_ids_str:
                     ids = [int(uid) for uid in user_ids_str.split('|')]
                     names = [user_map.get(uid, f'User #{uid}') for uid in ids]
-                    identifiedBy = " | ".join(names)
+                    identifiedBy_human = " | ".join(names)
 
                 basisOfRecord = 'MachineObservation'  # always, per requirement
-                identificationVerificationStatus = 'verified by human'
-                identificationRemarks = 'Verified by expert consensus'
+                row_kind = row.get('row_kind', 'human_consensus')
+                ai_conf = row.get('ai_confidence')
+                ai_model_name = row.get('ai_model_name')
+
+                # Machine-readable confidence column: filled for AI rows only.
+                identification_confidence = ''
+
+                if row_kind == 'ai':
+                    identifiedBy = ai_model_name or 'AI model'
+                    identificationVerificationStatus = 'unverified (AI)'
+                    if ai_conf is not None:
+                        identification_confidence = round(float(ai_conf), 3)
+                        identificationRemarks = (
+                            f"Automatic detection by {identifiedBy}, "
+                            f"confidence: {round(float(ai_conf), 2)}"
+                        )
+                    else:
+                        identificationRemarks = f"Automatic detection by {identifiedBy}"
+                elif row_kind == 'human_conflict':
+                    identifiedBy = identifiedBy_human or 'Human Expert'
+                    identificationVerificationStatus = 'competing human identifications (unresolved)'
+                    identificationRemarks = (
+                        'Competing identification — series has not reached expert '
+                        'consensus. Group rows by observationID to see all candidates.'
+                    )
+                else:  # human_consensus (legacy default)
+                    identifiedBy = identifiedBy_human or 'Human Expert'
+                    identificationVerificationStatus = 'verified by human'
+                    identificationRemarks = 'Verified by expert consensus'
+
+                # Per-row occurrenceID must stay unique; conflict rows share a series
+                # so disambiguate them by taxon. observationID is the shared grouping key.
+                occurrence_id = f"URN:ctmon:{institution_code}:observation:{row['observation_id']}"
+                if row_kind == 'human_conflict':
+                    occurrence_id += f":taxon:{row['species_id']}"
 
                 occurrence_data.append({
-                    'occurrenceID': f"URN:ctmon:{institution_code}:observation:{row['observation_id']}",
+                    'occurrenceID': occurrence_id,
+                    'observationID': row['observation_id'],
                     'basisOfRecord': basisOfRecord,
                     'identificationVerificationStatus': identificationVerificationStatus,
                     'identifiedBy': identifiedBy,
+                    'identificationConfidence': identification_confidence,
                     'identificationRemarks': identificationRemarks,
                     'institutionCode': institution_code,
                     'scientificName': row['scientific_name'], 'kingdom': row['kingdom'], 'phylum': row['phylum'],

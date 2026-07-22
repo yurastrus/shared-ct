@@ -5455,6 +5455,7 @@ def api_ct_data_preview(lang_code):
             'aggregation_minutes': request.args.get('aggregation_minutes', 5),
             'institution_code': request.args.get('institution_code', 'RSNR'),
             'filter_type': request.args.get('filter_type', 'species_only'),
+            'export_mode': request.args.get('export_mode', 'consensus'),
             'institution_ids': _get_export_institution_ids(),
             'qc_exclude': [f for f in request.args.get('qc_exclude', '').split(',') if f],
         }
@@ -5487,6 +5488,7 @@ def api_ct_data_download(lang_code):
             'aggregation_minutes': request.args.get('aggregation_minutes', 5),
             'institution_code': request.args.get('institution_code', 'WNBO-CT'),
             'filter_type': request.args.get('filter_type', 'species_only'),
+            'export_mode': request.args.get('export_mode', 'consensus'),
             'institution_ids': _get_export_institution_ids(),
             'qc_exclude': [f for f in request.args.get('qc_exclude', '').split(',') if f],
         }

@@ -34,6 +34,15 @@
             <div class="filter-group"><label for="filter-type-select">{{ _('Тип даних для експорту:') }}</label><select id="filter-type-select" class="form-control"><option value="species_only" selected>{{ _('Тільки тварини') }}</option><option value="all">{{ _('Всі записи') }}</option></select></div>
             <div class="filter-group"><label for="aggregation-level">{{ _('Рівень агрегації:') }}</label><select id="aggregation-level" class="form-control"><option value="none" selected>{{ _('Без агрегації') }}</option><option value="location_day">{{ _('Агрегувати до дня і локації') }}</option><option value="location_timewindow">{{ _('Локація + інтервал незалежності') }}</option></select></div>
             <div class="filter-group" id="timewindow-group" style="display: none;"><label for="aggregation-minutes">{{ _('Інтервал незалежності (хв):') }}</label><input type="number" id="aggregation-minutes" class="form-control" min="1" max="60" value="5"></div>
+            <div class="filter-group full-width">
+                <label for="export-mode-select">{{ _('Повнота визначення:') }}</label>
+                <select id="export-mode-select" class="form-control">
+                    <option value="consensus" selected>{{ _('Тільки завершені (досягнуто консенсусу)') }}</option>
+                    <option value="human_any">{{ _('Усі з людським визначенням (конфліктні — з усіма варіантами, спільний observationID)') }}</option>
+                    <option value="human_ai">{{ _('Люди + ШІ (без людини — визначення ШІ з реальним confidence)') }}</option>
+                </select>
+                <small class="text-muted" id="export-mode-hint">{{ _('Для режимів з людськими/ШІ визначеннями агрегація недоступна — дані видаються без агрегації (групуйте за observationID, напр. у R).') }}</small>
+            </div>
             <div class="filter-group"><label for="institution-code">{{ _('Код інституції (для DwC):') }}</label><input type="text" id="institution-code" class="form-control" value="RSNR" placeholder="{{ _('За замовчуванням: RSNR') }}"></div>
 
             <!-- QC filters — collapsed by default, none checked (shared partial) -->
@@ -193,6 +202,8 @@
             $('#timewindow-group').hide();
             $('#institution-code').val('RSNR');
             $('#filter-type-select').val('species_only');
+            $('#export-mode-select').val('consensus');
+            syncAggregationAvailability();
             $('.qc-filter-cb').prop('checked', false);
             $('#results-area').hide();
         }
@@ -202,8 +213,23 @@
 
         // #36: show the independence-interval field only for the time-window aggregation mode.
         $('#aggregation-level').on('change', function() {
-            $('#timewindow-group').toggle($(this).val() === 'location_timewindow');
+            $('#timewindow-group').toggle($(this).val() === 'location_timewindow' && $(this).is(':enabled'));
         });
+
+        // Variant A: aggregation is only meaningful with a single species per
+        // series (consensus mode). In human_any/human_ai conflicting series expand
+        // into several rows sharing an observationID, so aggregation is disabled.
+        function syncAggregationAvailability() {
+            const consensusMode = $('#export-mode-select').val() === 'consensus';
+            $('#aggregation-level').prop('disabled', !consensusMode);
+            $('#aggregation-minutes').prop('disabled', !consensusMode);
+            $('#export-mode-hint').toggle(!consensusMode);
+            if (!consensusMode) {
+                $('#aggregation-level').val('none');
+                $('#timewindow-group').hide();
+            }
+        }
+        $('#export-mode-select').on('change', syncAggregationAvailability);
         
         function getApiParams() {
             const params = new URLSearchParams();
@@ -231,6 +257,7 @@
             }
             params.append('institution_code', $('#institution-code').val() || 'RSNR');
             params.append('filter_type', $('#filter-type-select').val());
+            params.append('export_mode', $('#export-mode-select').val());
 
             const qcChecked = [];
             $('.qc-filter-cb:checked').each(function() { qcChecked.push($(this).val()); });
@@ -260,8 +287,9 @@
                     const previewData = data.preview_data;
                     if (previewData && previewData.length > 0) {
                         const previewColumns = [
-                            'institutionCode', 'class', 'order', 'family', 'genus',
+                            'observationID', 'class', 'order', 'family', 'genus',
                             'specificEpithet', 'eventDate', 'eventTime',
+                            'identificationVerificationStatus', 'identificationConfidence',
                             'decimalLatitude', 'decimalLongitude'
                         ];
                         
