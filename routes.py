@@ -1853,6 +1853,22 @@ def identify_ai_species_list(lang_code):
         if not ai_available:
             return jsonify({'ai_available': False, 'items': []}), 200
 
+        # Resolve an ecoregion scope to its institution IDs HERE — the
+        # institutions table lives in the main DB (Institution model), not in
+        # ct_db, so the ai_runner helper (CT engine only) cannot do this lookup.
+        scope_institution_ids = None
+        if scope_ecoregion and scope_institution_id is None:
+            eco_inst_ids = [
+                i.id for i in
+                Institution.query.filter_by(ecoregion_uk=scope_ecoregion).all()
+            ]
+            if not is_admin:
+                eco_inst_ids = [i for i in eco_inst_ids if i in user_inst_ids]
+            if not eco_inst_ids:
+                # No accessible institution in this ecoregion → empty list.
+                return jsonify({'ai_available': True, 'items': []}), 200
+            scope_institution_ids = eco_inst_ids
+
         try:
             items = get_species_with_ai_predictions(
                 lang_code=g.lang_code,
@@ -1860,7 +1876,7 @@ def identify_ai_species_list(lang_code):
                 user_inst_ids=user_inst_ids,
                 is_admin=is_admin,
                 scope_institution_id=scope_institution_id,
-                scope_ecoregion=scope_ecoregion,
+                scope_institution_ids=scope_institution_ids,
             )
         except Exception as e:
             current_app.logger.warning(f"AI: cannot load species list: {e}")

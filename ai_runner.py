@@ -328,7 +328,7 @@ def get_species_with_ai_predictions(
     user_inst_ids: Optional[list] = None,
     is_admin: bool = False,
     scope_institution_id: Optional[int] = None,
-    scope_ecoregion: Optional[str] = None,
+    scope_institution_ids: Optional[list] = None,
 ) -> list:
     """Return [(species_id, display_name)] for species that have **pending for
     this user** AI predictions from the active model. That is:
@@ -343,10 +343,17 @@ def get_species_with_ai_predictions(
     If user_id=None — returns all species without a user filter
     (for tests / debug).
 
-    The `scope_institution_id` / `scope_ecoregion` parameters further narrow
-    the list to locations belonging to the chosen institution or ecoregion
-    (among the user's institutions, unless admin). The parameters are mutually
-    exclusive — if both are passed, institution takes precedence.
+    The `scope_institution_id` / `scope_institution_ids` parameters further
+    narrow the list to locations belonging to the chosen institution(s). Both
+    are mutually exclusive — if both are passed, the single-institution
+    `scope_institution_id` takes precedence.
+
+    `scope_institution_ids` is an already-resolved, access-checked list of
+    institution IDs (e.g. an ecoregion expanded to its institutions). The
+    resolution is done by the caller, which has access to the main-DB
+    `Institution` model — this module only has the CT engine, and the
+    `institutions` table lives in the main DB, NOT in ct_db (querying it here
+    would raise `relation "institutions" does not exist`).
     """
     from sqlalchemy import bindparam, text as sql_text
     sess = get_ct_session()
@@ -404,17 +411,11 @@ def get_species_with_ai_predictions(
         else:
             # User has no access to this institution — return empty.
             return []
-    elif scope_ecoregion:
-        # Institutions that belong to the chosen ecoregion (by uk key).
-        eco_q = sess.execute(sql_text("""
-            SELECT id FROM institutions WHERE ecoregion_uk = :eco
-        """), {'eco': scope_ecoregion}).fetchall()
-        eco_inst_ids = [r[0] for r in eco_q]
-        if not is_admin and user_inst_ids:
-            eco_inst_ids = [i for i in eco_inst_ids if i in user_inst_ids]
-        elif not is_admin:
-            eco_inst_ids = []
-        if not eco_inst_ids:
+    elif scope_institution_ids is not None:
+        # Pre-resolved, access-checked list of institutions (e.g. an ecoregion
+        # expanded to its institutions by the caller). An empty list means no
+        # accessible institution matched → no results.
+        if not scope_institution_ids:
             return []
         scope_clause = """
             AND EXISTS (
@@ -423,7 +424,7 @@ def get_species_with_ai_predictions(
                   AND li_sc.institution_id IN :scope_inst_ids
             )
         """
-        scope_params = {'scope_inst_ids': tuple(eco_inst_ids)}
+        scope_params = {'scope_inst_ids': tuple(scope_institution_ids)}
 
     # win — one winning row per observation: prediction from the model with the
     # highest accuracy_rank (tie-break: newer model.id). COALESCE(...,0) —
