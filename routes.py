@@ -4530,6 +4530,7 @@ def manage_deployments(lang_code):
                                filter_institutions=filter_institutions,
                                years=years,
                                is_admin=is_full_access,  # quality_control also sees everything
+                               can_edit_locations=current_user.has_role('manager'),  # manage-locations is manager-only
                                bool_fields=DEPLOYMENT_BOOL_FIELDS)
     except Exception as e:
         current_app.logger.error(f"Error loading deployment management page: {e}", exc_info=True)

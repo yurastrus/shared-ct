@@ -11,6 +11,19 @@
   .dep-map-col { position: sticky; top: 12px; }
   #dep-map { height: 460px; border-radius: 8px; border: 1px solid #d0d5dd; }
 
+  /* Map legend (Leaflet control) */
+  .dep-legend { background: #fff; padding: 8px 11px; border-radius: 6px;
+                box-shadow: 0 1px 5px rgba(0,0,0,.3); font-size: .78rem; line-height: 1.35; }
+  .dep-legend h6 { margin: 0 0 6px; font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+                   text-transform: uppercase; color: #6c757d; }
+  .dep-legend .lg-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: help; }
+  .dep-legend .lg-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+                        border: 1px solid rgba(0,0,0,.28); }
+  .dep-legend .lg-blue { background: #2a81cb; }
+  .dep-legend .lg-gold { background: #ffd326; }
+  .dep-legend .lg-red  { background: #cb2b3e; }
+  .dep-legend .lg-grey { background: #7b7b7b; }
+
   .dep-card { border: 1px solid #e3e6ea; border-radius: 8px; background: #fff; overflow: hidden; }
   .dep-card-head { padding: 9px 14px; background: #f8f9fa; border-bottom: 1px solid #e3e6ea;
                    font-weight: 600; font-size: .9rem; display: flex; justify-content: space-between; align-items: center; }
@@ -330,11 +343,29 @@ $(document).ready(function() {
     const timeFields = ['start_time','end_time'];
     const textFields = ['qc_local_datetime_issue','qc_comment'];
     const langCode = '{{ g.lang_code }}';
+    const canEditLoc = {{ 'true' if can_edit_locations else 'false' }};
 
     let map, markers = {}, markersGroup;
     let activeLocId = null;
     let activeDepId = null;
     let formMode = 'edit'; // 'edit' | 'create'
+    let formDirty = false; // unsaved edits in the deployment form
+
+    // Guard before leaving an open edit form. Returns true if it's safe to
+    // proceed (panel closed, no edits, or the user confirmed discarding).
+    function confirmLeaveForm(){
+        if (!$('#dep-edit-panel').is(':visible') || !formDirty) return true;
+        return confirm('{{ _("У вас є незбережені зміни в деплойменті. Перейти без збереження? Натисніть «Скасувати», щоб залишитись і зберегти.") }}');
+    }
+
+    // Collapse the deployment detail/edit panel and reset its state.
+    function closeEditPanel(){
+        $('#dep-edit-panel').hide();
+        activeDepId = null;
+        formMode = 'edit';
+        formDirty = false;
+        $('#dep-tbody tr').removeClass('active');
+    }
 
     // ── Map ───────────────────────────────────────────────────────────────
     const iconOpts = { iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34],
@@ -367,11 +398,38 @@ $(document).ready(function() {
     osm.addTo(map);  // #45: OSM — default
     L.control.layers({ "{{ _('OSM') }}": osm, "{{ _('Супутник') }}": satellite }).addTo(map);
 
+    // Legend — colour meaning of markers; each row shows a tooltip on hover.
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = function(){
+        const div = L.DomUtil.create('div', 'dep-legend');
+        div.innerHTML =
+            "<h6>{{ _('Легенда') }}</h6>" +
+            "<div class='lg-row' title=\"{{ _('Локація має щонайменше одне придатне розгортання') }}\"><span class='lg-dot lg-blue'></span>{{ _('Є придатні дані') }}</div>" +
+            "<div class='lg-row' title=\"{{ _('У локації ще немає жодного розгортання') }}\"><span class='lg-dot lg-gold'></span>{{ _('Немає розгортань') }}</div>" +
+            "<div class='lg-row' title=\"{{ _('Є розгортання, але всі позначені як непридатні (QC)') }}\"><span class='lg-dot lg-red'></span>{{ _('Немає придатних розгортань') }}</div>" +
+            "<div class='lg-row' title=\"{{ _('Поточна вибрана локація') }}\"><span class='lg-dot lg-grey'></span>{{ _('Вибрана локація') }}</div>";
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+    };
+    legend.addTo(map);
+
+    // Marker popup: location name + link to edit the location (manager only).
+    function locPopupHtml(loc){
+        let html = `<strong>${loc.name || ''}</strong>`
+                 + `<br>${loc.deployment_count || 0} {{ _('деплойментів') }}`;
+        if (canEditLoc){
+            const editUrl = `/${langCode}/camera-traps/manage-locations?location_id=${loc.id}`;
+            html += `<br><a href="${editUrl}" target="_blank" rel="noopener">✎ {{ _('Редагувати локацію') }}</a>`;
+        }
+        return html;
+    }
+
     markersGroup = L.featureGroup();
     locationsData.forEach(loc => {
         if (!Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) return;
         const m = L.marker([loc.latitude, loc.longitude], { icon: iconFor(loc) });
         m.on('click', () => selectLocation(loc.id));
+        m.bindPopup(locPopupHtml(loc));
         markers[loc.id] = m;
         markersGroup.addLayer(m);
     });
@@ -416,8 +474,14 @@ $(document).ready(function() {
     $('#dep-inst-filter').on('change', applyInstitutionFilter);
     $('#dep-loc-filter').on('change', function(){
         const locId = $(this).val();
-        if (locId) selectLocation(Number(locId));
-        else { activeLocId=null; refreshMarkers(); renderTable(); updateNewBtn(); }
+        if (locId){
+            // Revert the dropdown if the switch was blocked by unsaved edits.
+            if (!selectLocation(Number(locId))) $(this).val(activeLocId ? String(activeLocId) : '');
+        } else {
+            if (!confirmLeaveForm()){ $(this).val(activeLocId ? String(activeLocId) : ''); return; }
+            closeEditPanel();
+            activeLocId=null; refreshMarkers(); renderTable(); updateNewBtn();
+        }
     });
 
     function refreshMarkers(){
@@ -438,6 +502,13 @@ $(document).ready(function() {
     }
 
     function selectLocation(locId){
+        // Switching to a different location collapses the open detail panel,
+        // but first guards any unsaved edits. Returns false if the switch was
+        // aborted (so callers can revert their UI, e.g. the filter dropdown).
+        if (locId != activeLocId){
+            if (!confirmLeaveForm()) return false;
+            closeEditPanel();
+        }
         activeLocId = locId;
         refreshMarkers();
         const m = markers[locId];
@@ -445,6 +516,7 @@ $(document).ready(function() {
         $('#dep-loc-filter').val(String(locId));
         renderTable();
         updateNewBtn();
+        return true;
     }
 
     // ── Deployments table ─────────────────────────────────────────────────
@@ -500,6 +572,8 @@ $(document).ready(function() {
 
     $('#dep-tbody').on('click', 'tr', function(){
         const depId = $(this).data('dep-id');
+        if (depId == activeDepId) return;   // already open
+        if (!confirmLeaveForm()) return;    // guard unsaved edits
         openEditForm(depId);
     });
 
@@ -530,6 +604,7 @@ $(document).ready(function() {
 
     function openCreateForm(){
         if (!activeLocId){ alert('{{ _("Спершу виберіть локацію.") }}'); return; }
+        if (!confirmLeaveForm()) return;   // guard unsaved edits in the open form
         formMode = 'create';
         activeDepId = null;
         $('#dep-tbody tr').removeClass('active');
@@ -538,6 +613,7 @@ $(document).ready(function() {
         $('#dep-edit-title').text('{{ _("Новий деплоймент:") }} ' + (loc ? loc.name : ''));
         $('#dep-delete-btn').hide();
         showPanel();
+        formDirty = false;   // empty new form — dirty only once the user types
         $('#f-name').focus();
     }
 
@@ -556,16 +632,12 @@ $(document).ready(function() {
             $('#f-'+f).attr('data-value', s);
         });
         showPanel();
+        formDirty = false;   // freshly loaded — no unsaved edits yet
     }
 
     $('#dep-new-btn').on('click', openCreateForm);
 
-    $('#dep-cancel-btn').on('click', function(){
-        $('#dep-edit-panel').hide();
-        activeDepId = null;
-        formMode = 'edit';
-        $('#dep-tbody tr').removeClass('active');
-    });
+    $('#dep-cancel-btn').on('click', closeEditPanel);
 
     function collectPayload(){
         const payload = {};
@@ -607,6 +679,7 @@ $(document).ready(function() {
         .then(resp=>{
             if (!resp.success) throw new Error(resp.error);
             alert(resp.message);
+            formDirty = false;   // saved — no pending edits
             const d = resp.deployment;
             if (isCreate){
                 deploymentsData.push(Object.assign({ id:d.id, location_id:d.location_id }, tableFieldsFrom(d)));
@@ -642,8 +715,7 @@ $(document).ready(function() {
             if (!resp.success) throw new Error(resp.error);
             const idx = deploymentsData.findIndex(x=>x.id==depId);
             if (idx>-1){ adjustLocCount(deploymentsData[idx].location_id, -1); deploymentsData.splice(idx,1); }
-            $('#dep-edit-panel').hide();
-            activeDepId = null;
+            closeEditPanel();
             renderTable();
         })
         .catch(err=>alert('{{ _("Помилка видалення:") }} ' + err.message));
@@ -651,10 +723,14 @@ $(document).ready(function() {
 
     // Tri-state QC: click cycles null -> true -> false -> null.
     // Clicking the QC label does the same (easier to hit).
+    // Any edit in the form marks it dirty (guards accidental navigation away).
+    $('#dep-edit-form').on('input change', 'input, textarea, select', function(){ formDirty = true; });
+
     const _qcCycle = { 'null': 'true', 'true': 'false', 'false': 'null' };
     $('#dep-edit-form').on('click', '.qc-tri', function(){
         const cur = $(this).attr('data-value') || 'null';
         $(this).attr('data-value', _qcCycle[cur]);
+        formDirty = true;
     });
     $('#dep-edit-form').on('click', '.qc-tri-label', function(){
         $('#' + $(this).attr('for')).trigger('click');

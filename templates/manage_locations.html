@@ -448,6 +448,12 @@ $(document).ready(function() {
     }
     initMap();
 
+    // Deep link: ?location_id= — preselect that location and open its edit form.
+    (function(){
+        const pLoc = new URLSearchParams(window.location.search).get('location_id');
+        if (pLoc && markers[pLoc]) selectLocation(Number(pLoc));
+    })();
+
     // Manual coordinate input.
     function updateTempMarkerFromInputs() {
         if (mode !== 'create') return;
