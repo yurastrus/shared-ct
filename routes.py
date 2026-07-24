@@ -4242,7 +4242,6 @@ def manage_locations(lang_code):
                 'latitude': float(loc.latitude),
                 'longitude': float(loc.longitude),
                 'biotope_ids': [b.id for b in loc.biotopes],
-                'has_description': bool(loc.description and loc.description.strip()),
                 'institution_ids': loc_inst_map.get(loc.id, []),
                 'is_valid': bool(loc.is_valid),
                 'invalid_note': loc.invalid_note or ''

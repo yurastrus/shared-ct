@@ -1045,11 +1045,8 @@ body.dark-theme .ai-pred-badge {
 .locations-list li:hover,
 .locations-list li.active                    { background-color: #e3f2fd; }
 .locations-list li.loc-no-biotope            { border-left-color: #ffc107; background-color: #fffdf0; }
-.locations-list li.loc-no-description        { border-left-color: #e783b0; background-color: #fff5f9; }
 .locations-list li.loc-no-biotope:hover,
-.locations-list li.loc-no-biotope.active,
-.locations-list li.loc-no-description:hover,
-.locations-list li.loc-no-description.active { background-color: #e3f2fd; }
+.locations-list li.loc-no-biotope.active     { background-color: #e3f2fd; }
 
 .history-item           { border-bottom: 1px solid var(--border-color); padding: 9px 0; font-size: 0.88rem; }
 .history-item:last-child { border-bottom: none; }

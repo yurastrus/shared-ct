@@ -46,7 +46,6 @@
             <div class="marker-legend" id="legend-data">
                 <span class="legend-item"><span class="legend-dot" style="background:#2a81cb"></span>{{ _('Повна') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>{{ _('Без біотопу') }}</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#e783b0"></span>{{ _('Без опису') }}</span>
                 <span class="legend-item"><span class="legend-dot" style="background:#c2185b"></span>{{ _('Невалідні') }}</span>
             </div>
             <div class="marker-legend" id="legend-service" style="display:none;">
@@ -65,7 +64,7 @@
             <ul class="locations-list">
                 {% for loc in locations %}
                     <li data-location-id="{{ loc.id }}"
-                        class="{% if not loc.is_valid %}loc-invalid {% endif %}{% if not loc.biotope_ids %}loc-no-biotope{% elif not loc.has_description %}loc-no-description{% endif %}">
+                        class="{% if not loc.is_valid %}loc-invalid {% endif %}{% if not loc.biotope_ids %}loc-no-biotope{% endif %}">
                         <span class="loc-name">{{ loc.name }}{% if not loc.is_valid %} <span class="badge bg-danger loc-invalid-badge">{{ _('Невалідна') }}</span>{% endif %}</span>
                         <a class="coverage-link"
                            href="{{ url_for('camera_traps.ct_location_coverage', lang_code=g.lang_code, location_id=loc.id) }}"
@@ -309,7 +308,6 @@ $(document).ready(function() {
     });
     const selectedIcon     = L.icon({ iconUrl: CM+'marker-icon-grey.png',   iconRetinaUrl: CM+'marker-icon-2x-grey.png',   ...iconOpts, className: 'marker-selected-icon' });
     const noBiotopeIcon    = L.icon({ iconUrl: CM+'marker-icon-gold.png',   iconRetinaUrl: CM+'marker-icon-2x-gold.png',   ...iconOpts });
-    const noDescriptionIcon= L.icon({ iconUrl: CM+'marker-icon-violet.png', iconRetinaUrl: CM+'marker-icon-2x-violet.png', ...iconOpts });
 
     // Invalid locations: a distinct raspberry pin (the pointhi colour set has no
     // crimson, so build it as a self-contained SVG divIcon). Same shape/anchor as
@@ -338,7 +336,6 @@ $(document).ready(function() {
     function getStatusIcon(loc) {
         if (loc.is_valid === false) return invalidIcon;
         if (!loc.biotope_ids || loc.biotope_ids.length === 0) return noBiotopeIcon;
-        if (!loc.has_description) return noDescriptionIcon;
         return defaultIcon;
     }
 
@@ -355,9 +352,8 @@ $(document).ready(function() {
     }
 
     function applyListClass(listItem, loc) {
-        listItem.removeClass('loc-no-biotope loc-no-description');
+        listItem.removeClass('loc-no-biotope');
         if (!loc.biotope_ids || loc.biotope_ids.length === 0) listItem.addClass('loc-no-biotope');
-        else if (!loc.has_description)                        listItem.addClass('loc-no-description');
     }
 
     function refreshAllMarkers() {
@@ -670,7 +666,6 @@ $(document).ready(function() {
                 if (locIndex > -1) {
                     locationsData[locIndex].biotope_ids = dataToSave.biotope_ids;
                     locationsData[locIndex].institution_ids = dataToSave.institution_ids;
-                    locationsData[locIndex].has_description = !!(dataToSave.description && dataToSave.description.trim());
                     applyListClass(listItem, locationsData[locIndex]);
                     if (markers[locationId]) markers[locationId].setIcon(getStatusIcon(locationsData[locIndex]));
                     if (markers[locationId] && (dataToSave.latitude !== locationsData[locIndex].latitude || dataToSave.longitude !== locationsData[locIndex].longitude)) {
@@ -715,7 +710,6 @@ $(document).ready(function() {
                     name: dataToSend.name,
                     latitude: lat, longitude: lon,
                     biotope_ids: dataToSend.biotope_ids,
-                    has_description: !!(dataToSend.description && dataToSend.description.trim()),
                     institution_ids: dataToSend.institution_ids
                 };
                 locationsData.push(newLoc);
