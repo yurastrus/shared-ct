@@ -22,7 +22,7 @@
             <select id="species-select" class="form-control">
                 <option></option>
                 {% for species in available_species %}
-                    <option value="{{ species.id }}">{{ species.text }}</option>
+                    <option value="{{ species.id }}"{% if species.id == 0 %} selected{% endif %}>{{ species.text }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -159,6 +159,13 @@ $(document).ready(function() {
 
         loadGalleryPhotos(speciesId);
     });
+
+    // Open straight on "-- Всі види --": the select is pre-selected server-side,
+    // so just sync the button state and load without waiting for a click.
+    loadPhotosBtn.prop('disabled', !speciesSelect.val());
+    if (speciesSelect.val()) {
+        loadGalleryPhotos(speciesSelect.val());
+    }
 
     function loadGalleryPhotos(speciesId) {
         galleryContent.html('<div class="text-center"><div class="spinner-border"></div><p class="mt-2">{{ _("Завантаження фото...") }}</p></div>');
