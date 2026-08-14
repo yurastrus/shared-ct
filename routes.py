@@ -14,7 +14,7 @@ from functools import lru_cache
 from . import camera_traps_bp
 from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
-from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter
+from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter, can_view_photo_file
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
@@ -3696,14 +3696,38 @@ def manual_cleanup(lang_code):
 
     return redirect(url_for('camera_traps.admin_panel', lang_code=g.lang_code))
 
+def _authorize_ct_photo_or_404(system_filename):
+    """SEC: enforce the location's visibility_level before serving a photo file.
+
+    Public locations (visibility_level == 0) stay open to anonymous users so the
+    public gallery keeps working; photos of restricted locations require an admin
+    or a member of the location's institution. Denied/unknown files 404 (a 404,
+    not 403, so the endpoint does not confirm which filenames exist)."""
+    ct_session = get_ct_session()
+    try:
+        allowed = can_view_photo_file(
+            ct_session,
+            system_filename,
+            is_authenticated=current_user.is_authenticated,
+            is_admin=current_user.is_authenticated and current_user.has_role('admin'),
+            user_inst_ids=[i.id for i in current_user.institutions] if current_user.is_authenticated else (),
+        )
+    finally:
+        close_ct_session()
+    if not allowed:
+        abort(404)
+
+
 @camera_traps_bp.route('/thumbnails/<path:filename>')
 def serve_thumbnail(lang_code, filename):
+    _authorize_ct_photo_or_404(filename)
     config = current_app.config['CAMERA_TRAP_CONFIG']
     thumbnail_dir = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'thumbnails')
     return send_from_directory(thumbnail_dir, filename)
 
 @camera_traps_bp.route('/photos/raw/<path:filename>')
 def serve_raw_photo(lang_code, filename):
+    _authorize_ct_photo_or_404(filename)
     config = current_app.config['CAMERA_TRAP_CONFIG']
     raw_dir = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'raw')
     thumb_dir = os.path.join(config['UPLOAD_PATH'], 'pending_photos', 'thumbnails')

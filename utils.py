@@ -107,6 +107,73 @@ def get_institution_filter(user_inst_ids=None, is_admin=False, selected_inst_id=
     return base_condition, params
 
 
+def can_view_photo_file(ct_session, system_filename, *, is_authenticated=False,
+                        is_admin=False, user_inst_ids=()):
+    """Decide whether the given viewer may be served the photo/thumbnail whose
+    system_filename is passed.
+
+    Mirrors get_institution_filter's access model so the media endpoints enforce
+    the SAME rule as dashboards/gallery/exports:
+      * a photo on a public location (visibility_level == 0) is open to everyone
+        (this keeps the anonymous public gallery working);
+      * otherwise it is restricted — only an admin, or a user whose institutions
+        include one of the location's institutions, may view it.
+
+    Returns True/False. Unknown filenames (no Photo row) and orphaned photos with
+    no resolvable location return False (fail closed) — the endpoint should 404.
+    """
+    from .models import Photo, Observation, UploadBatch, Location, location_institutions
+
+    photo = ct_session.query(Photo).filter(
+        Photo.system_filename == system_filename
+    ).first()
+    if photo is None:
+        return False
+
+    # Resolve the owning location via the observation, falling back to the upload
+    # batch (photos are served during upload before they are grouped).
+    location = None
+    if photo.observation_id is not None:
+        obs = ct_session.query(Observation).get(photo.observation_id)
+        if obs is not None:
+            location = ct_session.query(Location).get(obs.location_id)
+    if location is None and photo.upload_batch_id is not None:
+        batch = ct_session.query(UploadBatch).get(photo.upload_batch_id)
+        if batch is not None:
+            location = ct_session.query(Location).get(batch.location_id)
+
+    # Public location → anyone.
+    if location is not None and location.visibility_level == 0:
+        return True
+
+    # Restricted (or orphaned) → require authentication + membership/admin.
+    if not is_authenticated:
+        return False
+    if is_admin:
+        return True
+    if location is None or not user_inst_ids:
+        return False
+
+    member = ct_session.query(location_institutions).filter(
+        location_institutions.c.location_id == location.id,
+        location_institutions.c.institution_id.in_(list(user_inst_ids)),
+    ).first()
+    return member is not None
+
+
+def is_allowed_upload_extension(filename, config=None):
+    """True if `filename` has an allowed image extension.
+
+    Uses CAMERA_TRAP_CONFIG['ALLOWED_EXTENSIONS'] when a config dict is given,
+    otherwise the {jpg, jpeg} default. Pure/side-effect-free so it is unit-testable
+    without an app or DB."""
+    allowed = {'jpg', 'jpeg'}
+    if config is not None:
+        allowed = {e.lower() for e in config.get('ALLOWED_EXTENSIONS', allowed)}
+    ext = os.path.splitext(filename or '')[1].lower().lstrip('.')
+    return ext in allowed
+
+
 # Sanity bounds for EXIF dates (Idea 1). A date outside these bounds means a
 # reset or drifted camera clock → the timestamp is unreliable → return None,
 # and process_single_photo will substitute a visible placeholder (1900-01-01 +
@@ -273,6 +340,14 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
 
         if not file or not file.filename:
             raise ValueError("Empty file")
+
+        # SEC: enforce the extension allow-list (config value was defined but never
+        # applied). Without it, a non-image extension (.svg/.html) is stored as-is
+        # and — because the raw-photo endpoint serves by extension-guessed type —
+        # would execute same-origin (stored XSS). JPEG-only pipeline, so this does
+        # not reject any legitimate upload.
+        if not is_allowed_upload_extension(file.filename, config):
+            raise ValueError(f"Disallowed file extension: {file.filename!r}")
 
         # ─── ATOMIC INCREMENT of processed_files ──────────────────────────
         # Instead of ORM read-modify-write (race-prone with 4 parallel
