@@ -107,6 +107,35 @@ def get_institution_filter(user_inst_ids=None, is_admin=False, selected_inst_id=
     return base_condition, params
 
 
+def can_access_location(ct_session, location_id, *, is_admin=False, user_inst_ids=()):
+    """Whether a viewer may see the location with this id.
+
+    The single rule used by every non-listing endpoint that takes a location (or
+    a series, via its location) straight from the request: public locations
+    (``visibility_level == 0``) are open, everything else needs one of the
+    viewer's institutions. Mirrors get_institution_filter / can_view_photo_file,
+    which apply the same rule to whole queries.
+
+    Fails closed: an unknown location id is not accessible.
+    """
+    from .models import Location, location_institutions
+
+    if is_admin:
+        return ct_session.query(Location).filter(Location.id == location_id).count() > 0
+
+    location = ct_session.query(Location).get(location_id)
+    if location is None:
+        return False
+    if location.visibility_level == 0:
+        return True
+    if not user_inst_ids:
+        return False
+    return ct_session.query(location_institutions).filter(
+        location_institutions.c.location_id == location_id,
+        location_institutions.c.institution_id.in_(list(user_inst_ids)),
+    ).count() > 0
+
+
 def can_view_photo_file(ct_session, system_filename, *, is_authenticated=False,
                         is_admin=False, user_inst_ids=()):
     """Decide whether the given viewer may be served the photo/thumbnail whose

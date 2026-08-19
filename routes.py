@@ -14,7 +14,9 @@ from functools import lru_cache
 from . import camera_traps_bp
 from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
-from .utils import process_photo_batch, check_consensus_for_observation, calculate_total_effort, get_institution_filter, can_view_photo_file
+from .utils import (process_photo_batch, check_consensus_for_observation,
+                    calculate_total_effort, get_institution_filter,
+                    can_view_photo_file, can_access_location)
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
@@ -3156,6 +3158,23 @@ def api_comparison(lang_code):
     finally:
         close_ct_session()
 
+def _can_access_observation(ct_session, observation):
+    """Whether the current user may work with this series.
+
+    A series inherits its location's visibility. Observations with no location
+    are treated as inaccessible for non-admins (fail closed) — they cannot be
+    attributed to an institution.
+    """
+    if current_user.has_role('admin'):
+        return True
+    if observation.location_id is None:
+        return False
+    return can_access_location(
+        ct_session, observation.location_id,
+        is_admin=False,
+        user_inst_ids=[i.id for i in current_user.institutions])
+
+
 # --- IDENTIFICATION AND UPLOAD API ---
 @camera_traps_bp.route('/api/submit-identification', methods=['POST'])
 @login_required
@@ -3179,7 +3198,15 @@ def submit_identification(lang_code):
         observation = ct_session.query(Observation).get(observation_id)
         if not observation:
             return jsonify({'success': False, 'error': _('Серію не знайдено.')}), 404
-        
+
+        # SEC: observation_id is client-supplied. Without this check a verifier
+        # could write identifications for series on locations they may not even
+        # view — which matters now that anyone can register and be approved for
+        # public locations only.
+        if not _can_access_observation(ct_session, observation):
+            return jsonify({'success': False,
+                            'error': _('Немає доступу до цієї серії.')}), 403
+
         is_moderator = current_user.has_role('manager')
 
         moderator_override = is_moderator and observation.status == 'completed'
@@ -3232,11 +3259,23 @@ def submit_identification(lang_code):
 @camera_traps_bp.route('/api/location/<int:location_id>')
 @login_required
 def get_location_details(lang_code, location_id):
-    """API for fetching details of a specific location, including its biotopes."""
+    """API for fetching details of a specific location, including its biotopes.
+
+    SEC: the id comes straight from the URL, so the location's own visibility is
+    enforced here — without it any logged-in account (registration is public)
+    could read the name, coordinates and description of a restricted location.
+    """
     ct_session = get_ct_session()
     try:
         location = ct_session.query(Location).get(location_id)
         if not location:
+            return jsonify({'error': _('Локацію не знайдено.')}), 404
+
+        if not can_access_location(
+                ct_session, location_id,
+                is_admin=current_user.has_role('admin'),
+                user_inst_ids=[i.id for i in current_user.institutions]):
+            # 404, not 403: a restricted location should not be discoverable.
             return jsonify({'error': _('Локацію не знайдено.')}), 404
         
         biotope_ids = [biotope.id for biotope in location.biotopes]
@@ -3317,6 +3356,7 @@ def _apply_identify_sort(query, sort_by, status_filter):
 
 @camera_traps_bp.route('/api/next-observation-for-identification', methods=['GET'])
 @login_required
+@role_required('ct_verifier')
 def next_observation_for_identification(lang_code):
     """Find the next series for identification."""
     ct_session = get_ct_session()
@@ -3342,14 +3382,8 @@ def next_observation_for_identification(lang_code):
             if observation is None:
                 return jsonify({'message': _('Серію не знайдено.')}), 404
             # Check access (admin sees everything; others only their own institutions/public)
-            is_admin_check = current_user.has_role('admin')
-            if not is_admin_check:
-                user_inst_ids_check = [inst.id for inst in current_user.institutions]
-                loc = observation.location
-                if loc:
-                    loc_inst_ids = [inst.id for inst in loc.institutions] if hasattr(loc, 'institutions') else []
-                    if loc.visibility_level != 0 and not any(i in user_inst_ids_check for i in loc_inst_ids):
-                        return jsonify({'message': _('Немає доступу до цієї серії.')}), 403
+            if not _can_access_observation(ct_session, observation):
+                return jsonify({'message': _('Немає доступу до цієї серії.')}), 403
             photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
             photos_data = []
             for i, photo in enumerate(photos_sorted):
@@ -6545,10 +6579,18 @@ def api_daily_activity_download(lang_code):
                 location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
                     location_institutions.c.institution_id.in_(eco_inst_ids)
                 ).distinct().all()]
-        elif scope_type == 'global' and not is_admin and user_inst_ids:
-            location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
-                location_institutions.c.institution_id.in_(user_inst_ids)
-            ).distinct().all()]
+        elif scope_type == 'global' and not is_admin:
+            if user_inst_ids:
+                location_ids = [r[0] for r in ct_session.query(location_institutions.c.location_id).filter(
+                    location_institutions.c.institution_id.in_(user_inst_ids)
+                ).distinct().all()]
+            else:
+                # SEC: previously an unrestricted aggregate over every location.
+                # An account with no institutions (every self-registered one)
+                # gets public locations only, like everywhere else.
+                location_ids = [r[0] for r in ct_session.query(Location.id).filter(
+                    Location.visibility_level == 0
+                ).all()]
 
         if location_ids is not None and not location_ids:
             # Scope specified but empty — return an empty CSV.
