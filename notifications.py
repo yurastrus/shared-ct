@@ -12,6 +12,19 @@ from app.camera_traps.models import (
     Observation, Photo, Identification, Location, location_institutions
 )
 
+# Per-user opt-outs live in the host application (biomon: app/utils/
+# notification_prefs.py + a `notify_*` column on User). shared-ct must keep
+# working in a host that has no such registry, so the import is soft and the
+# fallback treats "no preference stored" as still subscribed.
+try:
+    from app.utils.notification_prefs import is_enabled as _notifications_enabled
+except ImportError:  # pragma: no cover - host without the registry
+    def _notifications_enabled(user, key):
+        return bool(getattr(user, f'notify_{key}', True))
+
+#: Key of this reminder in the host's notification registry.
+NOTIFICATION_KEY = 'ct_pending'
+
 
 def send_identification_reminders():
     """Email every ct_verifier whose pending-series count is high enough.
@@ -28,8 +41,20 @@ def send_identification_reminders():
         return 0, 0
 
     users_with_email = [u for u in ct_verifier_role.users.all() if u.email]
+
+    # Opted-out users are dropped before any counting: an unsubscribe must hold
+    # even when the person has thousands of pending series.
+    opted_out = [u for u in users_with_email
+                 if not _notifications_enabled(u, NOTIFICATION_KEY)]
+    if opted_out:
+        current_app.logger.info(
+            "Reminders: %d user(s) opted out of %s", len(opted_out), NOTIFICATION_KEY)
+    users_with_email = [u for u in users_with_email
+                        if _notifications_enabled(u, NOTIFICATION_KEY)]
+
     if not users_with_email:
-        current_app.logger.info("No users with role ct_verifier and an email")
+        current_app.logger.info(
+            "No subscribed users with role ct_verifier and an email")
         return 0, 0
 
     engine = get_ct_engine()
@@ -103,6 +128,7 @@ def _count_pending_for_user(ct_session, user):
 def _send_reminder_email(user, count):
     site_url = current_app.config.get('SITE_URL', 'http://localhost:5000')
     identify_url = f"{site_url}/uk/camera-traps/identify"
+    profile_url = f"{site_url}/uk/profile"
     name = user.full_name
 
     series_word = _pluralize_uk(count, 'серія', 'серії', 'серій')
@@ -111,6 +137,9 @@ def _send_reminder_email(user, count):
         subject=f"У вас {count} {series_word} для ідентифікації — biomon",
         recipients=[user.email],
     )
+    # The opt-out instructions are spelled out click by click on purpose: there
+    # is no one-click unsubscribe link (that would need a signed token and a
+    # public route), so the letter has to be enough to find the checkbox.
     msg.body = f"""Вітаю, {name}!
 
 У системі фотопасток є {count} {series_word} фотографій, що очікують на вашу ідентифікацію.
@@ -120,6 +149,15 @@ def _send_reminder_email(user, count):
 
 ---
 Це автоматичне тижневе нагадування від системи biomon.
+
+Не хочете отримувати ці листи? Це можна вимкнути самостійно:
+1. Зайдіть на сайт і увійдіть у свій обліковий запис.
+2. Відкрийте «Мій профіль»: {profile_url}
+3. У розділі «Сповіщення» зніміть галочку про нагадування щодо фотопасток
+   і натисніть «Зберегти налаштування сповіщень».
+Після цього нагадування більше не надходитимуть; доступ до системи та ваші
+права лишаються без змін, і галочку можна повернути будь-коли.
+
 Якщо у вас є питання, зверніться до адміністратора.
 """
     mail.send(msg)
