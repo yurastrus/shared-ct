@@ -198,7 +198,6 @@
 
                         <!-- AI prediction for this series (populated by JS) -->
                         <div id="ai-prediction-badge" class="ai-pred-badge" style="display: none;">
-                            <span class="ai-pred-icon">🤖</span>
                             <span class="ai-pred-text"></span>
                         </div>
 
@@ -582,7 +581,12 @@ $(document).ready(function() {
         const tplBadge = '{{ _("AI пропонує") }}';
         const tplConf  = '{{ _("впевненість") }}';
         const tplAn    = '{{ _("особин") }}';
-        $text.text(`${tplBadge}: ${label} · ${tplConf}: ${score} · ${tplAn}: ${animals}`);
+
+        // Line 1 — species name in the interface language (no Latin);
+        // line 2 — confidence and individual count, separated by a semicolon.
+        $text.empty()
+            .append($('<span>').addClass('ai-pred-species').text(`${tplBadge}: ${label}`))
+            .append($('<span>').addClass('ai-pred-meta').text(`${tplConf}: ${score}; ${tplAn}: ${animals}`));
         $badge.show();
 
         // Pre-select species (radio button with value=species_id).

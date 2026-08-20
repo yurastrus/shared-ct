@@ -487,7 +487,10 @@ def get_species_with_ai_predictions(
     return result
 
 
-def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
+def get_observation_ai_prediction(
+    observation_id: int,
+    lang_code: str = 'uk',
+) -> Optional[dict]:
     """Return the best AI prediction for an observation, or None.
 
     If there are predictions from multiple models for the series (e.g. server
@@ -499,7 +502,10 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
     Return structure:
         {
             'species_id':       int or None,
-            'species_label':    str (DeepFaune raw label, e.g. 'roe deer'),
+            'species_label':    str (localised common name for lang_code, no
+                                Latin; falls back to the raw model label, e.g.
+                                'roe deer', when the prediction is not mapped
+                                to a Species row),
             'score':            float (0..1),
             'animal_count':     int,
         }
@@ -537,9 +543,29 @@ def get_observation_ai_prediction(observation_id: int) -> Optional[dict]:
         .scalar()
     )
 
+    # Species label shown in the badge: the common name in the interface
+    # language, never the scientific (Latin) name. The raw model label is used
+    # only when the prediction has no mapping to our Species reference.
+    label = row.prediction_label
+    if row.prediction_species_id is not None:
+        srow = sess.execute(
+            text("""
+                SELECT common_name_ua, common_name_en, scientific_name
+                FROM species
+                WHERE id = :sid
+            """),
+            {'sid': row.prediction_species_id},
+        ).fetchone()
+        if srow is not None:
+            if lang_code == 'en':
+                name = srow.common_name_en or srow.common_name_ua
+            else:
+                name = srow.common_name_ua or srow.common_name_en
+            label = name or srow.scientific_name or label
+
     return {
         'species_id':    row.prediction_species_id,
-        'species_label': row.prediction_label,
+        'species_label': label,
         'score':         row.prediction_score,
         'animal_count':  max_count if max_count is not None else row.animal_count,
     }

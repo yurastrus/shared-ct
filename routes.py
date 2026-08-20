@@ -3405,7 +3405,7 @@ def next_observation_for_identification(lang_code):
             try:
                 from .ai_runner import is_ai_available, get_observation_ai_prediction
                 if is_ai_available():
-                    ai_pred = get_observation_ai_prediction(observation.id)
+                    ai_pred = get_observation_ai_prediction(observation.id, lang_code=g.lang_code)
                     if ai_pred is not None:
                         response_data['ai_prediction'] = ai_pred
             except Exception as e:
@@ -3598,7 +3598,7 @@ def next_observation_for_identification(lang_code):
         try:
             from .ai_runner import is_ai_available, get_observation_ai_prediction
             if is_ai_available():
-                ai_pred = get_observation_ai_prediction(observation.id)
+                ai_pred = get_observation_ai_prediction(observation.id, lang_code=g.lang_code)
                 if ai_pred is not None:
                     response_data['ai_prediction'] = ai_pred
         except Exception as e:
