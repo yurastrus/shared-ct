@@ -187,7 +187,9 @@ def get_ct_occurrence_data(filters, limit=None):
                     SELECT
                         observation_id, species_id, max_quantity,
                         ROW_NUMBER() OVER(
-                            PARTITION BY observation_id ORDER BY vote_count DESC, max_quantity DESC
+                            PARTITION BY observation_id
+                            ORDER BY vote_count DESC, max_quantity DESC,
+                                     species_id  -- deterministic tie-break
                         ) as rn
                     FROM ObservationConsensus
                 ),
@@ -266,7 +268,8 @@ def get_ct_occurrence_data(filters, limit=None):
                         ROW_NUMBER() OVER(
                             PARTITION BY ap.observation_id
                             ORDER BY COALESCE(lvl.accuracy_rank, 0) DESC,
-                                     ap.prediction_score DESC NULLS LAST
+                                     ap.prediction_score DESC NULLS LAST,
+                                     ap.id  -- deterministic tie-break
                         ) as rn
                     FROM ai_predictions ap
                     JOIN ScopedObs so ON so.observation_id = ap.observation_id
@@ -332,7 +335,8 @@ def get_ct_occurrence_data(filters, limit=None):
                             observation_id,
                             ROW_NUMBER() OVER(
                                 PARTITION BY scientific_name, location_name, DATE(series_start_time)
-                                ORDER BY max_quantity DESC, series_start_time ASC
+                                ORDER BY max_quantity DESC, series_start_time ASC,
+                                         observation_id  -- deterministic tie-break
                             ) as agg_rn
                         FROM BaseData
                     )
@@ -342,7 +346,7 @@ def get_ct_occurrence_data(filters, limit=None):
                     WHERE rad.agg_rn = 1
                 """
                 final_query_base = f"{base_query_cte} {aggregation_cte}"
-                sql_query = f"{final_query_base} ORDER BY series_start_time"
+                sql_query = f"{final_query_base} ORDER BY series_start_time, observation_id, species_id"
                 count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
 
             elif aggregation == 'location_timewindow':
@@ -385,7 +389,8 @@ def get_ct_occurrence_data(filters, limit=None):
                         SELECT observation_id,
                                ROW_NUMBER() OVER(
                                    PARTITION BY scientific_name, location_name, event_id
-                                   ORDER BY max_quantity DESC, series_start_time ASC
+                                   ORDER BY max_quantity DESC, series_start_time ASC,
+                                            observation_id  -- deterministic tie-break
                                ) as agg_rn
                         FROM EventGrouped
                     )
@@ -395,12 +400,12 @@ def get_ct_occurrence_data(filters, limit=None):
                     WHERE rad.agg_rn = 1
                 """
                 final_query_base = f"{base_query_cte} {aggregation_cte}"
-                sql_query = f"{final_query_base} ORDER BY series_start_time"
+                sql_query = f"{final_query_base} ORDER BY series_start_time, observation_id, species_id"
                 count_query_str = f"SELECT COUNT(*) FROM ({final_query_base}) as aggregated_data"
 
             else:  # 'none' — no aggregation
                 final_query_base = "SELECT * FROM BaseData"
-                sql_query = f"{base_query_cte} {final_query_base} ORDER BY series_start_time"
+                sql_query = f"{base_query_cte} {final_query_base} ORDER BY series_start_time, observation_id, species_id"
                 count_query_str = f"{base_query_cte} SELECT COUNT(*) FROM BaseData"
 
             total_count = conn.execute(text(count_query_str), params).scalar() or 0
