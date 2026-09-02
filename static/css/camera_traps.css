@@ -2129,7 +2129,36 @@ body.dark-theme .message-container.error {
     .identification-layout > .viewer-and-form,
     .identification-layout > .right-column { min-width: 0; }
     .identification-species   { overflow-wrap: anywhere; }
-    .right-column             { order: -1; }
+
+    /* ── Stacked reading order on narrow screens ──────────────────────────
+       Two columns collapse into one, and the order then matters: the photo is
+       what you are looking at, so it has to come before the lists you fill in
+       from it. The previous rule was `.right-column { order: -1 }`, which
+       hoisted the WHOLE right column — buttons, count and species lists — above
+       the photo, so on a phone you scrolled past every species name to reach the
+       image you were supposed to be identifying.
+
+       `order` only sorts siblings, and these blocks sit in two different columns
+       at two levels of nesting. `display: contents` dissolves the two wrapper
+       boxes so their children become direct flex items of the layout and can be
+       ordered against each other.
+
+       `.identification-form-main` is deliberately NOT dissolved: it is a styled
+       card (background, border, padding), and `display: contents` would drop
+       that box and the styling with it. Tags and comment are adjacent in the
+       wanted order anyway, so the card moves as one unit.
+
+       Desktop (>992px) keeps the grid untouched. */
+    .identification-layout    { display: flex; flex-direction: column; gap: 15px; }
+    .viewer-and-form,
+    .right-column             { display: contents; }
+
+    .photo-viewer             { order: 1; }  /* фото — перше, під фільтрами */
+    .quantity-panel           { order: 2; }  /* кількість особин + у вибране */
+    .species-selection-panel  { order: 3; }  /* списки видів */
+    .identification-form-main { order: 4; }  /* теги поведінки + коментар */
+    .action-buttons-container { order: 5; }  /* надіслати / пропустити — в кінці */
+
     .action-buttons-container { position: static; }
     .species-selection-panel  { max-height: none; }
     .main-buttons             { flex-direction: column; gap: 8px; }
