@@ -23,6 +23,7 @@ from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, loca
 from .models import Deployment
 from app.models import User, Institution
 from .decorators import role_required
+from . import access as ct_access
 from .data_export import get_ct_occurrence_data, _build_qc_exclusion_cond
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 from .activity_heatmap import fetch_heatmap_data, fetch_date_range
@@ -403,7 +404,7 @@ def dashboard(lang_code):
         # Fetch biotope list to pass to the template
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
 
         # Combined "Institution / Ecoregion" filter (same as on the species-dashboard).
@@ -573,7 +574,7 @@ def get_accessible_institutions(is_admin):
     if is_admin:
         return Institution.query.order_by(Institution.name_uk).all()
     if current_user.is_authenticated:
-        return sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+        return sorted(ct_access.allowed_institutions(current_user), key=lambda i: i.name_uk or '')
     return []
 
 
@@ -707,7 +708,7 @@ def contributors(lang_code):
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         is_manager = current_user.is_authenticated and current_user.has_role('manager')
-        user_inst_ids = [inst.id for inst in current_user.institutions] \
+        user_inst_ids = ct_access.allowed_institution_ids(current_user) \
             if current_user.is_authenticated else []
 
         accessible_institutions = get_accessible_institutions(is_admin)
@@ -888,7 +889,7 @@ def institution_stats(lang_code):
     try:
         today = date.today()
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] \
+        user_inst_ids = ct_access.allowed_institution_ids(current_user) \
             if current_user.is_authenticated else []
 
         inst_condition, inst_params = get_institution_filter(
@@ -1125,7 +1126,7 @@ def upload_stats(lang_code):
             request.args.get('scope', ''), accessible_institutions,
             current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
 
-        user_inst_ids = [inst.id for inst in current_user.institutions] \
+        user_inst_ids = ct_access.allowed_institution_ids(current_user) \
             if current_user.is_authenticated else []
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin, selected_inst_id=selected_inst_ids, table_alias='locations'
@@ -1189,7 +1190,7 @@ def species_dashboard(lang_code):
     try:
         MIN_OBSERVATIONS = 30
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Species list with a minimum number of observations
         species_q = ct_session.query(Identification.species_id)\
@@ -1232,7 +1233,7 @@ def species_dashboard(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
-            institutions = sorted(current_user.institutions,
+            institutions = sorted(ct_access.allowed_institutions(current_user),
                                   key=lambda i: i.name_uk or '')
         else:
             institutions = []
@@ -1271,7 +1272,7 @@ def comparison_dashboard(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
-            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+            institutions = sorted(ct_access.allowed_institutions(current_user), key=lambda i: i.name_uk or '')
         else:
             institutions = []
 
@@ -1310,7 +1311,7 @@ def behavior_analysis(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
-            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+            institutions = sorted(ct_access.allowed_institutions(current_user), key=lambda i: i.name_uk or '')
         else:
             institutions = []
 
@@ -1324,7 +1325,7 @@ def behavior_analysis(lang_code):
         biotopes_list = ct_session.query(Biotope).order_by(Biotope.name_ua).all()
 
         # Manager = authenticated user with at least one institution
-        is_manager = current_user.is_authenticated and bool(current_user.institutions)
+        is_manager = ct_access.has_module_access(current_user)
 
         # Only species with at least one behaviour tag
         species_q = (
@@ -1395,7 +1396,7 @@ def api_behavior_data(lang_code):
             selected_inst_ids = [i.id for i in eco_insts]
 
         is_admin    = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         inst_condition, inst_params = get_institution_filter(
             user_inst_ids, is_admin,
@@ -1753,7 +1754,7 @@ def identify(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         else:
-            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+            institutions = sorted(ct_access.allowed_institutions(current_user), key=lambda i: i.name_uk or '')
         lang = g.lang_code
         ecoregions = {}
         for inst in institutions:
@@ -1792,7 +1793,7 @@ def identify(lang_code):
         ai_species_list = []
         if ai_available:
             try:
-                user_inst_ids_list = [inst.id for inst in current_user.institutions]
+                user_inst_ids_list = ct_access.allowed_institution_ids(current_user)
                 ai_species_list = get_species_with_ai_predictions(
                     lang_code=g.lang_code,
                     user_id=current_user.id,
@@ -1843,7 +1844,7 @@ def identify_ai_species_list(lang_code):
         scope_ecoregion = request.args.get('scope_ecoregion', '') or None
 
         is_admin = current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Guard: non-admins must not access other institutions' species lists.
         if scope_institution_id is not None and not is_admin:
@@ -1897,7 +1898,7 @@ def upload(lang_code):
     try:
         form = UploadForm()
         
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         # --- START OF NEW SECURE LOGIC ---
@@ -1922,7 +1923,7 @@ def upload(lang_code):
         if is_admin:
             institutions_list = Institution.query.order_by(Institution.name_uk).all()
         else:
-            institutions_list = current_user.institutions
+            institutions_list = ct_access.allowed_institutions(current_user)
 
         # This block is preserved as-is; it is used for JavaScript-side filtering
         all_loc_inst_records = ct_session.query(location_institutions).all()
@@ -2140,7 +2141,7 @@ def upload_fast(lang_code):
     ct_session = get_ct_session()
     try:
         form = UploadForm()
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         if is_admin:
@@ -2162,7 +2163,7 @@ def upload_fast(lang_code):
         if is_admin:
             institutions_list = Institution.query.order_by(Institution.name_uk).all()
         else:
-            institutions_list = current_user.institutions
+            institutions_list = ct_access.allowed_institutions(current_user)
 
         all_loc_inst_records = ct_session.query(location_institutions).all()
         loc_to_inst = {}
@@ -2311,7 +2312,7 @@ def batch_uploaded_files(lang_code, batch_id):
 def _accessible_locations(ct_session):
     """Return locations accessible to the current user, plus JS-filter data
     keyed by institution. Shared logic with upload/upload_fast."""
-    user_inst_ids = [inst.id for inst in current_user.institutions]
+    user_inst_ids = ct_access.allowed_institution_ids(current_user)
     is_admin = current_user.has_role('admin')
     if is_admin:
         locations = ct_session.query(Location).order_by(Location.name).all()
@@ -2321,7 +2322,7 @@ def _accessible_locations(ct_session):
             .join(location_institutions, Location.id == location_institutions.c.location_id)\
             .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
             .order_by(Location.name).distinct().all()
-        institutions_list = current_user.institutions
+        institutions_list = ct_access.allowed_institutions(current_user)
     else:
         locations, institutions_list = [], []
 
@@ -2602,7 +2603,7 @@ def stats_top_species(lang_code):
         location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
         biotope_ids = [int(id) for id in biotope_ids_str.split(',') if id.isdigit()]
 
-        user_inst_ids =[inst.id for inst in current_user.institutions] if current_user.is_authenticated else[]
+        user_inst_ids =ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         # Pass table_alias='l' for raw SQL
         inst_condition, inst_params = get_institution_filter(
@@ -2712,7 +2713,7 @@ def stats_locations(lang_code):
             raw_inst_ids = request.args.get('institution_id', '').split(',')
         selected_inst_ids = [int(i) for i in raw_inst_ids if str(i).isdigit()]
 
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         
         # Apply the filter, specifying the correct alias 'locations' upfront
@@ -2793,7 +2794,7 @@ def api_species_dynamics(lang_code):
             return jsonify({'error': 'Species ID, start year, and end year are required'}), 400
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Check access rights for the requested scope
         if not is_admin:
@@ -2802,7 +2803,7 @@ def api_species_dynamics(lang_code):
                     return jsonify({'error': 'Access denied'}), 403
             elif scope_type == 'ecoregion':
                 user_ecoregions = {
-                    inst.ecoregion_uk for inst in current_user.institutions
+                    inst.ecoregion_uk for inst in ct_access.allowed_institutions(current_user)
                     if inst.ecoregion_uk
                 } if current_user.is_authenticated else set()
                 if scope_id not in user_ecoregions:
@@ -2923,7 +2924,7 @@ def api_comparison(lang_code):
             return jsonify({'error': 'Both scopes must be selected'}), 400
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         def check_scope_access(scope_type, scope_id):
             if is_admin:
@@ -2931,7 +2932,7 @@ def api_comparison(lang_code):
             if scope_type == 'institution':
                 return str(scope_id).isdigit() and int(scope_id) in user_inst_ids
             elif scope_type == 'ecoregion':
-                user_ecos = {i.ecoregion_uk for i in current_user.institutions if i.ecoregion_uk} if current_user.is_authenticated else set()
+                user_ecos = {i.ecoregion_uk for i in ct_access.allowed_institutions(current_user) if i.ecoregion_uk}
                 return scope_id in user_ecos
             return False
 
@@ -3172,7 +3173,7 @@ def _can_access_observation(ct_session, observation):
     return can_access_location(
         ct_session, observation.location_id,
         is_admin=False,
-        user_inst_ids=[i.id for i in current_user.institutions])
+        user_inst_ids=ct_access.allowed_institution_ids(current_user))
 
 
 # --- IDENTIFICATION AND UPLOAD API ---
@@ -3274,7 +3275,7 @@ def get_location_details(lang_code, location_id):
         if not can_access_location(
                 ct_session, location_id,
                 is_admin=current_user.has_role('admin'),
-                user_inst_ids=[i.id for i in current_user.institutions]):
+                user_inst_ids=ct_access.allowed_institution_ids(current_user)):
             # 404, not 403: a restricted location should not be discoverable.
             return jsonify({'error': _('Локацію не знайдено.')}), 404
         
@@ -3416,7 +3417,7 @@ def next_observation_for_identification(lang_code):
 
         user_identified_photos = ct_session.query(Identification.photo_id).filter_by(user_id=current_user.id)
 
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         if not is_admin:
@@ -3746,7 +3747,7 @@ def _authorize_ct_photo_or_404(system_filename):
             system_filename,
             is_authenticated=current_user.is_authenticated,
             is_admin=current_user.is_authenticated and current_user.has_role('admin'),
-            user_inst_ids=[i.id for i in current_user.institutions] if current_user.is_authenticated else (),
+            user_inst_ids=ct_access.allowed_institution_ids(current_user),
         )
     finally:
         close_ct_session()
@@ -3972,7 +3973,7 @@ def gallery(lang_code):
     ct_session = get_ct_session()
     try:
         # Determine user permissions
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
 
         # Build SQL filter (locations table uses alias 'locations')
@@ -4031,7 +4032,7 @@ def get_gallery_photos(lang_code):
             return jsonify({'error': 'Species ID is required'}), 400
 
         # Access rights
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
         can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
@@ -4175,7 +4176,7 @@ def ct_location_coverage(lang_code, location_id):
 
         # Access: admin sees everything; otherwise the location must belong to the user's institution
         if not current_user.has_role('admin'):
-            user_inst_ids = [i.id for i in current_user.institutions]
+            user_inst_ids = ct_access.allowed_institution_ids(current_user)
             allowed = False
             if user_inst_ids:
                 allowed = ct_session.execute(
@@ -4249,7 +4250,7 @@ def manage_locations(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Filter locations by institution, same logic as in upload
         if is_admin:
@@ -4290,7 +4291,7 @@ def manage_locations(lang_code):
                 Institution.id.in_(used_inst_ids)
             ).order_by(Institution.name_uk).all()
         elif used_inst_ids:
-            filter_institutions = [i for i in current_user.institutions if i.id in used_inst_ids]
+            filter_institutions = [i for i in ct_access.allowed_institutions(current_user) if i.id in used_inst_ids]
         else:
             filter_institutions = []
 
@@ -4316,7 +4317,7 @@ def manage_locations(lang_code):
         if is_admin:
             user_institutions = Institution.query.order_by(Institution.name_uk).all()
         else:
-            user_institutions = list(current_user.institutions)
+            user_institutions = ct_access.allowed_institutions(current_user)
 
         return render_template('manage_locations.html',
                                locations=locations_data,
@@ -4479,7 +4480,7 @@ def _user_can_access_location(ct_session, location_id):
     """admin/quality_control → always; manager → only if the location belongs to their institution."""
     if current_user.has_role('admin') or current_user.has_role('quality_control'):
         return True
-    user_inst_ids = [inst.id for inst in current_user.institutions]
+    user_inst_ids = ct_access.allowed_institution_ids(current_user)
     if not user_inst_ids:
         return False
     access = ct_session.execute(
@@ -4500,7 +4501,7 @@ def manage_deployments(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         if is_full_access:
             locations_objects = ct_session.query(Location).order_by(Location.name).all()
@@ -4535,7 +4536,7 @@ def manage_deployments(lang_code):
             filter_institutions = Institution.query.filter(
                 Institution.id.in_(used_inst_ids)).order_by(Institution.name_uk).all()
         elif used_inst_ids:
-            filter_institutions = [i for i in current_user.institutions if i.id in used_inst_ids]
+            filter_institutions = [i for i in ct_access.allowed_institutions(current_user) if i.id in used_inst_ids]
         else:
             filter_institutions = []
 
@@ -4772,7 +4773,7 @@ def export_deployments(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         institution_id = request.args.get('institution_id', type=int)
         year = request.args.get('year', type=int)
@@ -4939,7 +4940,7 @@ def data_quality(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         # _resolve_export_location_ids takes is_admin — pass True for quality_control so
         # it gets ALL locations (full access).
         loc_ids = _resolve_export_location_ids(ct_session, is_full_access, user_inst_ids, None)
@@ -5066,7 +5067,7 @@ def update_location(lang_code, location_id):
 
         # Check access to the location by institution
         if not is_admin:
-            user_inst_ids = [inst.id for inst in current_user.institutions]
+            user_inst_ids = ct_access.allowed_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -5133,7 +5134,7 @@ def api_create_location_admin(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         data = request.json
         name = (data.get('name') or '').strip()
@@ -5384,7 +5385,7 @@ def ct_data_export(lang_code):
             user_institutions = Institution.query.order_by(name_col).all()
         else:
             sort_key = (lambda i: i.name_en or i.name_uk) if lang_code == 'en' else (lambda i: i.name_uk)
-            user_institutions = sorted(current_user.export_institutions, key=sort_key)
+            user_institutions = sorted(ct_access.export_institutions(current_user), key=sort_key)
         return render_template('ct_data_export.html',
                                user_institutions=user_institutions,
                                is_admin=is_admin)
@@ -5482,7 +5483,7 @@ def _get_export_institution_ids():
     - others: intersection of requested and those where can_export=True; if not provided — all allowed.
     """
     is_admin = current_user.has_role('admin')
-    allowed_ids = None if is_admin else {i.id for i in current_user.export_institutions}
+    allowed_ids = None if is_admin else set(ct_access.export_institution_ids(current_user))
 
     raw = request.args.get('institution_ids', '')
     if raw:
@@ -5590,7 +5591,7 @@ def api_get_identification_stats(lang_code):
         user_identified_photos = ct_session.query(Identification.photo_id)\
                                              .filter_by(user_id=current_user.id)
 
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         if not is_admin:
@@ -5698,7 +5699,7 @@ def api_get_locations_with_status(lang_code):
         status_severity = {'ok': 0, 'warning': 1, 'critical': 2}
 
         is_admin = current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions]
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         if is_admin:
             locations = ct_session.query(Location).all()
@@ -5793,7 +5794,7 @@ def api_get_service_history(lang_code, location_id):
     try:
         # Access check: admin sees all; manager sees only their own institutions.
         if not current_user.has_role('admin'):
-            user_inst_ids = [inst.id for inst in current_user.institutions]
+            user_inst_ids = ct_access.allowed_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -5859,7 +5860,7 @@ def api_create_service_visit(lang_code):
 
         # Location-by-institution access check.
         if not current_user.has_role('admin'):
-            user_inst_ids = [inst.id for inst in current_user.institutions]
+            user_inst_ids = ct_access.allowed_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -5942,7 +5943,7 @@ def api_update_service_visit(lang_code, visit_id):
             if visit.user_id != current_user.id:
                 return jsonify({'success': False, 'error': _('Недостатньо прав для редагування цього запису.')}), 403
             # Check access to the location by institution
-            user_inst_ids = [inst.id for inst in current_user.institutions]
+            user_inst_ids = ct_access.allowed_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -6161,7 +6162,7 @@ def species_detailed(lang_code):
     ct_session = get_ct_session()
     try:
         # 1. Access rights.
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
 
         # Build the location filter (table alias 'locations').
@@ -6220,7 +6221,7 @@ def api_distribution_map(lang_code):
             return jsonify({'error': 'Missing parameters'}), 400
             
         # Access control.
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         
         # Important: use alias 'l' because it is referenced in the SQL below.
@@ -6405,7 +6406,7 @@ def api_daily_activity(lang_code):
 
         # ── Scope filter (institution / ecoregion) ───────────────────────────────
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Access control: non-admins may only query within their own institutions.
         if not is_admin:
@@ -6414,7 +6415,7 @@ def api_daily_activity(lang_code):
                     return jsonify({'error': 'Access denied'}), 403
             elif scope_type == 'ecoregion':
                 user_ecoregions = {
-                    inst.ecoregion_uk for inst in current_user.institutions
+                    inst.ecoregion_uk for inst in ct_access.allowed_institutions(current_user)
                     if inst.ecoregion_uk
                 } if current_user.is_authenticated else set()
                 if scope_id not in user_ecoregions:
@@ -6557,14 +6558,14 @@ def api_daily_activity_download(lang_code):
 
         # ── Scope filter (same logic as api_daily_activity) ──────────────────────
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
         if not is_admin:
             if scope_type == 'institution':
                 if not scope_id or int(scope_id) not in user_inst_ids:
                     return "Access denied", 403
             elif scope_type == 'ecoregion':
                 user_ecoregions = {
-                    inst.ecoregion_uk for inst in current_user.institutions
+                    inst.ecoregion_uk for inst in ct_access.allowed_institutions(current_user)
                     if inst.ecoregion_uk
                 }
                 if scope_id not in user_ecoregions:
@@ -6666,7 +6667,7 @@ def daily_activity_page(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
-            institutions = sorted(current_user.institutions,
+            institutions = sorted(ct_access.allowed_institutions(current_user),
                                   key=lambda i: i.name_uk or '')
         else:
             institutions = []
@@ -6723,7 +6724,7 @@ def api_activity_heatmap(lang_code):
         species_id = int(species_id_str)
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
-        user_inst_ids = [inst.id for inst in current_user.institutions] if current_user.is_authenticated else []
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         # Access control mirrors api_daily_activity.
         if not is_admin:
@@ -6732,7 +6733,7 @@ def api_activity_heatmap(lang_code):
                     return jsonify({'error': 'Access denied'}), 403
             elif scope_type == 'ecoregion':
                 user_ecoregions = {
-                    inst.ecoregion_uk for inst in current_user.institutions
+                    inst.ecoregion_uk for inst in ct_access.allowed_institutions(current_user)
                     if inst.ecoregion_uk
                 } if current_user.is_authenticated else set()
                 if scope_id not in user_ecoregions:
@@ -6807,7 +6808,7 @@ def activity_heatmap_page(lang_code):
         if is_admin:
             institutions = Institution.query.order_by(Institution.name_uk).all()
         elif current_user.is_authenticated:
-            institutions = sorted(current_user.institutions, key=lambda i: i.name_uk or '')
+            institutions = sorted(ct_access.allowed_institutions(current_user), key=lambda i: i.name_uk or '')
         else:
             institutions = []
 

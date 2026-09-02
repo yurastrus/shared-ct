@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.extensions import mail, db
 from app.models import Role
+from app.camera_traps.access import allowed_institution_ids
 from app.camera_traps.database import get_ct_engine
 from app.camera_traps.models import (
     Observation, Photo, Identification, Location, location_institutions
@@ -96,7 +97,9 @@ def _count_pending_for_user(ct_session, user):
     )
 
     is_admin = user.has_role('admin')
-    user_inst_ids = [inst.id for inst in user.institutions]
+    # Camera-trap access only: somebody granted PAM alone must not be reminded
+    # about photo series they cannot see.
+    user_inst_ids = allowed_institution_ids(user)
 
     if not is_admin:
         if user_inst_ids:
