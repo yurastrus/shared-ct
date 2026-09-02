@@ -134,25 +134,53 @@ def get_ct_occurrence_data(filters, limit=None):
             else:
                 inst_cond = ""
 
-            # Filter fragment shared by every record producer (date + taxon +
-            # institution + QC + validity). Each producer joins ``o``/``l``/``s``,
-            # so the same fragment drops into all of them.
+            # --- Scope CTE: narrow to the wanted observations BEFORE aggregating ---
+            #
+            # Everything that depends only on the observation (date window,
+            # location validity, institution, QC exclusion) is resolved once,
+            # here, and the heavy CTEs below join against the result.
+            #
+            # This used to live in a `common_conditions` fragment pasted into
+            # each producer's WHERE, which meant the filters were applied *after*
+            # ObservationConsensus and WinningIdentifiers had already aggregated
+            # the entire identifications x photos join (≈500k x 750k rows) and
+            # RankedConsensus had run a window function over all of it. Exporting
+            # a two-location reserve cost the same as exporting the whole
+            # database, and the planner's rows=1 estimate on the trailing
+            # institution semi-join pushed it into nested loops: one such park
+            # took over nine minutes, against 84 ms for the scoped form.
+            #
+            # Species/taxon predicates stay in the producers — they need the
+            # `species` join, which does not exist at this level.
+            scoped_obs_cte = f"""
+                ScopedObs AS (
+                    SELECT o.id AS observation_id
+                    FROM observations o
+                    JOIN locations l ON l.id = o.location_id
+                    WHERE l.is_valid IS NOT FALSE  -- exclude admin-invalidated locations
+                      AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+                      {inst_cond}
+                      {qc_cond}
+                )"""
+
+            # What remains per producer once ScopedObs has done the rest.
             common_conditions = f"""
-                        l.is_valid IS NOT FALSE  -- exclude admin-invalidated locations
-                        AND DATE(o.series_start_time) BETWEEN :start_date AND :end_date
+                        EXISTS (SELECT 1 FROM ScopedObs so WHERE so.observation_id = o.id)
                         {species_filter_condition}
-                        {taxo_where}
-                        {inst_cond}
-                        {qc_cond}"""
+                        {taxo_where}"""
 
             # --- Shared CTEs (built from the identifications table) ---
-            shared_ctes = """
-                WITH ObservationConsensus AS (
+            # Each one joins ScopedObs first: aggregate the park, not the archive.
+            shared_ctes = f"""
+                WITH {scoped_obs_cte},
+                ObservationConsensus AS (
                     SELECT
                         p.observation_id, i.species_id,
                         COUNT(DISTINCT i.user_id) as vote_count,
                         MAX(i.quantity) as max_quantity
-                    FROM identifications i JOIN photos p ON i.photo_id = p.id
+                    FROM identifications i
+                    JOIN photos p ON i.photo_id = p.id
+                    JOIN ScopedObs so ON so.observation_id = p.observation_id
                     GROUP BY p.observation_id, i.species_id
                 ),
                 RankedConsensus AS (
@@ -172,6 +200,7 @@ def get_ct_occurrence_data(filters, limit=None):
                         STRING_AGG(DISTINCT i.user_id::text, '|') as identifier_user_ids
                     FROM identifications i
                     JOIN photos p ON i.photo_id = p.id
+                    JOIN ScopedObs so ON so.observation_id = p.observation_id
                     GROUP BY p.observation_id, i.species_id
                 )
             """
@@ -240,6 +269,7 @@ def get_ct_occurrence_data(filters, limit=None):
                                      ap.prediction_score DESC NULLS LAST
                         ) as rn
                     FROM ai_predictions ap
+                    JOIN ScopedObs so ON so.observation_id = ap.observation_id
                     JOIN ai_models am ON ap.model_id = am.id
                     LEFT JOIN ai_model_levels lvl ON am.level_id = lvl.id
                     WHERE ap.prediction_species_id IS NOT NULL
