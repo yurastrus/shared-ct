@@ -379,7 +379,7 @@ msgstr "Name and coordinates are required."
 
 #: app/camera_traps/routes.py:3643
 msgid "Координати мають бути числами (напр. 49.85 / 23.65)."
-msgstr ""
+msgstr "Coordinates must be numbers (e.g. 49.85 / 23.65)."
 
 #: app/camera_traps/routes.py:3653
 msgid "Місце з такими координатами вже існує: "
@@ -4502,7 +4502,7 @@ msgstr "MB free"
 
 #: app/camera_traps/templates/upload_fast.html:411
 msgid "Немає зв'язку з сервером (перевірте мережу)"
-msgstr ""
+msgstr "No connection to the server (check your network)"
 
 #: app/camera_traps/templates/upload_fast.html:463
 msgid "завантажено фото"
@@ -4566,7 +4566,7 @@ msgstr "Waiting for grouping..."
 
 #: app/camera_traps/templates/upload_fast.html:915
 msgid "Втрачено зв'язок під час групування серій"
-msgstr ""
+msgstr "Lost connection while grouping series"
 
 #: app/camera_traps/templates/upload_fast.html:940
 msgid "Підготовка..."
