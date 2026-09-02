@@ -447,9 +447,8 @@ msgid "Помилка перерахунку консенсусу. Переві�
 msgstr "Consensus recalculation error. Please check the logs."
 
 #: app/camera_traps/routes.py:3918
-#, fuzzy
 msgid "Невідомий вид"
-msgstr "state unknown"
+msgstr "Unknown species"
 
 #: app/camera_traps/routes.py:4003
 #: app/camera_traps/templates/identification.html:100
@@ -4494,14 +4493,12 @@ msgid "без датованих фото"
 msgstr "no dated photos"
 
 #: app/camera_traps/templates/upload_fast.html:398
-#, fuzzy
 msgid "Завантаження недоступне"
-msgstr "Loading photos..."
+msgstr "Upload unavailable"
 
 #: app/camera_traps/templates/upload_fast.html:398
-#, fuzzy
 msgid "МБ місця"
-msgstr "Location description"
+msgstr "MB free"
 
 #: app/camera_traps/templates/upload_fast.html:411
 msgid "Немає зв'язку з сервером (перевірте мережу)"
@@ -4512,9 +4509,8 @@ msgid "завантажено фото"
 msgstr "photos uploaded"
 
 #: app/camera_traps/templates/upload_fast.html:653
-#, fuzzy
 msgid "Помилка створення місця"
-msgstr "Error creating location."
+msgstr "Error creating location"
 
 #: app/camera_traps/templates/upload_fast.html:679
 msgid "і ще"
@@ -4557,9 +4553,8 @@ msgid "спроба"
 msgstr "attempt"
 
 #: app/camera_traps/templates/upload_fast.html:899
-#, fuzzy
 msgid "Групування серій не вдалося"
-msgstr "Grouping series..."
+msgstr "Series grouping failed"
 
 #: app/camera_traps/templates/upload_fast.html:904
 msgid "Групування серій..."
@@ -4670,12 +4665,6 @@ msgstr "Photos uploaded"
 #~ "Not enough storage space — at "
 #~ "least %(min)s MB of free space is"
 #~ " required."
-
-#~ msgid "Завантаження недоступне"
-#~ msgstr "Upload unavailable"
-
-#~ msgid "МБ місця"
-#~ msgstr "MB free"
 
 #~ msgid "Некоректний клас лендковеру."
 #~ msgstr "Invalid landcover class."
