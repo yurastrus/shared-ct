@@ -3369,7 +3369,9 @@ def next_observation_for_identification(lang_code):
             sort_by = 'priority_random'
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
-        ai_species_id = request.args.get('ai_species_id', type=int)  # filter "AI: species"
+        # Text, not int: the same parameter also carries the group filters
+        # ('not_empty', 'animals'). observations_subq_for_ai_filter sorts it out.
+        ai_filter = request.args.get('ai_species_id') or None
         start_obs_id = request.args.get('start_obs_id', type=int)  # open a specific series first
 
         # Check access rights for review mode
@@ -3449,10 +3451,10 @@ def next_observation_for_identification(lang_code):
         # (from the WINNING model — highest accuracy_rank per series). Works
         # silently: if AI has not been used yet, the parameter is ignored.
         ai_observation_subq = None
-        if ai_species_id is not None:
-            from .ai_runner import is_ai_available, observations_subq_for_ai_species
+        if ai_filter is not None:
+            from .ai_runner import is_ai_available, observations_subq_for_ai_filter
             if is_ai_available():
-                ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
+                ai_observation_subq = observations_subq_for_ai_filter(ai_filter)
 
         if review_mode:
             # In review mode show both pending and completed with identifications
@@ -5582,7 +5584,7 @@ def api_get_identification_stats(lang_code):
     try:
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
-        ai_species_id = request.args.get('ai_species_id', type=int)
+        ai_filter = request.args.get('ai_species_id') or None
 
         # IDs of photos already identified by this user.
         user_identified_photos = ct_session.query(Identification.photo_id)\
@@ -5622,10 +5624,10 @@ def api_get_identification_stats(lang_code):
         # AI filter: count only series where the winning model (highest accuracy_rank)
         # identified the selected species. Silently ignored if AI is not yet active.
         ai_observation_subq = None
-        if ai_species_id is not None:
-            from .ai_runner import is_ai_available, observations_subq_for_ai_species
+        if ai_filter is not None:
+            from .ai_runner import is_ai_available, observations_subq_for_ai_filter
             if is_ai_available():
-                ai_observation_subq = observations_subq_for_ai_species(ai_species_id)
+                ai_observation_subq = observations_subq_for_ai_filter(ai_filter)
 
         # Count observations in 'pending' status that do NOT contain
         # any photo already identified by this user.

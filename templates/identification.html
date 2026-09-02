@@ -36,6 +36,10 @@
         <select id="ai-species-select" class="scope-filter-select form-control form-control-sm"
                 {% if not ai_species_list %}disabled title="{{ _('AI ще не виконував класифікацію — список порожній.') }}"{% endif %}>
             <option value="">{{ _('Будь-який') }}</option>
+            {# Group filters. Values are strings, not ids, so the backend can
+               tell them apart from a species selection. #}
+            <option value="not_empty">{{ _('Не пусто (будь-яке визначення)') }}</option>
+            <option value="animals">{{ _('Лише тварини') }}</option>
             {% for s in ai_species_list %}
             <option value="{{ s.id }}">{{ s.text }}</option>
             {% endfor %}
@@ -482,6 +486,12 @@ $(document).ready(function() {
     const aiSpeciesEndpoint =
         "{{ url_for('camera_traps.identify_ai_species_list', lang_code=g.lang_code) }}";
     const aiAnyLabel = "{{ _('Будь-який') }}";
+    // The group filters are rebuilt together with the species list, otherwise
+    // changing the scope silently drops them from the select.
+    const aiGroupOptions = [
+        {value: 'not_empty', text: "{{ _('Не пусто (будь-яке визначення)') }}"},
+        {value: 'animals',   text: "{{ _('Лише тварини') }}"},
+    ];
     const aiEmptyHint =
         "{{ _('AI ще не виконував класифікацію — список порожній.') }}";
 
@@ -510,13 +520,22 @@ $(document).ready(function() {
                 // Rebuild the options.
                 $sel.empty();
                 $sel.append($('<option>', {value: '', text: aiAnyLabel}));
+                aiGroupOptions.forEach(g => {
+                    $sel.append($('<option>', {value: g.value, text: g.text}));
+                });
                 items.forEach(s => {
                     $sel.append($('<option>', {value: s.id, text: s.text}));
                 });
-                // Preserve the selection if the species is still in the list.
-                const stillPresent = items.some(s => String(s.id) === String(prevVal));
+                // Preserve the selection. A group filter always survives a
+                // scope change, because it is not tied to any species list; a
+                // species survives only while it still has predictions here.
+                const isGroup = aiGroupOptions.some(g => g.value === prevVal);
+                const stillPresent = isGroup ||
+                    items.some(s => String(s.id) === String(prevVal));
                 $sel.val(stillPresent ? prevVal : '');
-                // Disabled state depends on whether the list has entries.
+                // Disabled when nothing has been classified in this scope. The
+                // group filters are left disabled too: with no predictions at
+                // all, "not empty" and "animals only" would both match nothing.
                 if (items.length === 0) {
                     $sel.prop('disabled', true).attr('title', aiEmptyHint);
                 } else {

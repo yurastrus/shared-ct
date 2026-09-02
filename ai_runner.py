@@ -571,19 +571,38 @@ def get_observation_ai_prediction(
     }
 
 
-def observations_subq_for_ai_species(ai_species_id: int):
-    """SQLAlchemy select(observation_id) for series where the WINNING prediction
-    (model with the highest accuracy_rank, tie-break — newer model.id) identified
-    species ai_species_id.
+#: Group filters offered on /identify alongside the individual species.
+#: Values travel in the same ``ai_species_id`` query parameter, which is why
+#: they are strings that cannot be confused with a numeric id.
+AI_GROUP_NOT_EMPTY = 'not_empty'
+AI_GROUP_ANIMALS = 'animals'
+AI_GROUP_FILTERS = (AI_GROUP_NOT_EMPTY, AI_GROUP_ANIMALS)
 
-    Consistent with get_species_with_ai_predictions / get_observation_ai_prediction:
-    if a series has predictions from multiple models (DF+MDS + imported MDR),
-    only the most accurate one is considered the "winner" — so the AI filter on
-    /identify shows exactly the series listed in the species reference."""
+#: DeepFaune labels that are not an animal. Stored in ``species`` with negative
+#: ids alongside the real taxa, and distinguishable by having no ``kingdom`` —
+#: that is the rule used below, rather than a hard-coded list of ids, so a label
+#: added by a future model is classified correctly without touching this file.
+#:
+#: ``Homo sapiens`` is the exception: taxonomically an animal, but not what a
+#: wildlife survey is looking for, so "animals only" excludes it explicitly.
+AI_NON_ANIMAL_SCIENTIFIC_NAME = 'Homo sapiens'
+AI_EMPTY_SCIENTIFIC_NAME = 'empty'
+
+
+def _winning_prediction_subq():
+    """One row per series: the prediction of the most accurate model.
+
+    A series can carry predictions from several models (DF+MDS plus an imported
+    MDR run). Only the most accurate one counts as the winner, so the /identify
+    filter shows exactly the series the species reference lists. Tie-break on
+    the newer model id keeps the choice deterministic — without it the winner
+    depends on the plan, and the same filter can return different series twice
+    in a row.
+    """
     from sqlalchemy import select, func
     from .models import AIPrediction
 
-    win = (
+    return (
         select(
             AIPrediction.observation_id.label('observation_id'),
             AIPrediction.prediction_species_id.label('species_id'),
@@ -598,4 +617,67 @@ def observations_subq_for_ai_species(ai_species_id: int):
         )
         .subquery()
     )
+
+
+def observations_subq_for_ai_group(group: str):
+    """select(observation_id) for a group filter rather than a single species.
+
+    ``not_empty`` — anything the winning model did label, minus the empty frames.
+    ``animals``   — the same, minus vehicles, motorbikes, quad bikes, people and
+                    "not identifiable"; i.e. what a survey actually wants to see.
+
+    Both are expressed through the taxonomy (``kingdom``), not through a list of
+    ids, because the list of DeepFaune labels grows with each model version and a
+    hard-coded list silently misclassifies whatever was added last.
+    """
+    from sqlalchemy import select
+    from .models import Species
+
+    if group not in AI_GROUP_FILTERS:
+        raise ValueError(f'unknown AI group filter: {group!r}')
+
+    win = _winning_prediction_subq()
+    q = select(win.c.observation_id).join(
+        Species, Species.id == win.c.species_id
+    ).where(Species.scientific_name != AI_EMPTY_SCIENTIFIC_NAME)
+
+    if group == AI_GROUP_ANIMALS:
+        q = q.where(
+            Species.kingdom == 'Animalia',
+            Species.scientific_name != AI_NON_ANIMAL_SCIENTIFIC_NAME,
+        )
+    return q
+
+
+def observations_subq_for_ai_filter(value):
+    """Dispatch the ``ai_species_id`` parameter to the right subquery.
+
+    The parameter carries either a numeric species id or one of
+    ``AI_GROUP_FILTERS``, so callers do not have to know which is which.
+    Returns None for anything unrecognised, which the routes treat as "no AI
+    filter" — an unparseable filter must not silently narrow the queue to
+    nothing.
+    """
+    if value is None or value == '':
+        return None
+    if isinstance(value, str) and value in AI_GROUP_FILTERS:
+        return observations_subq_for_ai_group(value)
+    try:
+        return observations_subq_for_ai_species(int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def observations_subq_for_ai_species(ai_species_id: int):
+    """SQLAlchemy select(observation_id) for series where the WINNING prediction
+    (model with the highest accuracy_rank, tie-break — newer model.id) identified
+    species ai_species_id.
+
+    Consistent with get_species_with_ai_predictions / get_observation_ai_prediction:
+    if a series has predictions from multiple models (DF+MDS + imported MDR),
+    only the most accurate one is considered the "winner" — so the AI filter on
+    /identify shows exactly the series listed in the species reference."""
+    from sqlalchemy import select
+
+    win = _winning_prediction_subq()
     return select(win.c.observation_id).where(win.c.species_id == ai_species_id)
