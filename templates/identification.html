@@ -9,7 +9,9 @@
 
         {% if institutions or ecoregions %}
         <label for="scope-select" class="scope-filter-label">{{ _('Регіон / Установа:') }}</label>
-        <select id="scope-select" class="scope-filter-select form-control form-control-sm">
+        <select id="scope-select" class="scope-filter-select form-control form-control-sm"
+                data-mobile-placeholder="{{ _('Всі доступні установи') }}"
+                data-desktop-placeholder="{{ _('Всі доступні') }}">
             <option value="">{{ _('Всі доступні') }}</option>
             {% if institutions %}
             <optgroup label="{{ _('Установи') }}">
@@ -34,6 +36,8 @@
         {% if ai_available %}
         <label for="ai-species-select" class="scope-filter-label">🤖 {{ _('AI вид:') }}</label>
         <select id="ai-species-select" class="scope-filter-select form-control form-control-sm"
+                data-mobile-placeholder="{{ _('Будь-який AI вид') }}"
+                data-desktop-placeholder="{{ _('Будь-який') }}"
                 {% if not ai_species_list %}disabled title="{{ _('AI ще не виконував класифікацію — список порожній.') }}"{% endif %}>
             <option value="">{{ _('Будь-який') }}</option>
             {# Group filters. Values are strings, not ids, so the backend can
@@ -336,6 +340,35 @@ $(document).ready(function() {
     let reviewFiltersData = { userId: '', speciesId: '' };
     let sortBy = 'priority_random';
 
+    /* ── Filter placeholders on narrow screens ───────────────────────────
+       Below 992px the CSS hides the external labels of the filter selects (the
+       three of them wrapped into a ragged block and «Всі доступні» told the
+       user nothing on its own). The meaning moves into the placeholder option:
+       «Всі доступні установи», «Будь-який AI вид». Both texts are rendered on
+       the element as data attributes, so the swap is stateless and can be run
+       again as often as needed — which it has to be, because
+       refreshAiSpeciesList() rebuilds the AI options from scratch. */
+    const narrowScreen = window.matchMedia('(max-width: 992px)');
+
+    function applyFilterPlaceholders() {
+        const mobile = narrowScreen.matches;
+        $('.scope-filter-select[data-mobile-placeholder]').each(function() {
+            const $sel = $(this);
+            const text = mobile ? $sel.data('mobile-placeholder')
+                                : $sel.data('desktop-placeholder');
+            if (!text) return;
+            $sel.find('option[value=""]').first().text(text);
+        });
+    }
+
+    applyFilterPlaceholders();
+    // addListener: Safari < 14 has no addEventListener on MediaQueryList.
+    if (narrowScreen.addEventListener) {
+        narrowScreen.addEventListener('change', applyFilterPlaceholders);
+    } else if (narrowScreen.addListener) {
+        narrowScreen.addListener(applyFilterPlaceholders);
+    }
+
     const translations = {
         location: "{{ _('Локація') }}",
         time: "{{ _('Час') }}",
@@ -541,6 +574,8 @@ $(document).ready(function() {
                 } else {
                     $sel.prop('disabled', false).removeAttr('title');
                 }
+                // The options were just recreated with the desktop wording.
+                applyFilterPlaceholders();
             })
             .catch(err => {
                 console.warn('Не вдалося оновити AI-список:', err);

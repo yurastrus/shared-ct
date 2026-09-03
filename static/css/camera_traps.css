@@ -2130,6 +2130,21 @@ body.dark-theme .message-container.error {
     .identification-layout > .right-column { min-width: 0; }
     .identification-species   { overflow-wrap: anywhere; }
 
+    /* -- Filter bar on a phone --------------------------------------------
+       Three labelled selects of different widths wrapped into a ragged block:
+       "Region / Institution:" ended up above its select, "AI species:" beside
+       the previous one, "Sorting:" above again. The labels are what made the
+       rows ragged, and they say little the field itself cannot: the external
+       label is dropped and the placeholder option carries the meaning instead
+       ("Vsi dostupni ustanovy", "Bud-yakyi AI vyd" - swapped in by the script
+       in identification.html on narrow screens). Sorting needs no label at
+       all, its options name it.
+
+       Each select then takes a full row, so the three read as one column.
+       Desktop keeps the labels. */
+    .scope-filter-bar .scope-filter-label  { display: none; }
+    .scope-filter-bar .scope-filter-select { flex: 1 1 100%; max-width: none; }
+
     /* ── Stacked reading order on narrow screens ──────────────────────────
        Two columns collapse into one, and the order then matters: the photo is
        what you are looking at, so it has to come before the lists you fill in
@@ -2154,15 +2169,19 @@ body.dark-theme .message-container.error {
     .right-column             { display: contents; }
 
     .photo-viewer             { order: 1; }  /* фото — перше, під фільтрами */
-    .quantity-panel           { order: 2; }  /* кількість особин + у вибране */
-    .species-selection-panel  { order: 3; }  /* списки видів */
-    .identification-form-main { order: 4; }  /* теги поведінки + коментар */
-    .action-buttons-container { order: 5; }  /* надіслати / пропустити — в кінці */
+    .action-buttons-container { order: 2; }  /* надіслати / пропустити — під фото */
+    .quantity-panel           { order: 3; }  /* кількість особин + у вибране */
+    .species-selection-panel  { order: 4; }  /* списки видів */
+    .identification-form-main { order: 5; }  /* теги поведінки + коментар */
 
     .action-buttons-container { position: static; }
     .species-selection-panel  { max-height: none; }
-    .main-buttons             { flex-direction: column; gap: 8px; }
-    .main-buttons #flag-btn   { width: 100%; }
+    /* Buttons sit directly under the photo now, so they must not eat the screen
+       on the way to the species list: one row, not three stacked full-width
+       bars. Надіслати / Пропустити share the width, 🚩 keeps its icon width. */
+    .main-buttons             { flex-direction: row; gap: 8px; }
+    .main-buttons > .btn      { flex: 1 1 0; }
+    .main-buttons #flag-btn   { flex: 0 0 auto; width: auto; }
     .buttons-and-theme        { flex-direction: column; align-items: stretch; gap: 8px; }
     .gallery-layout .theme-toggle { align-self: center; }
     .filter-row               { flex-direction: column; align-items: stretch; }
