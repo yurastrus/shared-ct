@@ -5375,7 +5375,8 @@ def biotope_auto_assign_status(lang_code):
 def ct_data_export(lang_code):
     """
     Page for preparing and exporting data from the camera-traps module.
-    Access: any user with can_export=True for at least one institution; admin — no restrictions.
+    Access: any user with camera-trap export granted for at least one
+    institution; admin — no restrictions.
     """
     g.lang_code = lang_code
     try:
@@ -5480,7 +5481,8 @@ def _get_export_institution_ids():
     """
     Return the institution_ids for the current request, respecting access rights.
     - admin: may select any; if not provided — None (no restriction).
-    - others: intersection of requested and those where can_export=True; if not provided — all allowed.
+    - others: intersection of requested and those with camera-trap export
+      granted; if not provided — all of those.
     """
     is_admin = current_user.has_role('admin')
     allowed_ids = None if is_admin else set(ct_access.export_institution_ids(current_user))
