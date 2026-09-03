@@ -64,6 +64,22 @@
             </a>
             {% endif %}
 
+            {# Institution verification stats: every logged-in user, each seeing
+               only the institutions their access covers (scoped in the route). #}
+            {% if current_user.is_authenticated %}
+            <a class="hub-card" href="{{ url_for('camera_traps.institution_stats', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🏛️</span>
+                <span class="hub-card__title">{{ _('Верифікації по установах') }}</span>
+                <span class="hub-card__desc">{{ _('Опрацьовані серії за установами та лічильники фото.') }}</span>
+            </a>
+            {% endif %}
+
+            <a class="hub-card" href="{{ url_for('camera_traps.contributors', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">👥</span>
+                <span class="hub-card__title">{{ _('Всі учасники') }}</span>
+                <span class="hub-card__desc">{{ _('Повний перелік учасників та їхній внесок за ковзні періоди.') }}</span>
+            </a>
+
             <a class="hub-card" href="{{ url_for('camera_traps.behavior_analysis', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🐾</span>
                 <span class="hub-card__title">{{ _('Поведінка') }}</span>
@@ -116,11 +132,6 @@
                 <span class="hub-card__icon">✅</span>
                 <span class="hub-card__title">{{ _('Якість даних') }}</span>
                 <span class="hub-card__desc">{{ _('Карта та графіки контролю якості деплойментів.') }}</span>
-            </a>
-            <a class="hub-card" href="{{ url_for('camera_traps.institution_stats', lang_code=g.lang_code) }}">
-                <span class="hub-card__icon">🏛️</span>
-                <span class="hub-card__title">{{ _('Верифікації по установах') }}</span>
-                <span class="hub-card__desc">{{ _('Опрацьовані серії за установами та лічильники фото.') }}</span>
             </a>
             {% endif %}
 

@@ -795,7 +795,8 @@ def contributors(lang_code):
         close_ct_session()
 
 
-def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
+def query_institution_stats(ct_session, today, inst_condition_orm, inst_params,
+                            restrict_inst_ids=None):
     """Verification statistics per INSTITUTION with rolling windows.
 
     Mirror of query_contributor_stats but grouped by institution instead of user.
@@ -803,6 +804,10 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
     window, counted by Identification.created_at (processing time). A location may
     belong to several institutions (M2M via location_institutions), so an
     observation can count toward each of them.
+
+    `restrict_inst_ids` limits the resulting ROWS to those institutions. The
+    location-level access filter alone is not enough: a location shared with a
+    co-owning institution would otherwise also produce a row for it.
     """
     start_today = datetime.combine(today, datetime.min.time())
     start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
@@ -814,7 +819,7 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
             case((Identification.created_at >= threshold, Photo.observation_id))
         ))
 
-    return ct_session.query(
+    query = ct_session.query(
         location_institutions.c.institution_id.label('institution_id'),
         _window(start_today).label('d_today'),
         _window(start_week).label('d_week'),
@@ -827,13 +832,17 @@ def query_institution_stats(ct_session, today, inst_condition_orm, inst_params):
         .join(Location, Observation.location_id == Location.id)\
         .join(location_institutions, location_institutions.c.location_id == Location.id)\
         .filter(inst_condition_orm).params(**inst_params)\
-        .filter(Location.id.in_(valid_location_id_subquery()))\
-        .group_by(location_institutions.c.institution_id)\
+        .filter(Location.id.in_(valid_location_id_subquery()))
+    if restrict_inst_ids is not None:
+        query = query.filter(
+            location_institutions.c.institution_id.in_(restrict_inst_ids))
+    return query.group_by(location_institutions.c.institution_id)\
         .order_by(func.count(distinct(Photo.observation_id)).desc())\
         .all()
 
 
-def query_institution_series_counts(ct_session, inst_condition_orm, inst_params):
+def query_institution_series_counts(ct_session, inst_condition_orm, inst_params,
+                                    restrict_inst_ids=None):
     """Per-institution series counts (all-time, access-scoped):
     {institution_id: {'total', 'completed', 'pending'}}.
 
@@ -843,6 +852,12 @@ def query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
                 ~Observation.photos.any(Photo.identifications.any()) definition,
                 run as a separate grouped query since it needs an EXISTS filter).
     """
+    def _restrict(q):
+        if restrict_inst_ids is None:
+            return q
+        return q.filter(
+            location_institutions.c.institution_id.in_(restrict_inst_ids))
+
     base = ct_session.query(
         location_institutions.c.institution_id.label('institution_id'),
         func.count(distinct(Observation.id)).label('total'),
@@ -854,7 +869,8 @@ def query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
         .join(location_institutions, location_institutions.c.location_id == Location.id)\
         .filter(inst_condition_orm).params(**inst_params)\
         .filter(Location.id.in_(valid_location_id_subquery()))\
-        .group_by(location_institutions.c.institution_id).all()
+        .group_by(location_institutions.c.institution_id)
+    base = _restrict(base).all()
 
     pending = ct_session.query(
         location_institutions.c.institution_id.label('institution_id'),
@@ -865,7 +881,8 @@ def query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
         .filter(~Observation.photos.any(Photo.identifications.any()))\
         .filter(inst_condition_orm).params(**inst_params)\
         .filter(Location.id.in_(valid_location_id_subquery()))\
-        .group_by(location_institutions.c.institution_id).all()
+        .group_by(location_institutions.c.institution_id)
+    pending = _restrict(pending).all()
 
     counts = {}
     for r in base:
@@ -878,13 +895,16 @@ def query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
 
 @camera_traps_bp.route('/institution-stats')
 @login_required
-@role_required('manager')
 def institution_stats(lang_code):
     """Verification statistics aggregated per institution (rolling today / week /
     month / year / all-time), plus system-wide totals: total photos, total series,
     pending series (no identifications yet) and completed series. Sibling of the
-    contributors page but grouped by institution instead of by person. Data is
-    limited to the viewer's access scope (get_institution_filter)."""
+    contributors page but grouped by institution instead of by person.
+
+    Open to every authenticated user, each within their own access scope:
+    an admin sees all institutions; a user with N accessible institutions sees
+    exactly those N rows and totals computed over their locations only; a user
+    with no institution assigned sees the publicly visible locations."""
     ct_session = get_ct_session()
     try:
         today = date.today()
@@ -892,13 +912,25 @@ def institution_stats(lang_code):
         user_inst_ids = ct_access.allowed_institution_ids(current_user) \
             if current_user.is_authenticated else []
 
+        # Non-admins with institutions are pinned to those institutions: both the
+        # locations that feed the totals and the rows of the table itself. Without
+        # the pin the default access filter would also let public locations of
+        # other institutions in.
+        restrict_inst_ids = None if is_admin or not user_inst_ids else user_inst_ids
         inst_condition, inst_params = get_institution_filter(
-            user_inst_ids, is_admin, selected_inst_id=None, table_alias='locations'
+            user_inst_ids, is_admin, selected_inst_id=restrict_inst_ids,
+            table_alias='locations'
         )
         inst_condition_orm = text(inst_condition)
 
-        rows = query_institution_stats(ct_session, today, inst_condition_orm, inst_params)
-        series_counts = query_institution_series_counts(ct_session, inst_condition_orm, inst_params)
+        rows = query_institution_stats(
+            ct_session, today, inst_condition_orm, inst_params,
+            restrict_inst_ids=restrict_inst_ids,
+        )
+        series_counts = query_institution_series_counts(
+            ct_session, inst_condition_orm, inst_params,
+            restrict_inst_ids=restrict_inst_ids,
+        )
 
         # Map institution_id -> localised name (institutions live in the main DB).
         name_map = {}
