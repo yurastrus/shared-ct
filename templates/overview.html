@@ -157,6 +157,12 @@
                 <span class="hub-card__title">{{ _('Адмін-панель') }}</span>
                 <span class="hub-card__desc">{{ _('Перерахунок аналітики, очищення фото та інші технічні дії.') }}</span>
             </a>
+
+            <a class="hub-card" href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🎯</span>
+                <span class="hub-card__title">{{ _('Експертність верифікаторів') }}</span>
+                <span class="hub-card__desc">{{ _('Збіг визначень з остаточним рішенням серії, за людьми або за видами.') }}</span>
+            </a>
         </div>
     </section>
     {% endif %}

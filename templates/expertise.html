@@ -1,0 +1,261 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Експертність верифікаторів') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .expertise-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .expertise-table th, .expertise-table td {
+        padding: 8px 12px; border-bottom: 1px solid #e0e0e0; text-align: right;
+    }
+    .expertise-table th:first-child, .expertise-table td:first-child,
+    .expertise-table th:nth-child(2), .expertise-table td:nth-child(2) { text-align: left; }
+    .expertise-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .expertise-table th[title] { border-bottom: 2px solid #c8d4e0; }
+    .expertise-table th.sorted-asc::after { content: " \25B2"; }
+    .expertise-table th.sorted-desc::after { content: " \25BC"; }
+    .expertise-table tbody tr:hover { background: #f6f8fa; }
+    .col-main { font-weight: 600; }
+    .col-muted { color: #777; }
+    .mode-switch { display: inline-flex; border: 1px solid #c8d4e0; border-radius: 6px; overflow: hidden; }
+    .mode-switch a {
+        padding: 7px 16px; text-decoration: none; color: #34495e; background: #fff;
+        font-size: 0.92rem; white-space: nowrap;
+    }
+    .mode-switch a + a { border-left: 1px solid #c8d4e0; }
+    .mode-switch a.active { background: #34495e; color: #fff; font-weight: 600; }
+    .metric-notes { background: #f6f8fa; border: 1px solid #e0e6ec; border-radius: 6px; padding: 0 16px; margin-top: 16px; }
+    .metric-notes summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+    .metric-notes dl { margin: 0 0 14px 0; }
+    .metric-notes dt { font-weight: 600; margin-top: 10px; }
+    .metric-notes dd { margin: 2px 0 0 0; color: #444; }
+    .totals-line { margin-top: 10px; color: #666; font-size: 0.9rem; }
+</style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+    <div class="dashboard-wrapper">
+
+        <div class="page-header">
+            <h1>{{ _('Експертність верифікаторів') }}</h1>
+            <h4>{{ _('Як часто визначення збігалося з остаточним рішенням серії. Лише завершені та архівовані серії.') }}</h4>
+        </div>
+
+        {# Mode switch: the same tally, grouped either by person or by species.
+           Plain links so the state lives in the URL and stays shareable. #}
+        <div style="margin-bottom: 14px;">
+            <div class="mode-switch">
+                <a href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code, mode='users',
+                                    scope=selected_scope, start_date=start_date, end_date=end_date,
+                                    include_special='1' if include_special else None) }}"
+                   class="{% if mode == 'users' %}active{% endif %}">{{ _('За верифікаторами') }}</a>
+                <a href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code, mode='species',
+                                    scope=selected_scope, start_date=start_date, end_date=end_date,
+                                    include_special='1' if include_special else None) }}"
+                   class="{% if mode == 'species' %}active{% endif %}">{{ _('За видами') }}</a>
+            </div>
+        </div>
+
+        <!-- Filter panel -->
+        <form id="filters-form" method="GET" class="filters-panel">
+            <input type="hidden" name="mode" value="{{ mode }}">
+
+            <div class="filter-group">
+                <label for="start-date">{{ _('Дата початку:') }}</label>
+                <input type="date" id="start-date" name="start_date" class="form-control"
+                       value="{{ start_date }}" min="{{ range_start }}" max="{{ range_end }}">
+            </div>
+            <div class="filter-group">
+                <label for="end-date">{{ _('Дата завершення:') }}</label>
+                <input type="date" id="end-date" name="end_date" class="form-control"
+                       value="{{ end_date }}" min="{{ range_start }}" max="{{ range_end }}">
+            </div>
+
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+                <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+                <select id="scope-select" name="scope" class="form-control">
+                    <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
+                    {% if institutions %}
+                    <optgroup label="{{ _('Установи') }}">
+                        {% for inst in institutions %}
+                        <option value="institution:{{ inst.id }}" {% if selected_scope == 'institution:' ~ inst.id %}selected{% endif %}>
+                            {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if ecoregions %}
+                    <optgroup label="{{ _('Екорегіони') }}">
+                        {% for eco_key, eco_name in ecoregions.items() %}
+                        <option value="ecoregion:{{ eco_key }}" {% if selected_scope == 'ecoregion:' ~ eco_key %}selected{% endif %}>{{ eco_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+
+            {# The narrowing filter belongs to the axis the table is NOT grouped by. #}
+            {% if mode == 'users' %}
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+                <label for="species-select">{{ _('Вид:') }}</label>
+                <select id="species-select" name="species_id" class="form-control">
+                    <option value="">{{ _('Усі види') }}</option>
+                    {% for sp in available_species %}
+                    <option value="{{ sp.id }}" {% if selected_species_id == sp.id %}selected{% endif %}>{{ sp.text }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+                <label for="verifier-select">{{ _('Верифікатор:') }}</label>
+                <select id="verifier-select" name="user_id" class="form-control">
+                    <option value="">{{ _('Усі верифікатори') }}</option>
+                    {% for v in available_verifiers %}
+                    <option value="{{ v.id }}" {% if selected_user_id == v.id %}selected{% endif %}>{{ v.text }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="filter-group" style="flex: 0 1 130px;">
+                <label for="min-n">{{ _('Мін. серій:') }}</label>
+                <input type="number" id="min-n" name="min" class="form-control" min="1" value="{{ min_n }}">
+            </div>
+
+            <div class="filter-group" style="align-self: flex-end;">
+                <label style="font-weight: normal;">
+                    <input type="checkbox" name="include_special" value="1" {% if include_special %}checked{% endif %}>
+                    {{ _('Враховувати службові категорії') }}
+                </label>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end;">
+                <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
+                <a href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code, mode=mode) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
+            </div>
+        </form>
+
+        {# Metric glossary. Column headers repeat the short version in a
+           `title` tooltip; the long version lives here, collapsed. #}
+        <details class="metric-notes" {% if not rows %}open{% endif %}>
+            <summary>{{ _('Як рахуються ці показники') }}</summary>
+            <dl>
+                <dt>{{ _('Остаточне рішення серії') }}</dt>
+                <dd>{{ _('Береться те саме правило, що й в аналітиці та експорті: перемагає вид з найбільшою кількістю голосів, нічия розбивається найбільшою вказаною кількістю тварин. Рахуються лише серії зі статусом «завершено» або «архівовано».') }}</dd>
+
+                <dt>{{ _('Серій') }}</dt>
+                <dd>{{ _('Скільки разів людина голосувала на серіях, які потрапили у вибірку. Без цього числа відсоток нічого не означає.') }}</dd>
+
+                <dt>{{ _('LOO %') }}</dt>
+                <dd>{{ _('Основний показник. Серія закривається з двох голосів, тож людина зазвичай є половиною того рішення, з яким її звіряють. Тому її власний голос прибирають і дивляться, що вирішили б інші без неї. Якщо без неї переможця немає (нічия або більше ніхто не голосував), серія випадає з розрахунку.') }}</dd>
+
+                <dt>{{ _('Порядок рядків') }}</dt>
+                <dd>{{ _('За замовчуванням таблиця впорядкована за нижньою межею довірчого інтервалу, а не за самим відсотком: інакше шість серій зі 100% стояли б вище за одинадцять тисяч із 97.5%. Клік по заголовку сортує за будь-якою колонкою.') }}</dd>
+
+                <dt>{{ _('95% ДІ') }}</dt>
+                <dd>{{ _('Довірчий інтервал Вілсона для LOO. Показує, наскільки відсотку можна вірити при такій кількості серій: при 20 серіях інтервал широкий, при 2000 вузький.') }}</dd>
+
+                <dt>{{ _('Розбіжностей') }}</dt>
+                <dd>{{ _('Кількість серій, де голос не збігся з рішенням інших. Абсолютне число, а не відсоток.') }}</dd>
+
+                <dt>{{ _('Збіг %') }}</dt>
+                <dd>{{ _('Простий збіг з остаточним рішенням, разом із власним голосом. Довідкова колонка. Вона завищена, і розрив між нею та LOO показує, наскільки саме.') }}</dd>
+
+                <dt>{{ _('Назвав вид / Точність %') }}</dt>
+                <dd>{{ _('Зворотний бік: скільки разів вид був названий і в якій частці випадків він таки виявився остаточним. «Збіг» відповідає на питання «чи впізнав, коли вид справді був», а «точність» на питання «чи не приписав вид там, де його не було».') }}</dd>
+
+                <dt>{{ _('Службові категорії') }}</dt>
+                <dd>{{ _('Порожні кадри, люди, транспорт і «інший вид» за замовчуванням не рахуються: погодитись, що кадр порожній, легко, і це роздуває всім відсоток.') }}</dd>
+            </dl>
+        </details>
+
+        <div class="dashboard-section" style="margin-top: 20px;">
+            {% if rows %}
+            <div class="table-scroll">
+            <table class="expertise-table" id="expertise-table">
+                <thead>
+                    <tr>
+                        <th data-type="text">#</th>
+                        <th data-type="text">{% if mode == 'species' %}{{ _('Вид') }}{% else %}{{ _('Верифікатор') }}{% endif %}</th>
+                        <th data-type="num" title="{{ _('Скільки разів людина голосувала на серіях цієї вибірки.') }}">{{ _('Серій') }}</th>
+                        <th data-type="num" class="sorted-desc" title="{{ _('Збіг з рішенням інших, без власного голосу. Основний показник.') }}">{{ _('LOO %') }}</th>
+                        <th data-type="text" title="{{ _('Довірчий інтервал Вілсона для LOO: наскільки відсотку можна вірити при такому n.') }}">{{ _('95% ДІ') }}</th>
+                        <th data-type="num" title="{{ _('Серії, де голос не збігся з рішенням інших.') }}">{{ _('Розбіжностей') }}</th>
+                        <th data-type="num" title="{{ _('Простий збіг з фіналом, разом із власним голосом. Завищений, тримається для порівняння.') }}">{{ _('Збіг %') }}</th>
+                        {% if mode == 'species' or selected_species_id %}
+                        <th data-type="num" title="{{ _('Скільки разів цей вид був названий.') }}">{{ _('Назвав вид') }}</th>
+                        <th data-type="num" title="{{ _('У якій частці названих випадків вид таки виявився остаточним.') }}">{{ _('Точність %') }}</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.n }}</td>
+                        <td class="col-main">
+                            {% if r.loo_pct is not none %}{{ r.loo_pct }}<span class="col-muted"> ({{ r.loo_n }})</span>{% else %}&mdash;{% endif %}
+                        </td>
+                        <td class="col-muted">
+                            {% if r.ci_low is not none %}{{ r.ci_low }}&ndash;{{ r.ci_high }}{% else %}&mdash;{% endif %}
+                        </td>
+                        <td>{{ r.loo_misses }}</td>
+                        <td class="col-muted">{% if r.raw_pct is not none %}{{ r.raw_pct }}{% else %}&mdash;{% endif %}</td>
+                        {% if mode == 'species' or selected_species_id %}
+                        <td>{{ r.said }}</td>
+                        <td>{% if r.said_pct is not none %}{{ r.said_pct }}{% else %}&mdash;{% endif %}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% if totals %}
+            <div class="totals-line">
+                {{ _('Завершених серій з визначеним видом:') }} {{ totals.series }}.
+                {{ _('Голосів без незалежної перевірки (LOO неможливий):') }} {{ totals.undecidable }}.
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="info-message">{{ _('За цими фільтрами немає завершених серій з голосуванням.') }}</div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#scope-select').select2({ width: '100%' });
+    $('#species-select').select2({ width: '100%', allowClear: true, placeholder: '{{ _('Усі види') }}' });
+    $('#verifier-select').select2({ width: '100%', allowClear: true, placeholder: '{{ _('Усі верифікатори') }}' });
+
+    // Simple client-side table sorting (same behaviour as the contributors page).
+    $('#expertise-table th').on('click', function() {
+        var table = $('#expertise-table');
+        var rows = table.find('tbody tr').get();
+        var idx = $(this).index();
+        var type = $(this).data('type');
+        var asc = !$(this).hasClass('sorted-asc');
+
+        table.find('th').removeClass('sorted-asc sorted-desc');
+        $(this).addClass(asc ? 'sorted-asc' : 'sorted-desc');
+
+        rows.sort(function(a, b) {
+            var x = $(a).children('td').eq(idx).text().trim();
+            var y = $(b).children('td').eq(idx).text().trim();
+            if (type === 'num') { x = parseFloat(x) || 0; y = parseFloat(y) || 0; return asc ? x - y : y - x; }
+            return asc ? x.localeCompare(y) : y.localeCompare(x);
+        });
+        $.each(rows, function(i, row) { table.children('tbody').append(row); });
+    });
+});
+</script>
+{% endblock %}

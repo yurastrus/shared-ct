@@ -1009,6 +1009,426 @@ def institution_stats(lang_code):
         close_ct_session()
 
 
+
+#
+# --- VERIFIER EXPERTISE (agreement with the final series decision) ---
+#
+# Only series that reached a final decision are used (status 'completed' or
+# 'archived'). The final species of a series comes from the canonical consensus
+# rule shared with analytics and export (see _observation_consensus_species and
+# the ObservationConsensus CTE in daily_analytics.py): the species with the most
+# distinct voters wins, ties broken by the largest reported quantity.
+#
+# NB on the metric. MIN_IDENTIFICATIONS is 2 on production and ~92% of finished
+# series carry exactly two votes, so a verifier is normally half of the very
+# decision they are compared against — plain agreement is inflated by
+# construction. Hence the primary figure is leave-one-out (LOO): the decision is
+# recomputed WITHOUT the evaluated person's vote and their vote is compared to
+# that. Series whose remainder has no winner (a tie, or no other voter at all)
+# drop out of the LOO denominator instead of being guessed at.
+#
+# The same numbers are grouped two ways (the `mode` switch): by verifier ("who
+# is accurate") or by species ("which species get misidentified"). Both are
+# marginals of one confusion matrix, so a single pass produces either.
+#
+
+_expertise_range_cache = {'data': None, 'timestamp': None, 'ttl_hours': 6}
+
+EXPERTISE_MODES = ('users', 'species')
+
+
+def get_expertise_date_range(ct_session):
+    """(min_date, max_date) of verification activity over finished series.
+
+    Used as the default "whole period" for the date filter. Cached in-process
+    for `ttl_hours`: the bounds only shift when new verifications arrive, and a
+    full scan of `identifications` is too expensive to repeat per request.
+    """
+    now = datetime.now()
+    cache = _expertise_range_cache
+    if (cache['data'] is not None and cache['timestamp'] is not None
+            and (now - cache['timestamp']).total_seconds() < cache['ttl_hours'] * 3600):
+        return cache['data']
+
+    row = ct_session.query(
+        func.min(Identification.created_at),
+        func.max(Identification.created_at),
+    ).select_from(Identification)\
+        .join(Photo, Identification.photo_id == Photo.id)\
+        .join(Observation, Photo.observation_id == Observation.id)\
+        .filter(Observation.status.in_(['completed', 'archived']))\
+        .first()
+
+    first = row[0].date() if row and row[0] else date(2020, 8, 1)
+    last = row[1].date() if row and row[1] else date.today()
+    cache['data'] = (first, last)
+    cache['timestamp'] = now
+    return cache['data']
+
+
+def fetch_expertise_votes(ct_session, inst_condition_orm, inst_params):
+    """One row per (series, verifier, species) over finished series in scope.
+
+    Returns rows of (obs_id, user_id, species_id, quantity, voted_at).
+
+    Identifications are stored per photo, but the decision is made per series:
+    both writers (submit_identification, verification_import) put the same
+    species on every photo of the series, and the identification queue never
+    shows a series to someone who already voted on it. The grouping therefore
+    collapses to exactly one row per person per series.
+
+    Deliberately NOT filtered by date: the final decision of a series must not
+    depend on the reporting period, otherwise the same series would resolve to
+    different species under different filters. The date filter is applied later
+    and only to the vote being evaluated.
+    """
+    return ct_session.query(
+        Photo.observation_id.label('obs_id'),
+        Identification.user_id.label('user_id'),
+        Identification.species_id.label('species_id'),
+        func.max(Identification.quantity).label('quantity'),
+        func.min(Identification.created_at).label('voted_at'),
+    ).select_from(Identification)\
+        .join(Photo, Identification.photo_id == Photo.id)\
+        .join(Observation, Photo.observation_id == Observation.id)\
+        .join(Location, Observation.location_id == Location.id)\
+        .filter(Observation.status.in_(['completed', 'archived']))\
+        .filter(inst_condition_orm).params(**inst_params)\
+        .filter(Location.id.in_(valid_location_id_subquery()))\
+        .group_by(Photo.observation_id, Identification.user_id,
+                  Identification.species_id)\
+        .all()
+
+
+def _rank_species(votes):
+    """[(species_id, voters, max_quantity), ...] ordered by the canonical rule.
+
+    Each vote tuple is (user_id, species_id, quantity) and is already one
+    distinct voter for that species, so counting tuples counts voters.
+    """
+    tally = {}
+    for _uid, species_id, quantity in votes:
+        if species_id is None:
+            continue
+        entry = tally.setdefault(species_id, [0, 0])
+        entry[0] += 1
+        entry[1] = max(entry[1], quantity or 0)
+    return sorted(((sp, v[0], v[1]) for sp, v in tally.items()),
+                  key=lambda r: (r[1], r[2]), reverse=True)
+
+
+def final_species(votes):
+    """Final species of a series, or None when nothing can win."""
+    ranked = _rank_species(votes)
+    return ranked[0][0] if ranked else None
+
+
+def loo_species(votes, user_id):
+    """Winner among everyone except `user_id`, or None when undecidable.
+
+    None means the remainder produces a tie or holds no vote at all — such a
+    series carries no verdict independent of this person, so the caller must
+    drop it rather than guess.
+    """
+    ranked = _rank_species([v for v in votes if v[0] != user_id])
+    if not ranked:
+        return None
+    if len(ranked) > 1 and ranked[0][1:] == ranked[1][1:]:
+        return None  # tie on both voters and quantity
+    return ranked[0][0]
+
+
+def wilson_interval(hits, total, z=1.96):
+    """95% Wilson score interval for a proportion, in percent.
+
+    Wilson rather than the normal approximation because the counts are small
+    and the rates sit near 100%, where the normal interval runs past 100 and
+    stops meaning anything.
+    """
+    if not total:
+        return None, None
+    p = hits / total
+    denom = 1 + z * z / total
+    centre = (p + z * z / (2 * total)) / denom
+    margin = (z / denom) * ((p * (1 - p) / total + z * z / (4 * total * total)) ** 0.5)
+    return (round(max(0.0, centre - margin) * 100, 1),
+            round(min(1.0, centre + margin) * 100, 1))
+
+
+def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
+                            species_id=None, user_id=None, include_special=False):
+    """Agreement statistics keyed either by verifier or by species.
+
+    vote_rows — output of fetch_expertise_votes (the whole scope, undated).
+    start_dt/end_dt restrict which votes are *evaluated*, never how a series
+    was decided.
+
+    Every vote feeds two different tallies, the two marginals of a confusion
+    matrix:
+      * recall — keyed by the FINAL species of the series: when the answer was
+        X, did the vote say X;
+      * precision — keyed by the species the vote NAMED: when someone said X,
+        was X the final answer.
+
+    mode='species' groups both by species and always reports the pair.
+    mode='users' groups by verifier; there precision only means something once
+    a species filter narrows the set, otherwise it repeats recall by definition
+    and is left empty.
+
+    species_id / user_id narrow the rows in the complementary mode (a species
+    in 'users' mode, a verifier in 'species' mode).
+
+    include_special=False keeps service-category votes (negative species id:
+    empty frame, human, vehicle) in the decision but reports no row for them:
+    agreeing that a frame is empty is easy and would inflate every score. It
+    does NOT drop such votes from the tally — "one said roe, one said empty" is
+    the most common real disagreement and must stay visible as a miss on the
+    animal's row. "Other species" (a NULL species) carries no comparable answer
+    and is always dropped.
+    """
+    by_obs = {}
+    for row in vote_rows:
+        if row.species_id is None:
+            continue
+        by_obs.setdefault(row.obs_id, []).append(
+            (row.user_id, row.species_id, row.quantity or 0, row.voted_at))
+
+    stats = {}
+    undecidable = 0
+    total_series = 0
+    by_species = (mode == 'species')
+
+    def _naive(moment):
+        """Drop the tzinfo so the vote can be compared with the window bounds.
+
+        `identifications.created_at` is timestamptz on production and comes back
+        aware, in the connection's timezone; the filter bounds are built from
+        plain dates. Comparing the two raises TypeError, which the route would
+        swallow into an empty page.
+        """
+        return moment.replace(tzinfo=None) if moment.tzinfo is not None else moment
+
+    def _slot(key):
+        return stats.setdefault(key, {
+            'n': 0, 'hits': 0, 'loo_n': 0, 'loo_hits': 0,
+            'said': 0, 'said_hits': 0,
+        })
+
+    for rows in by_obs.values():
+        votes = [(uid, sp, q) for uid, sp, q, _at in rows]
+        final = final_species(votes)
+        if final is None:
+            continue
+        # A series whose answer is a service category is not an identification
+        # anyone can be graded on.
+        if not include_special and final < 0:
+            continue
+        total_series += 1
+
+        for uid, sp, _q, voted_at in rows:
+            if user_id is not None and uid != user_id:
+                continue
+            if voted_at is not None:
+                moment = _naive(voted_at)
+                if start_dt is not None and moment < start_dt:
+                    continue
+                if end_dt is not None and moment > end_dt:
+                    continue
+
+            # --- recall block: keyed by the series' final species ---
+            if by_species or species_id is None or final == species_id:
+                slot = _slot(final if by_species else uid)
+                slot['n'] += 1
+                slot['hits'] += 1 if sp == final else 0
+                loo = loo_species(votes, uid)
+                if loo is None:
+                    undecidable += 1
+                else:
+                    slot['loo_n'] += 1
+                    slot['loo_hits'] += 1 if sp == loo else 0
+
+            # --- precision block: keyed by the species the vote named ---
+            if not include_special and sp < 0:
+                continue  # no row for "empty"; the miss is already on the animal
+            if by_species or (species_id is not None and sp == species_id):
+                slot = _slot(sp if by_species else uid)
+                slot['said'] += 1
+                slot['said_hits'] += 1 if sp == final else 0
+
+    return stats, {'series': total_series, 'undecidable': undecidable}
+
+
+def build_expertise_rows(stats, label_for, min_n=1):
+    """Turn the raw tallies into display rows ordered by confidence.
+
+    label_for(key) -> displayed name.
+
+    Ordered by the LOWER bound of the LOO interval, not by the LOO share
+    itself: six series at 100% would otherwise sit above eleven thousand at
+    97.5%, and the head of the table would be nothing but tiny samples. The
+    share stays the headline column; the bound only decides who is shown first.
+    Rows with no LOO denominator sink to the bottom instead of posing as
+    flawless.
+    """
+    rows = []
+    for key, s in stats.items():
+        if s['n'] < min_n and s['said'] < min_n:
+            continue
+        ci_low, ci_high = wilson_interval(s['loo_hits'], s['loo_n'])
+        rows.append({
+            'key': key,
+            'name': label_for(key),
+            'n': s['n'],
+            'raw_pct': round(s['hits'] * 100.0 / s['n'], 1) if s['n'] else None,
+            'loo_n': s['loo_n'],
+            'loo_pct': round(s['loo_hits'] * 100.0 / s['loo_n'], 1) if s['loo_n'] else None,
+            'loo_misses': s['loo_n'] - s['loo_hits'],
+            'ci_low': ci_low,
+            'ci_high': ci_high,
+            'said': s['said'],
+            'said_pct': round(s['said_hits'] * 100.0 / s['said'], 1) if s['said'] else None,
+        })
+    rows.sort(key=lambda r: (r['loo_pct'] is not None, r['ci_low'] or 0,
+                             r['loo_pct'] or 0, r['loo_n']),
+              reverse=True)
+    return rows
+
+
+@camera_traps_bp.route('/expertise')
+@login_required
+@role_required('admin')
+def expertise(lang_code):
+    """Verifier expertise: how often a call matched the final decision of the
+    series. Admin only — the page names individuals and their error rate.
+
+    Two views of the same tally, switched by `mode`:
+      users   — rows are verifiers, optionally narrowed to one species;
+      species — rows are species, optionally narrowed to one verifier.
+
+    Filters: date range (defaults to the whole period of verification activity,
+    whose bounds are cached), species / verifier, institution or ecoregion.
+    """
+    ct_session = get_ct_session()
+    try:
+        is_admin = True  # guaranteed by @role_required('admin')
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+
+        mode = request.args.get('mode', 'users')
+        if mode not in EXPERTISE_MODES:
+            mode = 'users'
+
+        accessible_institutions = get_accessible_institutions(is_admin)
+        ecoregions = build_ecoregions(accessible_institutions, g.lang_code)
+        selected_scope, selected_inst_ids = resolve_scope(
+            request.args.get('scope', ''), accessible_institutions,
+            current_app.config['CAMERA_TRAP_CONFIG'].get('CT_DEFAULT_SCOPE', ''))
+
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids,
+            table_alias='locations')
+        inst_condition_orm = text(inst_condition)
+
+        # --- Date range: default = the whole period of verification activity ---
+        range_start, range_end = get_expertise_date_range(ct_session)
+
+        def _parse(arg, fallback):
+            raw = request.args.get(arg, '')
+            if raw:
+                try:
+                    return datetime.strptime(raw, '%Y-%m-%d').date()
+                except ValueError:
+                    pass
+            return fallback
+
+        start_date = _parse('start_date', range_start)
+        end_date = _parse('end_date', range_end)
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date, datetime.max.time())
+
+        # The narrowing filter belongs to the other axis: a species while rows
+        # are people, a person while rows are species.
+        selected_species_id = request.args.get('species_id', type=int) if mode == 'users' else None
+        selected_user_id = request.args.get('user_id', type=int) if mode == 'species' else None
+        include_special = request.args.get('include_special') == '1'
+        min_n = request.args.get('min', default=1, type=int)
+        if min_n < 1:
+            min_n = 1
+
+        vote_rows = fetch_expertise_votes(ct_session, inst_condition_orm, inst_params)
+
+        # --- Filter dropdowns, built from the same scoped vote set ---
+        species_list = []
+        verifier_list = []
+        if mode == 'users':
+            species_ids = {r.species_id for r in vote_rows if r.species_id and r.species_id > 0}
+            if species_ids:
+                for s in ct_session.query(Species)\
+                        .filter(Species.id.in_(species_ids))\
+                        .order_by(Species.common_name_ua):
+                    species_list.append({'id': s.id, 'text': _gallery_species_name(s, with_scientific=True)})
+        else:
+            voter_ids = {r.user_id for r in vote_rows}
+            if voter_ids:
+                for u in User.query.filter(User.id.in_(voter_ids)).all():
+                    verifier_list.append({'id': u.id, 'text': u.full_name or u.username})
+                verifier_list.sort(key=lambda v: v['text'] or '')
+
+        stats, totals = compute_expertise_stats(
+            vote_rows, start_dt=start_dt, end_dt=end_dt, mode=mode,
+            species_id=selected_species_id, user_id=selected_user_id,
+            include_special=include_special)
+
+        # --- Labels for the rows ---
+        if mode == 'users':
+            name_map = {}
+            if stats:
+                for u in User.query.filter(User.id.in_(list(stats.keys()))).all():
+                    name_map[u.id] = u.full_name or u.username
+            label_for = lambda key: name_map.get(key, f"ID {key}")
+        else:
+            species_map = {}
+            if stats:
+                for s in ct_session.query(Species).filter(Species.id.in_(list(stats.keys()))):
+                    species_map[s.id] = _gallery_species_name(s, with_scientific=True)
+            label_for = lambda key: species_map.get(key, f"#{key}")
+
+        rows = build_expertise_rows(stats, label_for, min_n=min_n)
+
+        return render_template(
+            'expertise.html',
+            mode=mode,
+            rows=rows,
+            totals=totals,
+            institutions=accessible_institutions,
+            ecoregions=ecoregions,
+            selected_scope=selected_scope,
+            available_species=species_list,
+            available_verifiers=verifier_list,
+            selected_species_id=selected_species_id,
+            selected_user_id=selected_user_id,
+            start_date=start_date.strftime('%Y-%m-%d'),
+            end_date=end_date.strftime('%Y-%m-%d'),
+            range_start=range_start.strftime('%Y-%m-%d'),
+            range_end=range_end.strftime('%Y-%m-%d'),
+            include_special=include_special,
+            min_n=min_n,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error in expertise: {str(e)}")
+        flash(_('Помилка завантаження статистики експертності.'), 'warning')
+        return render_template(
+            'expertise.html', mode='users', rows=[], totals=None, institutions=[],
+            ecoregions={}, selected_scope='global:', available_species=[],
+            available_verifiers=[], selected_species_id=None, selected_user_id=None,
+            start_date='', end_date='', range_start='', range_end='',
+            include_special=False, min_n=1,
+        )
+    finally:
+        close_ct_session()
+
+
 #
 # --- UPLOAD STATISTICS (admin) ---
 #
