@@ -1037,12 +1037,19 @@ _expertise_range_cache = {'data': None, 'timestamp': None, 'ttl_hours': 6}
 EXPERTISE_MODES = ('users', 'species')
 
 
-def get_expertise_date_range(ct_session):
-    """(min_date, max_date) of verification activity over finished series.
+def get_expertise_date_ranges(ct_session):
+    """Extent of the page's two independent time axes, as
+    {'verified': (first, last), 'observed': (first, last)}.
 
-    Used as the default "whole period" for the date filter. Cached in-process
-    for `ttl_hours`: the bounds only shift when new verifications arrive, and a
-    full scan of `identifications` is too expensive to repeat per request.
+    They answer different questions and their extents differ by years:
+      * verified — when a person pressed the identification
+        (Identification.created_at): the axis of somebody's work;
+      * observed — when the series was photographed
+        (Observation.series_start_time): the axis the rest of biomon filters on
+        (dashboard, trends, export), and the one to quote about a dataset.
+
+    Cached in-process for `ttl_hours`: the bounds only shift as new data
+    arrives, and a full scan of `identifications` is too expensive per request.
     """
     now = datetime.now()
     cache = _expertise_range_cache
@@ -1050,18 +1057,24 @@ def get_expertise_date_range(ct_session):
             and (now - cache['timestamp']).total_seconds() < cache['ttl_hours'] * 3600):
         return cache['data']
 
-    row = ct_session.query(
+    finished = Observation.status.in_(['completed', 'archived'])
+
+    verified_row = ct_session.query(
         func.min(Identification.created_at),
         func.max(Identification.created_at),
-    ).select_from(Identification)\
-        .join(Photo, Identification.photo_id == Photo.id)\
-        .join(Observation, Photo.observation_id == Observation.id)\
-        .filter(Observation.status.in_(['completed', 'archived']))\
-        .first()
+    ).select_from(Identification)        .join(Photo, Identification.photo_id == Photo.id)        .join(Observation, Photo.observation_id == Observation.id)        .filter(finished)        .first()
 
-    first = row[0].date() if row and row[0] else date(2020, 8, 1)
-    last = row[1].date() if row and row[1] else date.today()
-    cache['data'] = (first, last)
+    observed_row = ct_session.query(
+        func.min(Observation.series_start_time),
+        func.max(Observation.series_start_time),
+    ).select_from(Observation).filter(finished).first()
+
+    def _span(row):
+        first = row[0].date() if row and row[0] else date(2020, 8, 1)
+        last = row[1].date() if row and row[1] else date.today()
+        return first, last
+
+    cache['data'] = {'verified': _span(verified_row), 'observed': _span(observed_row)}
     cache['timestamp'] = now
     return cache['data']
 
@@ -1077,10 +1090,15 @@ def fetch_expertise_votes(ct_session, inst_condition_orm, inst_params):
     shows a series to someone who already voted on it. The grouping therefore
     collapses to exactly one row per person per series.
 
+    `observed_at` is the series capture time, carried along so the page can
+    filter on it without a second query. It is functionally dependent on the
+    series, hence the aggregate.
+
     Deliberately NOT filtered by date: the final decision of a series must not
     depend on the reporting period, otherwise the same series would resolve to
-    different species under different filters. The date filter is applied later
-    and only to the vote being evaluated.
+    different species under different filters. Both date filters are applied
+    later — the verification window to the vote being evaluated, the
+    observation window to the series as a whole.
     """
     return ct_session.query(
         Photo.observation_id.label('obs_id'),
@@ -1088,6 +1106,7 @@ def fetch_expertise_votes(ct_session, inst_condition_orm, inst_params):
         Identification.species_id.label('species_id'),
         func.max(Identification.quantity).label('quantity'),
         func.min(Identification.created_at).label('voted_at'),
+        func.min(Observation.series_start_time).label('observed_at'),
     ).select_from(Identification)\
         .join(Photo, Identification.photo_id == Photo.id)\
         .join(Observation, Photo.observation_id == Observation.id)\
@@ -1156,12 +1175,18 @@ def wilson_interval(hits, total, z=1.96):
 
 
 def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
-                            species_id=None, user_id=None, include_special=False):
+                            species_id=None, user_id=None, include_special=False,
+                            obs_start_dt=None, obs_end_dt=None):
     """Agreement statistics keyed either by verifier or by species.
 
     vote_rows — output of fetch_expertise_votes (the whole scope, undated).
-    start_dt/end_dt restrict which votes are *evaluated*, never how a series
-    was decided.
+
+    Two independent time windows, applied at different levels:
+      * start_dt/end_dt — when the identification was made: restricts which
+        votes are *evaluated*, never how a series was decided;
+      * obs_start_dt/obs_end_dt — when the series was photographed: selects
+        which series enter the sample at all, so a series is in or out as a
+        whole and its decision keeps every vote it ever had.
 
     Every vote feeds two different tallies, the two marginals of a confusion
     matrix:
@@ -1187,11 +1212,13 @@ def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
     and is always dropped.
     """
     by_obs = {}
+    observed_at = {}
     for row in vote_rows:
         if row.species_id is None:
             continue
         by_obs.setdefault(row.obs_id, []).append(
             (row.user_id, row.species_id, row.quantity or 0, row.voted_at))
+        observed_at.setdefault(row.obs_id, getattr(row, 'observed_at', None))
 
     stats = {}
     undecidable = 0
@@ -1214,7 +1241,16 @@ def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
             'said': 0, 'said_hits': 0,
         })
 
-    for rows in by_obs.values():
+    for obs_id, rows in by_obs.items():
+        # Capture-time window: the series is in the sample or it is not.
+        shot_at = observed_at.get(obs_id)
+        if shot_at is not None:
+            shot_at = _naive(shot_at)
+            if obs_start_dt is not None and shot_at < obs_start_dt:
+                continue
+            if obs_end_dt is not None and shot_at > obs_end_dt:
+                continue
+
         votes = [(uid, sp, q) for uid, sp, q, _at in rows]
         final = final_species(votes)
         if final is None:
@@ -1305,8 +1341,9 @@ def expertise(lang_code):
       users   — rows are verifiers, optionally narrowed to one species;
       species — rows are species, optionally narrowed to one verifier.
 
-    Filters: date range (defaults to the whole period of verification activity,
-    whose bounds are cached), species / verifier, institution or ecoregion.
+    Filters: two independent date windows (when the identification was made and
+    when the series was photographed, each defaulting to the whole record),
+    species / verifier, institution or ecoregion.
     """
     ct_session = get_ct_session()
     try:
@@ -1328,8 +1365,11 @@ def expertise(lang_code):
             table_alias='locations')
         inst_condition_orm = text(inst_condition)
 
-        # --- Date range: default = the whole period of verification activity ---
-        range_start, range_end = get_expertise_date_range(ct_session)
+        # --- Two date windows, each defaulting to the whole record: from the
+        # oldest entry of that axis to today. Today rather than the newest
+        # entry, so a range typed by hand never looks truncated. ---
+        ranges = get_expertise_date_ranges(ct_session)
+        today = date.today()
 
         def _parse(arg, fallback):
             raw = request.args.get(arg, '')
@@ -1340,12 +1380,18 @@ def expertise(lang_code):
                     pass
             return fallback
 
-        start_date = _parse('start_date', range_start)
-        end_date = _parse('end_date', range_end)
-        if start_date > end_date:
-            start_date, end_date = end_date, start_date
-        start_dt = datetime.combine(start_date, datetime.min.time())
-        end_dt = datetime.combine(end_date, datetime.max.time())
+        def _window(prefix, axis):
+            first, _last = ranges[axis]
+            start = _parse(f'{prefix}start_date', first)
+            end = _parse(f'{prefix}end_date', today)
+            if start > end:
+                start, end = end, start
+            return (start, end,
+                    datetime.combine(start, datetime.min.time()),
+                    datetime.combine(end, datetime.max.time()))
+
+        start_date, end_date, start_dt, end_dt = _window('', 'verified')
+        obs_start_date, obs_end_date, obs_start_dt, obs_end_dt = _window('obs_', 'observed')
 
         # The narrowing filter belongs to the other axis: a species while rows
         # are people, a person while rows are species.
@@ -1378,7 +1424,8 @@ def expertise(lang_code):
         stats, totals = compute_expertise_stats(
             vote_rows, start_dt=start_dt, end_dt=end_dt, mode=mode,
             species_id=selected_species_id, user_id=selected_user_id,
-            include_special=include_special)
+            include_special=include_special,
+            obs_start_dt=obs_start_dt, obs_end_dt=obs_end_dt)
 
         # --- Labels for the rows ---
         if mode == 'users':
@@ -1410,8 +1457,10 @@ def expertise(lang_code):
             selected_user_id=selected_user_id,
             start_date=start_date.strftime('%Y-%m-%d'),
             end_date=end_date.strftime('%Y-%m-%d'),
-            range_start=range_start.strftime('%Y-%m-%d'),
-            range_end=range_end.strftime('%Y-%m-%d'),
+            obs_start_date=obs_start_date.strftime('%Y-%m-%d'),
+            obs_end_date=obs_end_date.strftime('%Y-%m-%d'),
+            range_verified=[d.strftime('%Y-%m-%d') for d in ranges['verified']],
+            range_observed=[d.strftime('%Y-%m-%d') for d in ranges['observed']],
             include_special=include_special,
             min_n=min_n,
         )
@@ -1422,7 +1471,8 @@ def expertise(lang_code):
             'expertise.html', mode='users', rows=[], totals=None, institutions=[],
             ecoregions={}, selected_scope='global:', available_species=[],
             available_verifiers=[], selected_species_id=None, selected_user_id=None,
-            start_date='', end_date='', range_start='', range_end='',
+            start_date='', end_date='', obs_start_date='', obs_end_date='',
+            range_verified=None, range_observed=None,
             include_special=False, min_n=1,
         )
     finally:

@@ -31,6 +31,13 @@
     .metric-notes dt { font-weight: 600; margin-top: 10px; }
     .metric-notes dd { margin: 2px 0 0 0; color: #444; }
     .totals-line { margin-top: 10px; color: #666; font-size: 0.9rem; }
+    .date-axis {
+        display: flex; flex-direction: column; gap: 4px;
+        border-left: 3px solid #c8d4e0; padding-left: 10px;
+    }
+    .date-axis__title { font-weight: 600; font-size: 0.9rem; color: #34495e; }
+    .date-axis__fields { display: flex; gap: 10px; }
+    .date-axis__hint { color: #777; font-size: 0.8rem; }
 </style>
 {% endblock %}
 
@@ -49,10 +56,12 @@
             <div class="mode-switch">
                 <a href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code, mode='users',
                                     scope=selected_scope, start_date=start_date, end_date=end_date,
+                                    obs_start_date=obs_start_date, obs_end_date=obs_end_date,
                                     include_special='1' if include_special else None) }}"
                    class="{% if mode == 'users' %}active{% endif %}">{{ _('За верифікаторами') }}</a>
                 <a href="{{ url_for('camera_traps.expertise', lang_code=g.lang_code, mode='species',
                                     scope=selected_scope, start_date=start_date, end_date=end_date,
+                                    obs_start_date=obs_start_date, obs_end_date=obs_end_date,
                                     include_special='1' if include_special else None) }}"
                    class="{% if mode == 'species' %}active{% endif %}">{{ _('За видами') }}</a>
             </div>
@@ -62,15 +71,50 @@
         <form id="filters-form" method="GET" class="filters-panel">
             <input type="hidden" name="mode" value="{{ mode }}">
 
-            <div class="filter-group">
-                <label for="start-date">{{ _('Дата початку:') }}</label>
-                <input type="date" id="start-date" name="start_date" class="form-control"
-                       value="{{ start_date }}" min="{{ range_start }}" max="{{ range_end }}">
+            {# Two independent axes. No min/max on the inputs: the bounds are a
+               default, and capping the field made the browser refuse earlier
+               dates, which reads as a broken control rather than as "there is
+               no data there". The hints state the real extent instead. #}
+            <div class="date-axis">
+                <span class="date-axis__title">{{ _('Час зйомки серії') }}</span>
+                <div class="date-axis__fields">
+                    <div class="filter-group">
+                        <label for="obs-start-date">{{ _('Від:') }}</label>
+                        <input type="date" id="obs-start-date" name="obs_start_date"
+                               class="form-control" value="{{ obs_start_date }}">
+                    </div>
+                    <div class="filter-group">
+                        <label for="obs-end-date">{{ _('До:') }}</label>
+                        <input type="date" id="obs-end-date" name="obs_end_date"
+                               class="form-control" value="{{ obs_end_date }}">
+                    </div>
+                </div>
+                {% if range_observed %}
+                <span class="date-axis__hint">
+                    {{ _('Зйомка в базі:') }} {{ range_observed[0] }} &ndash; {{ range_observed[1] }}
+                </span>
+                {% endif %}
             </div>
-            <div class="filter-group">
-                <label for="end-date">{{ _('Дата завершення:') }}</label>
-                <input type="date" id="end-date" name="end_date" class="form-control"
-                       value="{{ end_date }}" min="{{ range_start }}" max="{{ range_end }}">
+
+            <div class="date-axis">
+                <span class="date-axis__title">{{ _('Час верифікації') }}</span>
+                <div class="date-axis__fields">
+                    <div class="filter-group">
+                        <label for="start-date">{{ _('Від:') }}</label>
+                        <input type="date" id="start-date" name="start_date"
+                               class="form-control" value="{{ start_date }}">
+                    </div>
+                    <div class="filter-group">
+                        <label for="end-date">{{ _('До:') }}</label>
+                        <input type="date" id="end-date" name="end_date"
+                               class="form-control" value="{{ end_date }}">
+                    </div>
+                </div>
+                {% if range_verified %}
+                <span class="date-axis__hint">
+                    {{ _('Верифікації в базі:') }} {{ range_verified[0] }} &ndash; {{ range_verified[1] }}
+                </span>
+                {% endif %}
             </div>
 
             <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
@@ -150,6 +194,9 @@
 
                 <dt>{{ _('LOO %') }}</dt>
                 <dd>{{ _('Основний показник. Серія закривається з двох голосів, тож людина зазвичай є половиною того рішення, з яким її звіряють. Тому її власний голос прибирають і дивляться, що вирішили б інші без неї. Якщо без неї переможця немає (нічия або більше ніхто не голосував), серія випадає з розрахунку.') }}</dd>
+
+                <dt>{{ _('Дві шкали часу') }}</dt>
+                <dd>{{ _('«Час зйомки» відбирає серії, які потрапляють у вибірку, і збігається з тим, за чим фільтрує решта біомону (дашборд, тренди, експорт). «Час верифікації» відбирає, чиї визначення оцінюються, тобто коли людина працювала. Обидві за замовчуванням покривають усе. Жодна з них не змінює рішення серії: воно завжди рахується з усіх голосів, які серія колись отримала.') }}</dd>
 
                 <dt>{{ _('Порядок рядків') }}</dt>
                 <dd>{{ _('За замовчуванням таблиця впорядкована за нижньою межею довірчого інтервалу, а не за самим відсотком: інакше шість серій зі 100% стояли б вище за одинадцять тисяч із 97.5%. Клік по заголовку сортує за будь-якою колонкою.') }}</dd>
