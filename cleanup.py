@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Orphan and failed-batch cleanup — replacement for the old cleanup_stale_batches.
 
-Three-category process:
+Four-category process:
   A. Stale batches — stuck/failed uploads
      (status IN uploading/processing/ready_to_group/grouping/failed)
   B. Stranded photos — photos with status='uploaded' AND observation_id IS NULL
      that are not linked to an active batch
   C. Orphan files — files in raw/ + thumbnails/ with no corresponding Photo row
+  D. Broken photos — photos that DO belong to a series but whose thumbnail is
+     missing or 0 bytes. DIAGNOSTIC ONLY: reported, never deleted (added
+     2026-09-10, after the 2026-07 disk-full damage went unnoticed for two
+     months precisely because A–C all look at rows with no observation).
 
 Architecture:
   • Two-phase run: analyze (dry-run) → execute (deletion).
@@ -229,34 +233,63 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
     stranded_filenames = {p["system_filename"] for p in stranded_photos
                           if p["system_filename"]}
 
-    # 4) Orphan files on disk (category C).
-    with engine.connect() as conn:
-        all_known = {row[0] for row in conn.execute(
-            text("SELECT system_filename FROM photos")
-        )}
-
-    orphan_files = []
-    now = time.time()
+    # 4) Disk scan — feeds BOTH category C (orphan files) and category D
+    # (broken photos). Scanning 600k+ directory entries is the expensive part
+    # of an analyze run, so it happens exactly once and both categories read
+    # from the result.
+    disk_entries = []          # every file seen, for the orphan pass
+    thumb_sizes = {}           # thumbnail name -> size, for the broken pass
     for d in (raw_dir, thumb_dir):
         if not os.path.isdir(d):
             continue
+        is_thumb = (d == thumb_dir)
         for entry in os.scandir(d):
             if not entry.is_file():
-                continue
-            if entry.name in all_known:
                 continue
             try:
                 st = entry.stat()
             except OSError:
                 continue
-            if now - st.st_mtime < DISK_MTIME_SAFETY_SECONDS:
-                continue  # race-condition guard
-            orphan_files.append({
-                "path": entry.path,
-                "name": entry.name,
-                "size": st.st_size,
-                "mtime": st.st_mtime,
-            })
+            if is_thumb:
+                thumb_sizes[entry.name] = st.st_size
+            disk_entries.append((entry.name, entry.path, st.st_size, st.st_mtime))
+
+    # One streaming pass over `photos` serves the orphan test (is this file
+    # known?) and the broken test (does this row still have its pixels?).
+    # Streamed rather than fetched: the table is ~800k rows and this runs in a
+    # gunicorn worker.
+    all_known = set()
+    broken_names = []
+    with engine.connect().execution_options(stream_results=True) as conn:
+        result = conn.execute(text("""
+            SELECT system_filename, status, observation_id FROM photos
+        """))
+        for name, status, observation_id in result.yield_per(10000):
+            if not name:
+                continue
+            all_known.add(name)
+            # Category D applies only to photos that belong to a series and
+            # are still in use. Archived photos are SUPPOSED to have no file
+            # (archive_old_observations deletes them), and photos with no
+            # observation are category B above.
+            if status == 'archived' or observation_id is None:
+                continue
+            if not thumb_sizes.get(name):
+                broken_names.append(name)
+
+    orphan_files = []
+    now = time.time()
+    for name, path, size, mtime in disk_entries:
+        if name in all_known:
+            continue
+        if now - mtime < DISK_MTIME_SAFETY_SECONDS:
+            continue  # race-condition guard
+        orphan_files.append({
+            "path": path,
+            "name": name,
+            "size": size,
+            "mtime": mtime,
+        })
 
     # 5) Files for stranded photos — also counted as disk candidates.
     stranded_file_paths = []
@@ -271,6 +304,71 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
                     sz = 0
                 stranded_file_paths.append({"path": p, "size": sz})
                 stranded_files_bytes += sz
+
+    # 6) Broken photos (category D) — DIAGNOSTIC ONLY.
+    # A row that belongs to a series but whose thumbnail is missing or 0 bytes.
+    # The /identify page lists the series and shows nothing, which is how the
+    # 2026-07 disk-full damage stayed invisible for two months: every other
+    # category here looks at rows with NO observation, and these have one.
+    #
+    # Deliberately NOT deleted. The pixels may still be recoverable from the
+    # park's own copy of the originals (1297 of them were, on 2026-09-10), and
+    # deleting the row also discards the human identifications attached to it.
+    # Reporting is the useful act; the repair lives in
+    # scripts/restore_broken_ct_photos.py and the deletion, when a location is
+    # given up on, in scripts/audit_broken_ct_photos.py --delete.
+    broken_photos = []
+    broken_by_location = {}
+    broken_series = set()
+    broken_zero = broken_missing = 0
+    broken_identifications = broken_predictions = 0
+    if broken_names:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT p.id, p.system_filename, p.observation_id, p.captured_at,
+                       p.upload_batch_id, o.created_at AS uploaded_at,
+                       l.name AS location_name
+                  FROM photos p
+                  JOIN observations o ON o.id = p.observation_id
+                  LEFT JOIN locations l ON l.id = o.location_id
+                 WHERE p.system_filename = ANY(:names)
+            """), {"names": broken_names}).fetchall()
+        for r in rows:
+            if r.system_filename in thumb_sizes:
+                broken_zero += 1
+            else:
+                broken_missing += 1
+            broken_series.add(r.observation_id)
+            loc = r.location_name or f"location_id={r.observation_id}"
+            slot = broken_by_location.setdefault(
+                loc, {"location": loc, "photos": 0, "series": set(),
+                      "uploaded": set()})
+            slot["photos"] += 1
+            slot["series"].add(r.observation_id)
+            if r.uploaded_at:
+                slot["uploaded"].add(r.uploaded_at.date().isoformat())
+            broken_photos.append({
+                "id": r.id,
+                "system_filename": r.system_filename,
+                "observation_id": r.observation_id,
+                "location": r.location_name,
+                "captured_at": r.captured_at.isoformat() if r.captured_at else None,
+                "batch_id": r.upload_batch_id,
+            })
+        broken_ids = [p["id"] for p in broken_photos]
+        with engine.connect() as conn:
+            broken_identifications = conn.execute(text(
+                "SELECT count(*) FROM identifications WHERE photo_id = ANY(:ids)"
+            ), {"ids": broken_ids}).scalar() or 0
+            broken_predictions = conn.execute(text(
+                "SELECT count(*) FROM ai_predictions WHERE photo_id = ANY(:ids)"
+            ), {"ids": broken_ids}).scalar() or 0
+
+    broken_locations = sorted(
+        ({"location": v["location"], "photos": v["photos"],
+          "series": len(v["series"]), "uploaded": sorted(v["uploaded"])}
+         for v in broken_by_location.values()),
+        key=lambda v: v["photos"], reverse=True)
 
     orphan_bytes = sum(f["size"] for f in orphan_files)
     total_bytes = stranded_files_bytes + orphan_bytes
@@ -290,6 +388,15 @@ def _collect_cleanup_report(threshold_hours: int, probe_seconds: int) -> dict:
         "orphan_files_bytes": orphan_bytes,
         "orphan_files_sample": orphan_files[:100],
         "total_bytes_freed_estimate": total_bytes,
+        # Category D — reported, never deleted by execute.
+        "broken_photos_count": len(broken_photos),
+        "broken_photos_zero_byte": broken_zero,
+        "broken_photos_missing": broken_missing,
+        "broken_series_count": len(broken_series),
+        "broken_identifications_count": broken_identifications,
+        "broken_predictions_count": broken_predictions,
+        "broken_by_location": broken_locations,
+        "broken_photos_sample": broken_photos[:100],
         "generated_at": datetime.utcnow().isoformat(),
     }
 

@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-08 15:37+0300\n"
+"POT-Creation-Date: 2026-09-10 10:04+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -187,7 +187,7 @@ msgstr "Необхідне ID локації"
 msgid ""
 "Недостатньо місця у сховищі — потрібно щонайменше %(min)s МБ вільного "
 "простору."
-msgstr ""
+msgstr "Not enough storage space: at least %(min)s MB must be free."
 
 #: app/camera_traps/routes.py:2510
 msgid "Batch створено успішно"
@@ -1167,8 +1167,8 @@ msgstr ""
 #: app/camera_traps/templates/admin.html:163
 #: app/camera_traps/templates/admin.html:176
 #: app/camera_traps/templates/admin.html:228
-#: app/camera_traps/templates/admin.html:568
-#: app/camera_traps/templates/admin.html:661
+#: app/camera_traps/templates/admin.html:638
+#: app/camera_traps/templates/admin.html:731
 msgid "Запустити"
 msgstr "Run"
 
@@ -1186,6 +1186,7 @@ msgid "Джерело"
 msgstr "Source"
 
 #: app/camera_traps/templates/admin.html:104
+#: app/camera_traps/templates/admin.html:386
 #: app/camera_traps/templates/expertise.html:192
 #: app/camera_traps/templates/expertise.html:229
 msgid "Серій"
@@ -1434,7 +1435,7 @@ msgid "Запустити аналіз"
 msgstr "Run analysis"
 
 #: app/camera_traps/templates/admin.html:340
-#: app/camera_traps/templates/admin.html:513
+#: app/camera_traps/templates/admin.html:583
 msgid "Аналіз очищення"
 msgstr "Cleanup analysis"
 
@@ -1466,156 +1467,214 @@ msgstr "Will free approximately"
 msgid "Перші 20 імен файлів для контролю"
 msgstr "First 20 filenames for review"
 
-#: app/camera_traps/templates/admin.html:363
+#: app/camera_traps/templates/admin.html:367
+msgid "Серії без зображень"
+msgstr "Series with no images"
+
+#: app/camera_traps/templates/admin.html:369
+msgid ""
+"Фото належать серії, але файл мініатюри порожній або зник. На сторінці "
+"визначення такі серії відкриваються без картинки. Очищення їх НЕ чіпає: "
+"оригінали ще можуть знайтися в парку, а разом із рядком зникли б і "
+"людські визначення."
+msgstr "These photos belong to a series, but the thumbnail file is empty or gone. On the identification page such series open with no picture. Cleanup does NOT touch them: the originals may still turn up at the park, and deleting the row would take the human identifications with it."
+
+#: app/camera_traps/templates/admin.html:373
+msgid "Фото без зображення"
+msgstr "Photos with no image"
+
+#: app/camera_traps/templates/admin.html:374
+msgid "Уражених серій"
+msgstr "Series affected"
+
+#: app/camera_traps/templates/admin.html:375
+msgid "З них порожніх / зниклих файлів"
+msgstr "Of those, empty / missing files"
+
+#: app/camera_traps/templates/admin.html:376
+msgid "Визначень на них"
+msgstr "Identifications on them"
+
+#: app/camera_traps/templates/admin.html:377
+msgid "Прогнозів ШІ на них"
+msgstr "AI predictions on them"
+
+#: app/camera_traps/templates/admin.html:381
+msgid "За локаціями"
+msgstr "By location"
+
+#: app/camera_traps/templates/admin.html:384
+#: app/camera_traps/templates/identification.html:373
+#: app/camera_traps/templates/upload.html:30
+#: app/camera_traps/templates/upload_fast.html:117
+msgid "Локація"
+msgstr "Location"
+
+#: app/camera_traps/templates/admin.html:385
+#: app/camera_traps/templates/gallery.html:220
+#: app/camera_traps/templates/identification.html:375
+#: app/camera_traps/templates/photo_viewer.html:60
+msgid "Фото"
+msgstr "Photo"
+
+#: app/camera_traps/templates/admin.html:387
+msgid "Залито"
+msgstr "Uploaded"
+
+#: app/camera_traps/templates/admin.html:396
+msgid "Серій без зображень не знайдено."
+msgstr "No series without images found."
+
+#: app/camera_traps/templates/admin.html:400
 msgid "Результати виконання"
 msgstr "Execution results"
 
-#: app/camera_traps/templates/admin.html:365
+#: app/camera_traps/templates/admin.html:402
 msgid "Batchʼів марковано failed"
 msgstr "Batches marked failed"
 
-#: app/camera_traps/templates/admin.html:366
+#: app/camera_traps/templates/admin.html:403
 msgid "Фото видалено"
 msgstr "Photos deleted"
 
-#: app/camera_traps/templates/admin.html:367
+#: app/camera_traps/templates/admin.html:404
 msgid "Файлів видалено"
 msgstr "Files deleted"
 
-#: app/camera_traps/templates/admin.html:368
+#: app/camera_traps/templates/admin.html:405
 msgid "Звільнено байтів"
 msgstr "Bytes freed"
 
-#: app/camera_traps/templates/admin.html:375
+#: app/camera_traps/templates/admin.html:412
 msgid "Виконати очищення"
 msgstr "Run cleanup"
 
-#: app/camera_traps/templates/admin.html:378
+#: app/camera_traps/templates/admin.html:415
 msgid "Закрити"
 msgstr "Close"
 
-#: app/camera_traps/templates/admin.html:421
+#: app/camera_traps/templates/admin.html:458
 msgid "Запуск..."
 msgstr "Starting..."
 
-#: app/camera_traps/templates/admin.html:464
+#: app/camera_traps/templates/admin.html:533
 msgid "(порожньо)"
 msgstr "(empty)"
 
-#: app/camera_traps/templates/admin.html:468
+#: app/camera_traps/templates/admin.html:538
 msgid "Готово до виконання"
 msgstr "Ready to execute"
 
-#: app/camera_traps/templates/admin.html:479
+#: app/camera_traps/templates/admin.html:549
 msgid "Виконано"
 msgstr "Completed"
 
-#: app/camera_traps/templates/admin.html:491
+#: app/camera_traps/templates/admin.html:561
 msgid "Аналіз триває (probe 10с)..."
 msgstr "Analysis in progress (10s probe)..."
 
-#: app/camera_traps/templates/admin.html:492
+#: app/camera_traps/templates/admin.html:562
 msgid "Видалення триває..."
 msgstr "Deletion in progress..."
 
-#: app/camera_traps/templates/admin.html:498
+#: app/camera_traps/templates/admin.html:568
 #: app/camera_traps/templates/ct_data_export.html:315
 #: app/camera_traps/templates/species_detailed.html:188
 #: app/camera_traps/templates/upload.html:462
 msgid "Помилка"
 msgstr "Error"
 
-#: app/camera_traps/templates/admin.html:506
+#: app/camera_traps/templates/admin.html:576
 msgid "Запис звіту не знайдено"
 msgstr "Report record not found"
 
-#: app/camera_traps/templates/admin.html:518
+#: app/camera_traps/templates/admin.html:588
 msgid "Аналіз запущено, probe 10с..."
 msgstr "Analysis started, 10s probe..."
 
-#: app/camera_traps/templates/admin.html:521
+#: app/camera_traps/templates/admin.html:591
 msgid "Помилка запуску"
 msgstr "Startup error"
 
-#: app/camera_traps/templates/admin.html:527
+#: app/camera_traps/templates/admin.html:597
 msgid "Виконати очищення? Дія незворотня."
 msgstr "Run cleanup? This action is irreversible."
 
-#: app/camera_traps/templates/admin.html:529
+#: app/camera_traps/templates/admin.html:599
 msgid "Виконання очищення"
 msgstr "Running cleanup"
 
-#: app/camera_traps/templates/admin.html:531
+#: app/camera_traps/templates/admin.html:601
 msgid "Повторний probe + видалення..."
 msgstr "Re-probe + deletion..."
 
-#: app/camera_traps/templates/admin.html:537
+#: app/camera_traps/templates/admin.html:607
 msgid "Помилка виконання"
 msgstr "Execution error"
 
-#: app/camera_traps/templates/admin.html:568
-#: app/camera_traps/templates/admin.html:661
+#: app/camera_traps/templates/admin.html:638
+#: app/camera_traps/templates/admin.html:731
 msgid "Виконується…"
 msgstr "Running…"
 
-#: app/camera_traps/templates/admin.html:571
+#: app/camera_traps/templates/admin.html:641
 msgid "Перерахунок виконується у фоні…"
 msgstr "Recalculation is running in the background…"
 
-#: app/camera_traps/templates/admin.html:574
+#: app/camera_traps/templates/admin.html:644
 msgid "Останній перерахунок завершився помилкою."
 msgstr "The last recalculation failed."
 
-#: app/camera_traps/templates/admin.html:579
+#: app/camera_traps/templates/admin.html:649
 msgid "Останній успішний перерахунок:"
 msgstr "Last successful recalculation:"
 
-#: app/camera_traps/templates/admin.html:580
+#: app/camera_traps/templates/admin.html:650
 msgid "Перерахунок ще не виконувався."
 msgstr "Recalculation has not run yet."
 
-#: app/camera_traps/templates/admin.html:607
-#: app/camera_traps/templates/admin.html:694
+#: app/camera_traps/templates/admin.html:677
+#: app/camera_traps/templates/admin.html:764
 msgid "Запуск…"
 msgstr "Starting…"
 
-#: app/camera_traps/templates/admin.html:629
+#: app/camera_traps/templates/admin.html:699
 msgid "Не вдалося запустити перерахунок."
 msgstr "Failed to start recalculation."
 
-#: app/camera_traps/templates/admin.html:663
+#: app/camera_traps/templates/admin.html:733
 msgid "Автопризначення виконується у фоні…"
 msgstr "Auto-assignment is running in the background…"
 
-#: app/camera_traps/templates/admin.html:666
+#: app/camera_traps/templates/admin.html:736
 msgid "Останній запуск завершився помилкою."
 msgstr "The last run failed."
 
-#: app/camera_traps/templates/admin.html:670
+#: app/camera_traps/templates/admin.html:740
 msgid "Останній успішний запуск:"
 msgstr "Last successful run:"
 
-#: app/camera_traps/templates/admin.html:674
+#: app/camera_traps/templates/admin.html:744
 msgid "Ще не запускалося."
 msgstr "Not run yet."
 
-#: app/camera_traps/templates/admin.html:716
+#: app/camera_traps/templates/admin.html:786
 msgid "Не вдалося запустити автопризначення."
 msgstr "Failed to start auto-assignment."
 
-#: app/camera_traps/templates/admin.html:734
+#: app/camera_traps/templates/admin.html:804
 msgid "активна — воркер призупинено"
 msgstr "active — worker suspended"
 
-#: app/camera_traps/templates/admin.html:735
+#: app/camera_traps/templates/admin.html:805
 msgid "вимкнена — класифікація працює"
 msgstr "off — classification running"
 
-#: app/camera_traps/templates/admin.html:736
+#: app/camera_traps/templates/admin.html:806
 msgid "стан невідомий"
 msgstr "state unknown"
 
-#: app/camera_traps/templates/admin.html:741
+#: app/camera_traps/templates/admin.html:811
 msgid "ще"
 msgstr "left:"
 
@@ -3055,12 +3114,6 @@ msgstr "Location:"
 msgid "Час:"
 msgstr "Time:"
 
-#: app/camera_traps/templates/gallery.html:220
-#: app/camera_traps/templates/identification.html:375
-#: app/camera_traps/templates/photo_viewer.html:60
-msgid "Фото"
-msgstr "Photo"
-
 #: app/camera_traps/templates/gallery.html:234
 msgid "Дата зйомки:"
 msgstr "Date taken:"
@@ -3257,12 +3310,6 @@ msgstr "Birds"
 #: app/camera_traps/templates/identification.html:228
 msgid "Інші"
 msgstr "Other"
-
-#: app/camera_traps/templates/identification.html:373
-#: app/camera_traps/templates/upload.html:30
-#: app/camera_traps/templates/upload_fast.html:117
-msgid "Локація"
-msgstr "Location"
 
 #: app/camera_traps/templates/identification.html:376
 msgid "Будь ласка, виберіть вид, або опцію \"Пусто\"."

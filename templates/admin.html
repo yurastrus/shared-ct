@@ -358,6 +358,43 @@
                             <summary style="cursor:pointer; color:#6c757d;">{{ _('Перші 20 імен файлів для контролю') }}</summary>
                             <pre id="r-sample" style="font-size:0.8rem; max-height:200px; overflow:auto; background:#f8f9fa; padding:8px;"></pre>
                         </details>
+
+                        {# Category D. Kept apart from the table above on purpose:
+                           everything there is a deletion candidate, this is not. #}
+                        <div id="r-broken-block" style="display:none; margin-top:16px;
+                             border:1px solid #ffc107; border-radius:4px; padding:10px;
+                             background:#fff8e1;">
+                            <strong>{{ _('Серії без зображень') }}</strong>
+                            <p style="margin:6px 0; color:#6c757d;">
+                                {{ _('Фото належать серії, але файл мініатюри порожній або зник. На сторінці визначення такі серії відкриваються без картинки. Очищення їх НЕ чіпає: оригінали ще можуть знайтися в парку, а разом із рядком зникли б і людські визначення.') }}
+                            </p>
+                            <table class="table table-sm" style="margin-bottom:6px;">
+                                <tbody>
+                                    <tr><th>{{ _('Фото без зображення') }}</th><td id="r-broken-photos">—</td></tr>
+                                    <tr><th>{{ _('Уражених серій') }}</th><td id="r-broken-series">—</td></tr>
+                                    <tr><th>{{ _('З них порожніх / зниклих файлів') }}</th><td id="r-broken-kinds">—</td></tr>
+                                    <tr><th>{{ _('Визначень на них') }}</th><td id="r-broken-ids">—</td></tr>
+                                    <tr><th>{{ _('Прогнозів ШІ на них') }}</th><td id="r-broken-ai">—</td></tr>
+                                </tbody>
+                            </table>
+                            <details>
+                                <summary style="cursor:pointer; color:#6c757d;">{{ _('За локаціями') }}</summary>
+                                <table class="table table-sm" style="font-size:0.85rem; margin-top:6px;">
+                                    <thead><tr>
+                                        <th>{{ _('Локація') }}</th>
+                                        <th>{{ _('Фото') }}</th>
+                                        <th>{{ _('Серій') }}</th>
+                                        <th>{{ _('Залито') }}</th>
+                                    </tr></thead>
+                                    <tbody id="r-broken-locations"></tbody>
+                                </table>
+                            </details>
+                        </div>
+                        <div id="r-broken-ok" style="display:none; margin-top:16px;
+                             border:1px solid #badbcc; border-radius:4px; padding:10px;
+                             background:#d1e7dd; color:#0f5132;">
+                            {{ _('Серій без зображень не знайдено.') }}
+                        </div>
                     </div>
                     <div id="cleanup-exec-stats" style="display:none; font-size:0.9rem; margin-top:10px;">
                         <h4>{{ _('Результати виконання') }}</h4>
@@ -451,6 +488,38 @@
         return data;
     }
 
+    /* Category D — diagnostics. Deliberately has no button: the report says
+       what is wrong, the repair and the deletion are deliberate acts run from
+       the command line. */
+    function renderBroken(r) {
+        const n = r.broken_photos_count || 0;
+        if (!n) {
+            hide('#r-broken-block');
+            show('#r-broken-ok');
+            return;
+        }
+        hide('#r-broken-ok');
+        setText('#r-broken-photos', n);
+        setText('#r-broken-series', r.broken_series_count || 0);
+        setText('#r-broken-kinds',
+            (r.broken_photos_zero_byte || 0) + ' / ' + (r.broken_photos_missing || 0));
+        setText('#r-broken-ids', r.broken_identifications_count || 0);
+        setText('#r-broken-ai', r.broken_predictions_count || 0);
+        const tbody = $$('#r-broken-locations');
+        tbody.textContent = '';
+        (r.broken_by_location || []).forEach(loc => {
+            const tr = document.createElement('tr');
+            [loc.location, loc.photos, loc.series, (loc.uploaded || []).join(', ')]
+                .forEach(v => {
+                    const td = document.createElement('td');
+                    td.textContent = v;
+                    tr.appendChild(td);
+                });
+            tbody.appendChild(tr);
+        });
+        show('#r-broken-block');
+    }
+
     function renderReport(data) {
         const r = data.report || {};
         setText('#r-active', r.active_protected_count || 0);
@@ -462,6 +531,7 @@
         (r.stranded_photos_sample || []).slice(0, 10).forEach(p => lines.push('[photo] ' + p.system_filename));
         (r.orphan_files_sample || []).slice(0, 10).forEach(f => lines.push('[file]  ' + f.name));
         setText('#r-sample', lines.join('\n') || '{{ _("(порожньо)") }}');
+        renderBroken(r);
         show('#cleanup-report');
         show('#cleanup-execute-btn');
         setWidth('#cleanup-progress-bar', '100%');
