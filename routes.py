@@ -527,45 +527,13 @@ def dashboard(lang_code):
                     ~Observation.photos.any(Photo.identifications.any()))
         ).scalar() or 0
 
-        # 7 — top contributors. Grouped and limited, so it stays its own query,
-        # but it does NOT use count(DISTINCT observation_id) over the join.
-        # Postgres cannot hash-aggregate a DISTINCT aggregate, so that shape
-        # sorted every joined row first: 423,862 rows using 25.5 MB against a
-        # work_mem of 32 MB on prod. The next ~25 % of data growth would push
-        # that sort to disk and the query off a cliff. De-duplicating the
-        # (user, observation) pairs in a subquery lets the planner hash both
-        # steps, which degrades gradually instead.
-        contributor_pairs = _scope(
-            ct_session.query(
-                Identification.user_id.label('user_id'),
-                Photo.observation_id.label('observation_id'),
-            ).join(Photo, Identification.photo_id == Photo.id)
-            .join(Observation, Photo.observation_id == Observation.id)
-            .join(Location, Observation.location_id == Location.id)
-            .filter(Photo.captured_at.between(start_date, end_date))
-        ).distinct().subquery()
-
-        top_contributors_raw = (
-            ct_session.query(
-                contributor_pairs.c.user_id,
-                func.count().label('observation_count'),
-            ).group_by(contributor_pairs.c.user_id)
-            .order_by(func.count().desc())
-            .limit(10).all()
-        )
+        # 7 — top contributors is NOT computed here. It cost 725 ms of the
+        # page's ~1.9 s: an unavoidable scan of every identification in the
+        # window joined to every photo in it, linear in the data and growing.
+        # The panel now loads from /api/stats/top-contributors after the page
+        # renders, so the numbers above appear without waiting for it.
         # --- END OF DB QUERIES ---
 
-        top_contributors = []
-        if top_contributors_raw:
-            user_ids = [item.user_id for item in top_contributors_raw]
-            users = User.query.filter(User.id.in_(user_ids)).all()
-            user_map = {user.id: user.username for user in users}
-            for item in top_contributors_raw:
-                top_contributors.append({
-                    'username': user_map.get(item.user_id, f"Користувач (ID: {item.user_id})"),
-                    'observation_count': item.observation_count
-                })
-        
         stats = {
             'total_photos': total_photos,
             'total_locations': total_locations,
@@ -573,7 +541,6 @@ def dashboard(lang_code):
             'identified_species_count': identified_species_count,
             'pending_observations': pending_observations,
             'unique_capture_days': unique_capture_days,
-            'top_contributors': top_contributors
         }
         
         return render_template('dashboard.html',
@@ -592,7 +559,7 @@ def dashboard(lang_code):
 
     except Exception as e:
         current_app.logger.error(f"Error in dashboard: {str(e)}")
-        stats = {'total_photos': 0, 'total_locations': 0, 'total_identifications': 0, 'identified_species_count': 0, 'top_contributors': []}
+        stats = {'total_photos': 0, 'total_locations': 0, 'total_identifications': 0, 'identified_species_count': 0}
         flash(_('Помилка завантаження статистики.'), 'warning')
         return render_template('dashboard.html', stats=stats, start_date='2020-08-01', end_date=date.today().strftime('%Y-%m-%d'), biotopes=[], selected_locations='', selected_biotopes=[], institutions=[], ecoregions={}, selected_scope='global:', effective_inst_ids=[], qc_exclude=[], is_admin=False)
     finally:
@@ -3336,6 +3303,98 @@ def stats_top_species(lang_code):
         if session:
             close_ct_session()
 
+@camera_traps_bp.route('/api/stats/top-contributors')
+def stats_top_contributors(lang_code):
+    """Top 10 verifiers by identified series, for the dashboard side panel.
+
+    Split out of the dashboard route because it cost 725 ms of that page's
+    ~1.9 s and the cost is structural: every identification in the window
+    joined to every photo in it, growing linearly with the data. Nothing here
+    is faster than it was — the page simply stops waiting for it.
+
+    Takes the same filters as the page so the panel always matches the cards
+    beside it. `biotopes` arrives comma-separated, as on /api/stats/locations
+    (the map and this panel are both fed by the same JS); the dashboard FORM
+    posts one parameter per biotope instead, hence getlist() there and split()
+    here.
+    """
+    ct_session = get_ct_session()
+    try:
+        start_date_str = request.args.get('start_date', '2020-08-01')
+        end_date_str = request.args.get('end_date', date.today().strftime('%Y-%m-%d'))
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid date'}), 400
+
+        raw_inst_ids = request.args.getlist('institution_id')
+        if not raw_inst_ids:
+            raw_inst_ids = request.args.get('institution_id', '').split(',')
+        selected_inst_ids = [int(i) for i in raw_inst_ids if str(i).isdigit()]
+
+        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        is_admin = current_user.is_authenticated and current_user.has_role('admin')
+        inst_condition, inst_params = get_institution_filter(
+            user_inst_ids, is_admin, selected_inst_id=selected_inst_ids,
+            table_alias='locations')
+
+        biotope_ids = [int(i) for i in request.args.get('biotopes', '').split(',')
+                       if i.isdigit()]
+        location_ids = parse_location_ids(request.args.get('locations', ''))
+
+        qc_exclude = (
+            [f for f in request.args.get('qc_exclude', '').split(',') if f]
+            if current_user.is_authenticated else []
+        )
+        qc_cond = _build_qc_exclusion_cond(qc_exclude, obs_alias='observations')
+
+        # De-duplicate (user, observation) pairs first, then count. See the
+        # dashboard for why this is not count(DISTINCT ...) over the join.
+        pairs = (
+            ct_session.query(
+                Identification.user_id.label('user_id'),
+                Photo.observation_id.label('observation_id'),
+            ).join(Photo, Identification.photo_id == Photo.id)
+            .join(Observation, Photo.observation_id == Observation.id)
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Photo.captured_at.between(start_date, end_date))
+            .filter(text(inst_condition)).params(**inst_params)
+        )
+        if location_ids:
+            pairs = pairs.filter(Location.id.in_(location_ids))
+        if biotope_ids:
+            pairs = pairs.filter(Location.id.in_(
+                select(location_biotopes.c.location_id).where(
+                    location_biotopes.c.biotope_id.in_(biotope_ids))))
+        pairs = pairs.filter(Location.is_valid.is_(True))
+        if qc_cond:
+            pairs = pairs.filter(text(qc_cond))
+
+        rows = (
+            ct_session.query(pairs.distinct().subquery().c.user_id,
+                             func.count().label('observation_count'))
+            .group_by('user_id').order_by(func.count().desc()).limit(10).all()
+        )
+
+        if not rows:
+            return jsonify([])
+
+        # Usernames live in the main database, not ct_db.
+        users = User.query.filter(User.id.in_([r.user_id for r in rows])).all()
+        user_map = {user.id: user.username for user in users}
+        return jsonify([
+            {'username': user_map.get(row.user_id, f"Користувач (ID: {row.user_id})"),
+             'observation_count': row.observation_count}
+            for row in rows
+        ])
+    except Exception as e:
+        current_app.logger.error(f"Error in stats_top_contributors: {e}", exc_info=True)
+        return jsonify({'error': 'Failed to load contributors'}), 500
+    finally:
+        close_ct_session()
+
+
 @camera_traps_bp.route('/api/stats/locations')
 def stats_locations(lang_code):
     ct_session = get_ct_session()
@@ -3372,7 +3431,15 @@ def stats_locations(lang_code):
         .filter(text(inst_condition)).params(**inst_params)
         
         if biotope_ids:
-            query = query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
+            # Membership, not a join: a location can belong to several biotopes
+            # (314 of 914 do on prod, up to six), and joining location_biotopes
+            # multiplied the rows behind count(Photo.id). With three biotopes
+            # selected, 194 of 575 markers showed 2–3x their real photo count
+            # and the map totalled 1,504,083 photos against 808,460 in the
+            # database. Same defect the dashboard carried.
+            query = query.filter(Location.id.in_(
+                select(location_biotopes.c.location_id).where(
+                    location_biotopes.c.biotope_id.in_(biotope_ids))))
 
         query = query.filter(Location.id.in_(valid_location_id_subquery()))
 

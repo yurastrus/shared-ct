@@ -89,18 +89,12 @@
                 </div>
                 <div class="dashboard-section">
                     <h2 class="section-title">{{ _('Найактивніші учасники') }}</h2>
-                    {% if stats.top_contributors %}
-                        <div class="contributors-list">
-                            {% for user in stats.top_contributors %}
-                                <div class="contributor-item">
-                                    <span class="contributor-name">{{ loop.index }}. {{ user.username }}</span>
-                                    <span class="contributor-badge">{{ user.observation_count }} {{ _('ідентифікацій') }}</span>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <div class="info-message">{{ _('За цей період немає даних про ідентифікації.') }}</div>
-                    {% endif %}
+                    {# Filled by loadContributors() after the page renders. The query
+                       behind it is the most expensive on the dashboard and its cost
+                       grows with the data, so the cards above no longer wait for it. #}
+                    <div id="contributors-panel">
+                        <div class="info-message">{{ _('Завантаження...') }}</div>
+                    </div>
                     <div style="margin-top: 12px; text-align: right;">
                         <a href="{{ url_for('camera_traps.contributors', lang_code=g.lang_code) }}" style="font-weight: bold; text-decoration: underline;">{{ _('Всі учасники') }} &rarr;</a>
                     </div>
@@ -191,6 +185,7 @@ $(document).ready(function() {
 
         initializeMap();
         initializeChart();
+        loadContributors();
         setupEventListeners();
     }
 
@@ -259,20 +254,81 @@ $(document).ready(function() {
             .catch(error => console.error('Error fetching chart data:', error));
     }
 
-    function loadMapData() {
-        const mapApiUrl = new URL("{{ url_for('camera_traps.stats_locations', lang_code=g.lang_code, _external=True) }}");
-        mapApiUrl.searchParams.set('start_date', urlParams.get('start_date') || '{{ start_date }}');
-        mapApiUrl.searchParams.set('end_date', urlParams.get('end_date') || '{{ end_date }}');
+    /**
+     * The filters the page is currently showing, as query parameters.
+     * Every panel fetched after render must send these, or it would show
+     * numbers that disagree with the cards next to it.
+     */
+    function currentFilterParams(url) {
+        url.searchParams.set('start_date', urlParams.get('start_date') || '{{ start_date }}');
+        url.searchParams.set('end_date', urlParams.get('end_date') || '{{ end_date }}');
         const selectedBiotopes = $('#biotope-select').val();
         if (selectedBiotopes && selectedBiotopes.length > 0) {
-            mapApiUrl.searchParams.set('biotopes', selectedBiotopes.join(','));
+            url.searchParams.set('biotopes', selectedBiotopes.join(','));
         }
-        EFFECTIVE_INST_IDS.forEach(id => mapApiUrl.searchParams.append('institution_id', id));
+        EFFECTIVE_INST_IDS.forEach(id => url.searchParams.append('institution_id', id));
         // Propagate the QC filter (already in the URL after form submit).
         const qcExclude = urlParams.get('qc_exclude');
         if (qcExclude) {
-            mapApiUrl.searchParams.set('qc_exclude', qcExclude);
+            url.searchParams.set('qc_exclude', qcExclude);
         }
+        const locations = urlParams.get('locations');
+        if (locations) {
+            url.searchParams.set('locations', locations);
+        }
+        return url;
+    }
+
+    /**
+     * Top contributors, loaded after the page renders. The query behind it is
+     * the dashboard's most expensive (a scan of every identification in the
+     * window) and grows with the data, so the stat cards no longer wait on it.
+     */
+    function loadContributors() {
+        const panel = document.getElementById('contributors-panel');
+        if (!panel) return;
+        const url = currentFilterParams(new URL(
+            "{{ url_for('camera_traps.stats_top_contributors', lang_code=g.lang_code, _external=True) }}"));
+
+        fetch(url)
+            .then(response => response.ok ? response.json() : Promise.reject(response.status))
+            .then(contributors => {
+                if (!contributors || contributors.length === 0) {
+                    panel.innerHTML = '<div class="info-message">'
+                        + {{ _('За цей період немає даних про ідентифікації.') | tojson }}
+                        + '</div>';
+                    return;
+                }
+                const list = document.createElement('div');
+                list.className = 'contributors-list';
+                contributors.forEach((user, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'contributor-item';
+                    // textContent, not innerHTML: usernames are user-supplied.
+                    const name = document.createElement('span');
+                    name.className = 'contributor-name';
+                    name.textContent = (index + 1) + '. ' + user.username;
+                    const badge = document.createElement('span');
+                    badge.className = 'contributor-badge';
+                    badge.textContent = user.observation_count + ' '
+                        + {{ _('ідентифікацій') | tojson }};
+                    item.appendChild(name);
+                    item.appendChild(badge);
+                    list.appendChild(item);
+                });
+                panel.replaceChildren(list);
+            })
+            .catch(error => {
+                console.error('Error fetching contributors:', error);
+                panel.innerHTML = '<div class="info-message">'
+                    + {{ _('Не вдалося завантажити список учасників.') | tojson }}
+                    + '</div>';
+            });
+    }
+
+    function loadMapData() {
+        const mapApiUrl = currentFilterParams(new URL(
+            "{{ url_for('camera_traps.stats_locations', lang_code=g.lang_code, _external=True) }}"));
 
         fetch(mapApiUrl)
             .then(response => response.json())
