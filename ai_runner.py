@@ -429,15 +429,32 @@ def get_species_with_ai_predictions(
     # win — one winning row per observation: prediction from the model with the
     # highest accuracy_rank (tie-break: newer model.id). COALESCE(...,0) —
     # models without a level are treated as the lowest rank.
+    # PERF: the candidate series are selected FIRST, and the winning-prediction
+    # pass then reads only their rows. The previous shape built `win` over every
+    # pending prediction in the database (~0.6M rows, a DISTINCT ON that spilled
+    # to disk: "external merge Disk: 15 MB", re-run once per parallel worker) and
+    # only afterwards threw most of it away with the access/scope/user filters.
+    # Restricting the input first cut a scoped call from 467 ms to 136 ms on
+    # prod; = ANY(ARRAY(...)) rather than IN (...) is what makes the planner use
+    # idx_ai_pred_observation instead of hashing the whole table.
     sql = sql_text(f"""
-        WITH win AS (
+        WITH cand AS (
+            SELECT o.id
+            FROM observations o
+            JOIN locations l ON l.id = o.location_id
+            WHERE o.status = 'pending'
+              {user_clause}
+              {access_clause}
+              {scope_clause}
+        ),
+        win AS (
             SELECT DISTINCT ON (ap.observation_id)
                    ap.observation_id,
                    ap.prediction_species_id
             FROM ai_predictions ap
-            JOIN observations o2 ON o2.id = ap.observation_id AND o2.status = 'pending'
             JOIN ai_models m ON m.id = ap.model_id
             LEFT JOIN ai_model_levels lvl ON lvl.id = m.level_id
+            WHERE ap.observation_id = ANY(ARRAY(SELECT id FROM cand))
             ORDER BY ap.observation_id, COALESCE(lvl.accuracy_rank, 0) DESC, m.id DESC
         )
         SELECT s.id,
@@ -447,12 +464,6 @@ def get_species_with_ai_predictions(
                COUNT(DISTINCT win.observation_id) AS pending_count
         FROM win
         JOIN species s ON s.id = win.prediction_species_id
-        JOIN observations o ON o.id = win.observation_id
-        JOIN locations l ON l.id = o.location_id
-        WHERE o.status = 'pending'
-          {user_clause}
-          {access_clause}
-          {scope_clause}
         GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name
         HAVING COUNT(DISTINCT win.observation_id) > 0
         ORDER BY s.common_name_ua
