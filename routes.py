@@ -3846,23 +3846,25 @@ IDENTIFY_SORT_OPTIONS = {
 }
 
 
-def _identify_votes_subq(status_filter, extra_filters=()):
-    """Votes-per-series subquery (distinct identifying users), scoped to
-    observations matching status_filter — used by 'priority_random'.
+def _identify_voted_subq(status_filter, extra_filters=()):
+    """Series that already carry at least one identification, as a subquery of
+    observation ids — the first tier of 'priority_random'.
+
+    It answers "has anyone voted here", not "how many" — see _apply_identify_sort
+    for why the count was dropped. DISTINCT over the join is therefore enough,
+    with no aggregate at all.
 
     PERF: `extra_filters` carries the SAME narrowing predicates the outer query
-    uses (location visibility, institution/ecoregion scope, AI-species filter).
-    Without them this aggregate runs over every pending series in the database —
-    a full scan of photos (0.8M rows) hash-joined to identifications (0.6M) on
-    every /identify request, ~600 ms of the ~770 ms the endpoint used to take.
-    Narrowed by the same filters the planner drives the aggregate off the small
-    candidate set instead (measured 770 ms -> 340 ms on prod with an AI filter).
+    uses (institution/ecoregion scope, AI-species filter). Without them this
+    subquery runs over every pending series in the database — a full scan of
+    photos (0.8M rows) joined to identifications (0.6M) on every /identify
+    request. Only predicates that reference Observation qualify: the subquery
+    joins Observation but not Location, and the outer query has already applied
+    the location visibility filter, so leaving that one out cannot change which
+    rows the LEFT JOIN can match.
     """
     q = (
-        select(
-            Photo.observation_id.label('observation_id'),
-            func.count(func.distinct(Identification.user_id)).label('votes'),
-        )
+        select(Photo.observation_id.label('observation_id'))
         .select_from(Identification)
         .join(Photo, Photo.id == Identification.photo_id)
         .join(Observation, Observation.id == Photo.observation_id)
@@ -3870,17 +3872,23 @@ def _identify_votes_subq(status_filter, extra_filters=()):
     )
     for f in extra_filters:
         q = q.where(f)
-    return q.group_by(Photo.observation_id).subquery()
+    return q.distinct().subquery()
 
 
 def _apply_identify_sort(query, sort_by, status_filter, extra_filters=()):
     """Apply one of IDENTIFY_SORT_OPTIONS to `query`.
 
-    'priority_random' (default) ranks series with existing votes first and,
-    among those, series with MORE photos first — so bigger series (holding
-    more photos to review/more disk space) get resolved sooner; within a
-    tier with no votes, order stays random (untouched series aren't biased
-    by size).
+    'priority_random' (the default) has exactly two tiers: series somebody has
+    already identified at least once, then everything else. Order inside a tier
+    is random.
+
+    It used to rank finer than that — by number of distinct voters, then by
+    photo count among voted series — and that is what broke "Пропустити". Both
+    of those keys sort BEFORE random(), so random() only decided ties. On
+    production the top rank (4 votes, 9 photos) was held by exactly one series,
+    so `LIMIT 1` returned that same series every time and the skip button could
+    not move off it until somebody else voted. Two coarse tiers put random()
+    first in practice, which is what makes skipping work at all.
     """
     if sort_by == 'date_desc':
         return query.order_by(Observation.series_start_time.desc())
@@ -3893,11 +3901,11 @@ def _apply_identify_sort(query, sort_by, status_filter, extra_filters=()):
     elif sort_by == 'random':
         return query.order_by(func.random())
     else:  # 'priority_random'
-        votes_subq = _identify_votes_subq(status_filter, extra_filters)
-        query = query.outerjoin(votes_subq, votes_subq.c.observation_id == Observation.id)
-        votes = func.coalesce(votes_subq.c.votes, 0)
-        photo_count_tiebreak = case((votes > 0, Observation.photo_count))
-        return query.order_by(votes.desc(), photo_count_tiebreak.desc(), func.random())
+        voted_subq = _identify_voted_subq(status_filter, extra_filters)
+        query = query.outerjoin(
+            voted_subq, voted_subq.c.observation_id == Observation.id)
+        return query.order_by(
+            voted_subq.c.observation_id.isnot(None).desc(), func.random())
 
 
 @camera_traps_bp.route('/api/next-observation-for-identification', methods=['GET'])
@@ -4002,11 +4010,12 @@ def next_observation_for_identification(lang_code):
             if is_ai_available():
                 ai_observation_subq = observations_subq_for_ai_filter(ai_filter)
 
-        # PERF: the same narrowing predicates are handed to the votes aggregate
-        # of 'priority_random' (see _identify_votes_subq). Only predicates that
-        # reference Observation itself qualify — the aggregate joins Observation
-        # but not Location, and the outer query has already applied the location
-        # visibility filter, so leaving it out cannot change the result.
+        # PERF: the same narrowing predicates are handed to the first-tier
+        # subquery of 'priority_random' (see _identify_voted_subq). Only
+        # predicates that reference Observation itself qualify — that subquery
+        # joins Observation but not Location, and the outer query has already
+        # applied the location visibility filter, so leaving it out cannot
+        # change the result.
         identify_extra_filters = []
         if scope_location_subq is not None:
             identify_extra_filters.append(Observation.location_id.in_(scope_location_subq))
