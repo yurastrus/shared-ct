@@ -267,6 +267,15 @@ class Observation(CTBase):
         viewonly=True
     )
 
+    __table_args__ = (
+        # Date-window filter on every analytics page (dashboard "pending",
+        # top-species). Without it the planner seq-scans all observations.
+        Index('idx_observations_series_start', 'series_start_time'),
+        # Join key to locations. Postgres does NOT create an index for a foreign
+        # key, so this one has to be declared explicitly.
+        Index('idx_observations_location_id', 'location_id'),
+    )
+
     def __repr__(self):
         return f'<Observation {self.id} at {self.location.name}>'
 
@@ -314,6 +323,10 @@ class Photo(CTBase):
         # OVER (ORDER BY captured_at, id) for photos of a specific batch.
         # Covers WHERE upload_batch_id=:b AND status='uploaded' + ORDER BY.
         Index('idx_photos_batch_captured', 'upload_batch_id', 'captured_at', 'id'),
+        # Bare date-window filter (`captured_at BETWEEN ...`) on every analytics
+        # page. The composite above cannot serve it: captured_at is not its
+        # leading column, so a query without upload_batch_id gets a seq scan.
+        Index('idx_photos_captured_at', 'captured_at'),
         # Status filter: cleanup (status='completed'/'pending') and
         # dashboard. Index already exists on prod — declared here so that create_all
         # on new/dev installations also creates it (metadata = real DB).
@@ -364,6 +377,9 @@ class Identification(CTBase):
         # contribution page. Index already exists on prod — declared here for
         # consistency with create_all on new/dev installations.
         Index('idx_identifications_user_id', 'user_id'),
+        # Join/grouping by species: dashboard species count, top-species chart.
+        # A foreign key gets no index of its own in Postgres.
+        Index('idx_identifications_species_id', 'species_id'),
     )
 
     def __repr__(self):
