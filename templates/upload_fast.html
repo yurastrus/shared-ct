@@ -194,10 +194,16 @@
                 <div id="file-list" class="file-list-area" style="display:none;"></div>
 
                 <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" id="save-original-checkbox">
+                    <input class="form-check-input" type="checkbox" id="save-original-checkbox"
+                           {% if not keep_originals_allowed %}disabled{% endif %}>
                     <label class="form-check-label small" for="save-original-checkbox">
                         {{ _('Зберігати повнорозмірні (оригінальні) фотографії') }}
                     </label>
+                    {% if not keep_originals_allowed %}
+                    <div class="small text-warning mt-1">
+                        {{ _('Недостатньо місця для повнорозмірних фото (потрібно понад %(gb)s ГБ вільного місця) — зберігаються лише зменшені копії.', gb=min_originals_free_gb) }}
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="form-check mt-1">

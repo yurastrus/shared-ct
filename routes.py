@@ -2486,6 +2486,35 @@ def upload(lang_code):
 MIN_UPLOAD_FREE_MB = 500
 MIN_UPLOAD_FREE_BYTES = MIN_UPLOAD_FREE_MB * 1024 * 1024
 
+# Second, softer gate, well above the hard block: while free space is below this,
+# uploads keep running but full-size originals are refused — only the thumbnail
+# is stored. Originals are what actually fills the volume (a raw frame is ~100x a
+# thumbnail), so dropping them buys weeks of intake instead of stopping data
+# collection dead at MIN_UPLOAD_FREE_MB. Enforced server-side per photo (the disk
+# can fill mid-batch); the page also disables the checkbox so the browser
+# compresses before sending instead of wasting the upload.
+MIN_ORIGINALS_FREE_GB = 20
+MIN_ORIGINALS_FREE_BYTES = MIN_ORIGINALS_FREE_GB * 1024 * 1024 * 1024
+
+# Batches already logged as originals-blocked, so a 10k-photo upload writes one
+# warning instead of 10k. Per worker process and bounded; losing an entry only
+# costs a duplicate log line.
+_originals_blocked_batches = set()
+
+
+def originals_allowed():
+    """Whether full-size originals may still be written to the photo storage.
+
+    Returns (allowed, free_bytes). free_bytes is None when the storage path is
+    not configured or not reachable — that degrades to allowed, matching the
+    create_batch gate: never false-block an upload on a failed measurement.
+    """
+    from .background_tasks import get_storage_disk_usage
+    free = (get_storage_disk_usage() or {}).get('free_bytes')
+    if free is None:
+        return True, None
+    return free >= MIN_ORIGINALS_FREE_BYTES, free
+
 
 @camera_traps_bp.route('/api/create-batch', methods=['POST'])
 @login_required
@@ -2550,7 +2579,24 @@ def process_single_upload(lang_code):
         batch_id = request.form.get('batch_id')
         uploaded_file = request.files.get('file')
         save_original = request.form.get('save_original', 'true').lower() == 'true'
-        
+
+        # Second storage gate (see MIN_ORIGINALS_FREE_GB): keep accepting photos
+        # but stop writing full-size originals once the volume is low. The page
+        # normally prevents this, so reaching it means the disk dropped mid-batch
+        # or the client ignored the gate — either way the server decides.
+        if save_original:
+            _allowed, _free = originals_allowed()
+            if not _allowed:
+                save_original = False
+                if batch_id not in _originals_blocked_batches:
+                    if len(_originals_blocked_batches) > 500:
+                        _originals_blocked_batches.clear()
+                    _originals_blocked_batches.add(batch_id)
+                    current_app.logger.warning(
+                        f"[ct-upload] originals BLOCKED (low storage) user={current_user.id} "
+                        f"batch={batch_id} free_gb={_free / (1024 ** 3):.1f} "
+                        f"min_gb={MIN_ORIGINALS_FREE_GB} — storing thumbnails only")
+
         if not all([location_id, batch_id, uploaded_file]):
             current_app.logger.warning(
                 f"[ct-upload] process-single rejected (missing params) user={current_user.id} "
@@ -2741,6 +2787,11 @@ def upload_fast(lang_code):
         upload_allowed = (_free is None) or (_free >= MIN_UPLOAD_FREE_BYTES)
         free_mb = int(_free // (1024 * 1024)) if _free is not None else None
 
+        # Second gate: uploading still works, but the "keep originals" checkbox
+        # is disabled so the browser compresses instead of sending full frames
+        # the server would refuse to keep anyway.
+        keep_originals_allowed = (_free is None) or (_free >= MIN_ORIGINALS_FREE_BYTES)
+
         return render_template(
             'upload_fast.html',
             form=form,
@@ -2751,6 +2802,8 @@ def upload_fast(lang_code):
             upload_allowed=upload_allowed,
             free_mb=free_mb,
             min_free_mb=MIN_UPLOAD_FREE_MB,
+            keep_originals_allowed=keep_originals_allowed,
+            min_originals_free_gb=MIN_ORIGINALS_FREE_GB,
         )
     finally:
         close_ct_session()
