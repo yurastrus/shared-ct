@@ -165,7 +165,10 @@ $(document).ready(function() {
     
     // Initialise `selectedLocationIds` from URL if the parameter is present.
     const preselectedStr = urlParams.get('locations');
-    if (preselectedStr && preselectedStr.trim() !== "") {
+    // 'none' is an explicit empty selection: leave selectedLocationIds empty AND
+    // keep wasFiltered true below, so the markers are not re-selected by default.
+    if (preselectedStr && preselectedStr.trim() !== "" &&
+            preselectedStr.trim().toLowerCase() !== 'none') {
         selectedLocationIds = new Set(
             preselectedStr.split(',')
             .map(Number)
@@ -379,9 +382,29 @@ $(document).ready(function() {
     }
 
     function syncSelectionState() {
-        const selectedArray = Array.from(selectedLocationIds);
-        locationsInput.val(selectedArray.join(','));
+        locationsInput.val(serialiseSelection());
         updateAllMarkersStyle();
+    }
+
+    // Three states in one parameter, matching parse_location_ids() on the server:
+    //   ''      — everything on the map is selected, i.e. no filter. Spelling out
+    //             all ~900 ids instead produced a ~5 kB URL and froze the location
+    //             set into every bookmark, so a dashboard saved as "all data"
+    //             silently stopped covering locations added later.
+    //   'none'  — every marker deselected. Sending '' here (what the old code did,
+    //             because an empty array joins to an empty string) made the page
+    //             show ALL data, the exact opposite of what was asked.
+    //   '1,2,3' — a genuine subset.
+    function serialiseSelection() {
+        if (selectedLocationIds.size === 0) {
+            return allVisibleLocationIds.size > 0 ? 'none' : '';
+        }
+        let coversEverything = allVisibleLocationIds.size > 0;
+        allVisibleLocationIds.forEach(id => {
+            if (!selectedLocationIds.has(id)) coversEverything = false;
+        });
+        if (coversEverything) return '';
+        return Array.from(selectedLocationIds).join(',');
     }
 
     function updateMarkerStyle(locationId) {

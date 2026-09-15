@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from app.camera_traps.domain import _
-from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, Date
+from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, Date, bindparam
 from sqlalchemy.exc import SQLAlchemyError
 import io
 import csv
@@ -368,6 +368,31 @@ def admin_ai_run(lang_code):
 #
 # --- ANALYTICS DASHBOARD ---
 #
+# `locations=` on the dashboard has THREE states, not two:
+#   ''      — no location filter at all: every accessible location, including
+#             ones added after the URL was bookmarked;
+#   'none'  — the user deselected every marker: no locations;
+#   '1,2,3' — exactly these.
+# Without the sentinel the first two are the same string, which had two
+# consequences: deselecting every marker showed ALL data, and the page spelled
+# out all ~900 ids in the query string just to be able to say "all" — a ~5 kB
+# URL that also froze the location set into every bookmark.
+NO_LOCATIONS_SENTINEL_ID = -1
+
+
+def parse_location_ids(raw):
+    """Parse the dashboard `locations` parameter into a list of ids.
+
+    Returns [] for "no filter" and [NO_LOCATIONS_SENTINEL_ID] for an explicit
+    empty selection — an id no row can carry, so it narrows every downstream
+    query to nothing without each of them having to know about the sentinel.
+    """
+    raw = (raw or '').strip()
+    if raw.lower() == 'none':
+        return [NO_LOCATIONS_SENTINEL_ID]
+    return [int(i) for i in raw.split(',') if i.isdigit()]
+
+
 @camera_traps_bp.route('/dashboard')
 def dashboard(lang_code):
     """Render the dashboard with main statistics, FILTERED BY DATE, LOCATIONS AND BIOTOPES."""
@@ -385,11 +410,10 @@ def dashboard(lang_code):
             start_date, end_date = datetime.strptime(start_date_str, '%Y-%m-%d').date(), date.today()
         
         # Locations and Biotopes
-        location_ids_str = request.args.get('locations', '')
         biotope_ids_str_list = request.args.getlist('biotopes')
         # Convert lists of strings to lists of integers
         biotope_ids = [int(id) for id in biotope_ids_str_list if id.isdigit()]
-        location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
+        location_ids = parse_location_ids(request.args.get('locations', ''))
 
         # QC exclusion filter (opt-in). Only authenticated users may apply it;
         # for anonymous users the parameter is ignored so it cannot be forced
@@ -548,7 +572,7 @@ def dashboard(lang_code):
                              start_date=start_date_str,
                              end_date=end_date_str,
                              biotopes=biotopes_list,
-                             selected_locations=location_ids_str,
+                             selected_locations=request.args.get('locations', ''),
                              selected_biotopes=biotope_ids,
                              institutions=institutions_list,
                              ecoregions=ecoregions,
@@ -3100,9 +3124,8 @@ def stats_top_species(lang_code):
             'end_date': end_date_str
         }
 
-        location_ids_str = request.args.get('locations', '')
         biotope_ids_str = request.args.get('biotopes', '')
-        location_ids = [int(id) for id in location_ids_str.split(',') if id.isdigit()]
+        location_ids = parse_location_ids(request.args.get('locations', ''))
         biotope_ids = [int(id) for id in biotope_ids_str.split(',') if id.isdigit()]
 
         user_inst_ids =ct_access.allowed_institution_ids(current_user)
@@ -3160,14 +3183,21 @@ def stats_top_species(lang_code):
         if qc_cond:
             conditions.append(qc_cond)
 
+        # `IN :param` bound to a plain tuple only works because psycopg2 happens
+        # to render tuples as (1,2,3); any other driver raises. Declared as
+        # expanding bind params it is SQLAlchemy that does the expansion, so the
+        # statement is portable and can be exercised in tests.
+        expanding_binds = []
         if biotope_ids:
             query_base += " JOIN location_biotopes lb ON l.id = lb.location_id"
             conditions.append("lb.biotope_id IN :biotope_ids")
-            params['biotope_ids'] = tuple(biotope_ids)
+            params['biotope_ids'] = list(biotope_ids)
+            expanding_binds.append(bindparam('biotope_ids', expanding=True))
 
         if location_ids:
             conditions.append("l.id IN :location_ids")
-            params['location_ids'] = tuple(location_ids)
+            params['location_ids'] = list(location_ids)
+            expanding_binds.append(bindparam('location_ids', expanding=True))
             
         where_clause = " WHERE " + " AND ".join(conditions)
         group_by_clause = " GROUP BY s.id, s.scientific_name, s.common_name_ua, s.common_name_en"
@@ -3176,7 +3206,10 @@ def stats_top_species(lang_code):
 
         final_query = consensus_cte + query_base + where_clause + group_by_clause + order_by_clause + limit_clause
         
-        result = conn.execute(text(final_query), params).mappings().fetchall()
+        stmt = text(final_query)
+        if expanding_binds:
+            stmt = stmt.bindparams(*expanding_binds)
+        result = conn.execute(stmt, params).mappings().fetchall()
         
         # --- Step 3: Process results ---
         labels = []
