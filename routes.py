@@ -3191,37 +3191,66 @@ def stats_top_species(lang_code):
 
         # --- Step 2: SQL query with consensus logic ---
         
-        consensus_cte = """
-            WITH ObservationConsensus AS (
+        # Narrow to the requested observations FIRST, then compute consensus over
+        # only those. The earlier shape ran the GROUP BY + ROW_NUMBER over the
+        # whole identifications ⋈ photos table and applied the filters afterwards,
+        # so a one-day chart cost the same as an all-time one (measured: 700 ms
+        # either way). Filtering first makes the cost follow the window —
+        # 49 ms for a day, 351 ms for all time. Same rewrite as commit 3fa2a60
+        # did for get_species_with_ai_predictions.
+        eligible_cte_head = """
+            WITH EligibleObservations AS (
+                SELECT o.id
+                FROM observations o
+                JOIN locations l ON o.location_id = l.id
+        """
+
+        consensus_cte_tail = """
+            ),
+            ObservationConsensus AS (
                 SELECT
                     p.observation_id, i.species_id,
                     COUNT(DISTINCT i.user_id) as vote_count,
                     MAX(i.quantity) as max_quantity
-                FROM identifications i JOIN photos p ON i.photo_id = p.id
+                FROM identifications i
+                JOIN photos p ON i.photo_id = p.id
+                JOIN EligibleObservations eo ON eo.id = p.observation_id
                 GROUP BY p.observation_id, i.species_id
             ),
             RankedConsensus AS (
                 SELECT
                     observation_id, species_id,
-                    ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC, max_quantity DESC) as rn
+                    ROW_NUMBER() OVER(
+                        PARTITION BY observation_id
+                        -- species_id breaks ties that the vote count and quantity
+                        -- leave open. Without it ROW_NUMBER picks arbitrarily and
+                        -- the chart changes between runs whenever two species tie
+                        -- (11 such observations in the 2025 window alone). DESC
+                        -- means a real species outranks the negative pseudo-rows
+                        -- ('empty', 'not identifiable'), which the `s.id > 0`
+                        -- filter would otherwise drop the observation for.
+                        ORDER BY vote_count DESC, max_quantity DESC, species_id DESC
+                    ) as rn
                 FROM ObservationConsensus
             )
         """
-        
+
         query_base = """
             SELECT
                 s.id, s.scientific_name, s.common_name_ua, s.common_name_en,
-                COUNT(o.id) as observation_count
-            FROM observations o
-            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+                COUNT(rc.observation_id) as observation_count
+            FROM RankedConsensus rc
             JOIN species s ON s.id = rc.species_id
-            JOIN locations l ON o.location_id = l.id
         """
-        
-        conditions =[
+
+        # Conditions on observations/locations; they all live inside the CTE now.
+        conditions = [
             "o.status IN ('completed', 'archived')",
-            "s.id > 0",
-            "DATE(o.series_start_time) BETWEEN :start_date AND :end_date",
+            # Sargable range instead of DATE(o.series_start_time) BETWEEN ...:
+            # wrapping the column in a function makes idx_observations_series_start
+            # unusable. The end date stays inclusive of the whole day.
+            "o.series_start_time >= CAST(:start_date AS date)",
+            "o.series_start_time < (CAST(:end_date AS date) + 1)",
             "l." + VALID_LOCATION_SQL,
             inst_condition
         ]
@@ -3242,8 +3271,15 @@ def stats_top_species(lang_code):
         # statement is portable and can be exercised in tests.
         expanding_binds = []
         if biotope_ids:
-            query_base += " JOIN location_biotopes lb ON l.id = lb.location_id"
-            conditions.append("lb.biotope_id IN :biotope_ids")
+            # EXISTS, not a join: 314 of 914 locations carry more than one biotope
+            # (up to six), so joining location_biotopes multiplied the observation
+            # rows and COUNT() counted the same observation once per matching
+            # biotope. On a three-biotope filter that inflated the chart by ~26 %
+            # and changed which species appeared in it.
+            conditions.append("""EXISTS (
+                SELECT 1 FROM location_biotopes lb
+                WHERE lb.location_id = l.id AND lb.biotope_id IN :biotope_ids
+            )""")
             params['biotope_ids'] = list(biotope_ids)
             expanding_binds.append(bindparam('biotope_ids', expanding=True))
 
@@ -3251,13 +3287,18 @@ def stats_top_species(lang_code):
             conditions.append("l.id IN :location_ids")
             params['location_ids'] = list(location_ids)
             expanding_binds.append(bindparam('location_ids', expanding=True))
-            
-        where_clause = " WHERE " + " AND ".join(conditions)
+
+        eligible_where = " WHERE " + " AND ".join(conditions)
+        # s.id > 0 stays on the outer query: it selects which consensus winners
+        # count as species, and must not narrow the consensus vote itself.
+        outer_where = " WHERE rc.rn = 1 AND s.id > 0"
         group_by_clause = " GROUP BY s.id, s.scientific_name, s.common_name_ua, s.common_name_en"
         order_by_clause = " ORDER BY observation_count DESC, s.scientific_name ASC"
         limit_clause = " LIMIT 15"
 
-        final_query = consensus_cte + query_base + where_clause + group_by_clause + order_by_clause + limit_clause
+        final_query = (eligible_cte_head + eligible_where + consensus_cte_tail
+                       + query_base + outer_where + group_by_clause
+                       + order_by_clause + limit_clause)
         
         stmt = text(final_query)
         if expanding_binds:
