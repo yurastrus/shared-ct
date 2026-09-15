@@ -19,7 +19,7 @@ from .utils import (process_photo_batch, check_consensus_for_observation,
                     can_view_photo_file, can_access_location)
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
-from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors
+from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors, location_biotopes
 from .models import Deployment
 from app.models import User, Institution
 from .decorators import role_required
@@ -447,103 +447,93 @@ def dashboard(lang_code):
         # Resolved institution IDs for the map/chart API (JS passes them as institution_id).
         effective_inst_ids = [i for i in (selected_inst_ids or []) if i > 0]
 
-        # Total Photos
-        query_photos = ct_session.query(func.count(Photo.id)).join(Observation).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date))\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_photos = query_photos.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_photos = query_photos.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_photos = query_photos.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_photos = query_photos.filter(text(qc_cond))
-        total_photos = query_photos.scalar() or 0
+        # The seven counters below used to be seven independent statements, each
+        # rebuilding the same joins and filters, so page latency was their sum.
+        # They are now grouped by the base they actually share. Measured on prod
+        # before the change; the grouping follows the measurements, not tidiness:
+        #   1/2/6 (photos ⋈ observations ⋈ locations)       −47 % … −67 %
+        #   3/4   (the same plus identifications)           −45 % … −48 %
+        #   5, 7  left alone: different base, different shape
+        # Merging 3/4 the obvious way (two count(DISTINCT) over the join) was
+        # tried first and made the wide windows 60 % SLOWER — two distinct sorts
+        # over the full join. De-duplicating once in a subquery wins instead.
 
-        # Total Locations
-        query_locations = ct_session.query(func.count(distinct(Observation.location_id))).join(Photo).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date))\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_locations = query_locations.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_locations = query_locations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_locations = query_locations.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_locations = query_locations.filter(text(qc_cond))
-        total_locations = query_locations.scalar() or 0
-        
-        # Total Observations
-        query_observations = ct_session.query(func.count(func.distinct(Observation.id))).join(Photo)\
-            .join(Identification, Photo.id == Identification.photo_id).join(Location)\
-            .filter(Photo.captured_at.between(start_date, end_date), Identification.species_id > 0)\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_observations = query_observations.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_observations = query_observations.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_observations = query_observations.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_observations = query_observations.filter(text(qc_cond))
-        total_observations = query_observations.scalar() or 0
+        def _scope(query):
+            """Apply every filter the page's controls imply, in one place."""
+            query = query.filter(inst_condition_orm).params(**inst_params)
+            if location_ids:
+                query = query.filter(Location.id.in_(location_ids))
+            if biotope_ids:
+                # A location can carry up to six biotopes (314 of 914 do on
+                # prod), so joining location_biotopes multiplied every row: with
+                # a three-biotope filter the photo counter read 1,504,083
+                # instead of 808,460. Membership test, not a join.
+                query = query.filter(Location.id.in_(
+                    select(location_biotopes.c.location_id).where(
+                        location_biotopes.c.biotope_id.in_(biotope_ids))))
+            query = query.filter(Location.id.in_(valid_location_id_subquery()))
+            if qc_cond:
+                query = query.filter(text(qc_cond))
+            return query
 
-        # Identified Species Count
-        query_species_count = ct_session.query(func.count(distinct(Identification.species_id)))\
-            .join(Photo, Identification.photo_id == Photo.id)\
-            .join(Observation, Photo.observation_id == Observation.id).join(Location)\
-            .filter(Identification.species_id > 0, Photo.captured_at.between(start_date, end_date), Observation.status.in_(['completed', 'archived']))\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_species_count = query_species_count.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_species_count = query_species_count.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_species_count = query_species_count.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_species_count = query_species_count.filter(text(qc_cond))
-        identified_species_count = query_species_count.scalar() or 0
+        # 1, 2, 6 — photos, locations, capture days. One pass, three aggregates.
+        photo_stats = _scope(
+            ct_session.query(
+                func.count(Photo.id),
+                func.count(distinct(Observation.location_id)),
+                func.count(func.distinct(func.date(Photo.captured_at))),
+            ).join(Observation, Photo.observation_id == Observation.id)
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Photo.captured_at.between(start_date, end_date))
+        ).one()
+        total_photos = photo_stats[0] or 0
+        total_locations = photo_stats[1] or 0
+        unique_capture_days = photo_stats[2] or 0
 
-        # Pending Observations
-        query_pending = ct_session.query(func.count(Observation.id)).join(Location)\
-            .filter(Observation.series_start_time.between(start_date, end_date + timedelta(days=1)), ~Observation.photos.any(Photo.identifications.any()))\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_pending = query_pending.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_pending = query_pending.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_pending = query_pending.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_pending = query_pending.filter(text(qc_cond))
-        pending_observations = query_pending.scalar() or 0
+        # 3, 4 — identified observations and distinct species. The inner DISTINCT
+        # collapses the identifications fan-out once; counting over the result is
+        # then cheap, where two count(DISTINCT) over the raw join are not.
+        identified = _scope(
+            ct_session.query(
+                Observation.id.label('observation_id'),
+                Identification.species_id.label('species_id'),
+                Observation.status.in_(['completed', 'archived']).label('counts_for_species'),
+            ).join(Photo, Photo.observation_id == Observation.id)
+            .join(Identification, Identification.photo_id == Photo.id)
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Photo.captured_at.between(start_date, end_date),
+                    Identification.species_id > 0)
+        ).distinct().subquery()
 
-        # Unique Capture Days
-        query_capture_days = ct_session.query(func.count(func.distinct(func.date(Photo.captured_at))))\
-            .join(Observation).join(Location).filter(Photo.captured_at.between(start_date, end_date))\
-            .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            query_capture_days = query_capture_days.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            query_capture_days = query_capture_days.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        query_capture_days = query_capture_days.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            query_capture_days = query_capture_days.filter(text(qc_cond))
-        unique_capture_days = query_capture_days.scalar() or 0
+        species_stats = ct_session.query(
+            func.count(distinct(identified.c.observation_id)),
+            func.count(distinct(identified.c.species_id)).filter(
+                identified.c.counts_for_species),
+        ).one()
+        total_observations = species_stats[0] or 0
+        identified_species_count = species_stats[1] or 0
 
-        # Top Contributors
-        top_contributors_raw_query = ct_session.query(
-            Identification.user_id,
-            func.count(distinct(Photo.observation_id)).label('observation_count')
-        ).join(Photo, Identification.photo_id == Photo.id).join(Observation).join(Location)\
-        .filter(Photo.captured_at.between(start_date, end_date))\
-        .filter(inst_condition_orm).params(**inst_params)
-        if location_ids:
-            top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(location_ids))
-        if biotope_ids:
-            top_contributors_raw_query = top_contributors_raw_query.join(Location.biotopes).filter(Biotope.id.in_(biotope_ids))
-        top_contributors_raw_query = top_contributors_raw_query.filter(Location.id.in_(valid_location_id_subquery()))
-        if qc_cond:
-            top_contributors_raw_query = top_contributors_raw_query.filter(text(qc_cond))
-        top_contributors_raw = top_contributors_raw_query.group_by(Identification.user_id)\
-            .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
+        # 5 — series nobody has identified yet. Anti-join over observations
+        # alone, so it shares no base with the counters above.
+        pending_observations = _scope(
+            ct_session.query(func.count(Observation.id))
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Observation.series_start_time.between(start_date,
+                                                          end_date + timedelta(days=1)),
+                    ~Observation.photos.any(Photo.identifications.any()))
+        ).scalar() or 0
+
+        # 7 — top contributors. Grouped and limited, so it stays its own query.
+        top_contributors_raw = _scope(
+            ct_session.query(
+                Identification.user_id,
+                func.count(distinct(Photo.observation_id)).label('observation_count'),
+            ).join(Photo, Identification.photo_id == Photo.id)
+            .join(Observation, Photo.observation_id == Observation.id)
+            .join(Location, Observation.location_id == Location.id)
+            .filter(Photo.captured_at.between(start_date, end_date))
+        ).group_by(Identification.user_id)\
+         .order_by(func.count(distinct(Photo.observation_id)).desc()).limit(10).all()
         # --- END OF DB QUERIES ---
 
         top_contributors = []
