@@ -21,6 +21,7 @@ from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors, location_biotopes
 from .models import Deployment
+from .models import CameraTimestampProfile
 from app.models import User, Institution
 from .decorators import role_required
 from . import access as ct_access
@@ -2856,6 +2857,227 @@ def batch_uploaded_files(lang_code, batch_id):
         return jsonify({'error': _('Помилка отримання списку файлів')}), 500
     finally:
         close_ct_session()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# /upload-video — video clips, cut into frames in the browser.
+#
+# Camera traps shoot video as well as stills, and until now those observations
+# were simply lost: the module accepts JPEG only. A clip is cut at one frame per
+# second, so ten seconds of footage becomes a ten-photo series and 70 MB becomes
+# roughly 3 MB.
+#
+# The cutting happens in the browser (static/js/video_slice.js). For AVI/MJPG it
+# needs no decoding at all — every frame in the stream is already a complete
+# JPEG — which keeps whole clips off the wire and off a disk that is 93% full.
+# A format the browser cannot open is reported as unsupported rather than
+# half-processed.
+#
+# Frames then go through the ordinary process-single / finalize-batch-async path;
+# nothing on /upload or /upload-fast is touched. The one thing this page adds is
+# the capture time, which video frames cannot carry themselves. See
+# video_upload.py for why the server, and not the client, decides what it is.
+# ═════════════════════════════════════════════════════════════════════════════
+
+@camera_traps_bp.route('/upload-video', methods=['GET'])
+@login_required
+@role_required('manager')
+def upload_video(lang_code):
+    """Video upload page. Location selection mirrors upload_fast exactly."""
+    from .video_upload import list_profiles
+
+    ct_session = get_ct_session()
+    try:
+        form = UploadForm()
+        locations, locations_data, institutions_list = _accessible_locations(ct_session)
+
+        form.location.choices = (
+            [(-1, _('-- Будь ласка, виберіть --'))]
+            + [(loc.id, loc.name) for loc in locations]
+            + [(0, _('*** СТВОРИТИ НОВЕ МІСЦЕ ***'))]
+        )
+
+        # The shared helper leaves coordinates out; the map on this page needs
+        # them, so they are added here rather than widening the helper and
+        # touching the pages that already use it.
+        coordinates = {loc.id: (float(loc.latitude), float(loc.longitude))
+                       for loc in locations}
+        for entry in locations_data:
+            lat, lon = coordinates.get(entry['id'], (None, None))
+            entry['latitude'] = lat
+            entry['longitude'] = lon
+
+        from .background_tasks import get_storage_disk_usage
+        _free = (get_storage_disk_usage() or {}).get('free_bytes')
+        upload_allowed = (_free is None) or (_free >= MIN_UPLOAD_FREE_BYTES)
+
+        return render_template(
+            'upload_video.html',
+            form=form,
+            locations_data=locations_data,
+            institutions=institutions_list,
+            geoserver_url=current_app.config['GEOSERVER_URL'],
+            camera_profiles=list_profiles(),
+            upload_allowed=upload_allowed,
+            free_mb=int(_free // (1024 * 1024)) if _free is not None else None,
+            min_free_mb=MIN_UPLOAD_FREE_MB,
+        )
+    finally:
+        close_ct_session()
+
+
+def _frames_from_request(field='frames'):
+    """The frames of one clip, in order, as raw bytes."""
+    files = request.files.getlist(field)
+    if not files:
+        raise ValueError(_('Кадри не передано'))
+    return [f.read() for f in files]
+
+
+@camera_traps_bp.route('/api/video/calibrate', methods=['POST'])
+@login_required
+@role_required('manager')
+def video_calibrate(lang_code):
+    """Teach the reader a camera model from frames plus what the operator reads.
+
+    The operator types the date and time they can see; everything else — which
+    digits look like what, whether fields are zero-padded, whether seconds are
+    printed at all — is worked out from the frames.
+    """
+    from .video_upload import VideoUploadError, calibrate, save_profile
+
+    try:
+        name = (request.form.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': _('Вкажіть назву камери')}), 400
+
+        date_order = request.form.get('date_order', 'ymd')
+        hour_format = request.form.get('hour_format', '24')
+        year_width = int(request.form.get('year_width', 4))
+
+        stamps = []
+        for raw in request.form.getlist('timestamps'):
+            try:
+                stamps.append(datetime.fromisoformat(raw))
+            except ValueError:
+                return jsonify({'error': _('Невірний формат дати й часу')}), 400
+
+        clips = [_frames_from_request(f'clip{index}') for index in range(len(stamps))]
+
+        profile = calibrate(clips, stamps, date_order, hour_format,
+                            year_width, name=name)
+        profile_id = save_profile(name, profile, current_user.id)
+
+        # Digits this camera has not shown yet would read as unknown later, so
+        # the page can ask for one more clip now instead of letting a clip fail
+        # in the middle of a long upload.
+        missing = sorted(set('0123456789') - set(profile.templates))
+
+        return jsonify({
+            'success': True,
+            'profile_id': profile_id,
+            'layout': profile.layout,
+            'padded': profile.padded,
+            'has_seconds': profile.has_seconds,
+            'missing_digits': missing,
+        }), 200
+
+    except (VideoUploadError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        current_app.logger.exception(
+            f"[ct-video] calibrate FAILED user={getattr(current_user, 'id', '?')}")
+        return jsonify({'error': _('Помилка калібрування')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/video/read-clip', methods=['POST'])
+@login_required
+@role_required('manager')
+def video_read_clip(lang_code):
+    """Read one clip's capture time and hand back a signed token for its frames.
+
+    Nothing is written here. The page shows the operator the strip of pixels the
+    reading came from next to the date it produced, so a wrong date order is
+    caught by eye before any row reaches the database.
+    """
+    from .video_upload import (VideoUploadError, issue_clip_token, load_profile,
+                               read_clip)
+
+    try:
+        batch_id = request.form.get('batch_id')
+        filename = request.form.get('filename', '')
+        profile_id = request.form.get('profile_id')
+        if not batch_id or not profile_id:
+            return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
+
+        step_seconds = float(request.form.get('step_seconds', 1.0))
+        frames = _frames_from_request()
+
+        profile = load_profile(int(profile_id))
+        result = read_clip(frames, profile, filename, step_seconds)
+
+        result['token'] = issue_clip_token(
+            batch_id, filename, datetime.fromisoformat(result['start']),
+            step_seconds, result['card_index'])
+        result['success'] = True
+        return jsonify(result), 200
+
+    except (VideoUploadError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        current_app.logger.exception(
+            f"[ct-video] read-clip FAILED user={getattr(current_user, 'id', '?')} "
+            f"batch={request.form.get('batch_id')!r}")
+        return jsonify({'error': _('Помилка читання часу зйомки')}), 500
+    finally:
+        close_ct_session()
+
+
+@camera_traps_bp.route('/api/video/process-frame', methods=['POST'])
+@login_required
+@role_required('manager')
+def video_process_frame(lang_code):
+    """Store one frame of a clip, with the capture time its token dictates."""
+    from .video_upload import VideoUploadError, frame_capture_time
+
+    try:
+        location_id = request.form.get('location_id')
+        batch_id = request.form.get('batch_id')
+        token = request.form.get('token')
+        clip_name = request.form.get('filename', '')
+        uploaded_file = request.files.get('file')
+
+        if not all([location_id, batch_id, token, uploaded_file]):
+            return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
+
+        frame_index = int(request.form.get('frame_index', 0))
+        captured_at = frame_capture_time(token, batch_id, clip_name, frame_index)
+
+        from .utils import process_single_photo
+        photo_id = process_single_photo(
+            uploaded_file,
+            int(location_id),
+            current_user.id,
+            batch_id,
+            save_original=request.form.get('save_original', 'true').lower() == 'true',
+            captured_at_override=captured_at,
+        )
+
+        from .ai_runner import heartbeat_ai_pause
+        heartbeat_ai_pause()
+
+        return jsonify({'success': True, 'photo_id': photo_id,
+                        'captured_at': captured_at.isoformat()}), 200
+
+    except (VideoUploadError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        current_app.logger.exception(
+            f"[ct-video] process-frame FAILED user={getattr(current_user, 'id', '?')} "
+            f"batch={request.form.get('batch_id')!r}")
+        return jsonify({'error': _('Помилка обробки кадру')}), 500
 
 
 # ═════════════════════════════════════════════════════════════════════════════

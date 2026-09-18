@@ -870,3 +870,46 @@ class CleanupLog(CTBase):
 
     def __repr__(self):
         return f'<CleanupLog {self.id[:8]} {self.kind}/{self.status}>'
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CAMERA TIMESTAMP PROFILES (video upload)
+# ────────────────────────────────────────────────────────────────────────────
+# Camera-trap videos carry no usable capture time: the AVI header has no date
+# field, the frames have no EXIF, and the one MP4 family checked prints a
+# container creation date that was nine years wrong. The capture time survives
+# only as pixels the camera burns into the image, so it has to be read back by
+# matching glyph shapes.
+#
+# Those shapes differ per camera model, so they are learned once — see
+# video_timestamp.calibrate_profile — and kept here. A model is then calibrated
+# by one operator and read without questions by everyone afterwards, on either
+# project that mounts this submodule.
+# ════════════════════════════════════════════════════════════════════════════
+
+class CameraTimestampProfile(CTBase):
+    """Learned appearance of one camera model's burned-in timestamp."""
+    __tablename__ = 'camera_timestamp_profiles'
+
+    id          = Column(Integer, primary_key=True)
+    #: Operator-facing name, e.g. "Fujifilm AVI" or "Cuddeback".
+    name        = Column(String(100), nullable=False, unique=True)
+    #: Glyph templates plus the format the camera prints, as produced by
+    #: CameraProfile.to_json(). Kept as one document because it is written and
+    #: read whole and never queried by its parts.
+    profile_json = Column(JSONB, nullable=False)
+
+    #: Denormalised out of profile_json purely so the operator can see at a
+    #: glance which profile is which when picking one.
+    layout      = Column(String(10), nullable=False, default='bar')
+    date_order  = Column(String(3), nullable=False, default='ymd')
+    hour_format = Column(String(2), nullable=False, default='24')
+
+    created_by  = Column(Integer, nullable=False)   # users.id from the main database
+    created_at  = Column(DateTime, default=func.now(), nullable=False)
+    #: Bumped whenever a calibration is redone, so a camera whose firmware
+    #: changed its overlay can be re-taught without losing the audit trail.
+    updated_at  = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f'<CameraTimestampProfile {self.name} {self.layout}/{self.date_order}>'

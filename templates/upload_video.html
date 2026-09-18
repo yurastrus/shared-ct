@@ -1,0 +1,589 @@
+{% extends "ct_base.html" %}
+
+{# ──────────────────────────────────────────────────────────────────────────
+   Video upload (Beta).
+
+   Camera traps shoot video as well as stills, and those observations used to be
+   lost outright: the module accepts JPEG only. Here a clip is cut into frames at
+   one frame per second, so ten seconds of footage becomes a ten-photo series,
+   and 70 MB of AVI becomes roughly 3 MB of frames.
+
+   The cutting happens in this browser (static/js/video_slice.js) — nothing but
+   the frames is ever uploaded. /upload and /upload-fast are untouched.
+
+   The one thing video frames cannot bring with them is a capture time. There is
+   no EXIF in them and, in the one MP4 family checked, the container's own
+   creation date was nine years wrong. The time is therefore read back from the
+   pixels the camera burns into the image, which is why this page asks which
+   camera took the footage and what date format it prints.
+   ────────────────────────────────────────────────────────────────────────── #}
+
+{% block title %}{{ _('Завантаження відео фотопасток') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container-fluid py-3">
+
+  <h2 class="mb-1">{{ _('Завантаження відео') }}</h2>
+  <p class="text-muted">
+    {{ _('Відео ріжеться на кадри просто у браузері — на сервер їде лише кадри, а не саме відео.') }}
+  </p>
+
+  <input type="hidden" id="csrf-field" name="csrf_token" value="{{ csrf_token() }}"/>
+
+  {% if not upload_allowed %}
+    <div class="alert alert-danger">
+      {{ _('Завантаження недоступне: замало місця на диску.') }}
+      {% if free_mb is not none %}({{ free_mb }} {{ _('МБ') }}){% endif %}
+    </div>
+  {% endif %}
+
+  <div class="row g-3">
+
+    {# ── Step 1: where ─────────────────────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="card h-100">
+        <div class="card-header">{{ _('1. Місце') }}</div>
+        <div class="card-body">
+          <label for="location-select" class="form-label">{{ _('Локація') }}</label>
+          <select id="location-select" class="form-select">
+            <option value="">{{ _('-- Будь ласка, виберіть --') }}</option>
+            {% for loc in locations_data %}
+              <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {# ── Step 2: which camera ──────────────────────────────────────────── #}
+    <div class="col-lg-8">
+      <div class="card h-100">
+        <div class="card-header">{{ _('2. Камера і формат дати') }}</div>
+        <div class="card-body">
+
+          <div class="row g-2 align-items-end">
+            <div class="col-md-6">
+              <label for="profile-select" class="form-label">{{ _('Модель камери') }}</label>
+              <select id="profile-select" class="form-select">
+                <option value="">{{ _('-- Нова камера (потрібне калібрування) --') }}</option>
+                {% for p in camera_profiles %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                {{ _('Камеру калібрують один раз. Далі всі папки з неї читаються без питань.') }}
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label for="step-seconds" class="form-label">{{ _('Кадрів') }}</label>
+              <select id="step-seconds" class="form-select">
+                <option value="1" selected>{{ _('1 кадр / с') }}</option>
+                <option value="2">{{ _('1 кадр / 2 с') }}</option>
+                <option value="5">{{ _('1 кадр / 5 с') }}</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label for="save-original" class="form-label">{{ _('Оригінали') }}</label>
+              <select id="save-original" class="form-select">
+                <option value="true" selected>{{ _('Зберігати') }}</option>
+                <option value="false">{{ _('Лише мініатюри') }}</option>
+              </select>
+            </div>
+          </div>
+
+          {# The format selector is not a convenience. Read with a two-digit
+             year, "2001/07/2014:02:33" also spells a perfectly plausible
+             2020-01-07 20:14:02, and that ghost advances one second per frame
+             exactly like the real reading — no cross-check can expose it. Only
+             a declared format can. #}
+          <div id="calibration-panel" class="mt-3 border-top pt-3">
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label for="date-order" class="form-label">{{ _('Порядок дати') }}</label>
+                <select id="date-order" class="form-select">
+                  <option value="ymd" selected>{{ _('РРРР / ММ / ДД') }}</option>
+                  <option value="dmy">{{ _('ДД / ММ / РРРР') }}</option>
+                  <option value="mdy">{{ _('ММ / ДД / РРРР') }}</option>
+                  <option value="ydm">{{ _('РРРР / ДД / ММ') }}</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label for="year-width" class="form-label">{{ _('Рік') }}</label>
+                <select id="year-width" class="form-select">
+                  <option value="4" selected>{{ _('4 цифри (2026)') }}</option>
+                  <option value="2">{{ _('2 цифри (26)') }}</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label for="hour-format" class="form-label">{{ _('Час') }}</label>
+                <select id="hour-format" class="form-select">
+                  <option value="24" selected>{{ _('24 год') }}</option>
+                  <option value="12">{{ _('12 год') }}</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label for="camera-name" class="form-label">{{ _('Назва камери') }}</label>
+                <input type="text" id="camera-name" class="form-control"
+                       placeholder="{{ _('напр. Fujifilm AVI') }}">
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <label for="calib-files" class="form-label">
+                {{ _('Виберіть 2–3 відео цієї камери для калібрування') }}
+              </label>
+              <input type="file" id="calib-files" class="form-control" multiple accept="video/*">
+            </div>
+
+            <div id="calib-prompt" class="mt-3 d-none">
+              <p class="mb-2">
+                {{ _('Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди — визначиться саме.') }}
+              </p>
+              <div id="calib-rows"></div>
+              <button type="button" id="calib-run" class="btn btn-primary mt-2">
+                {{ _('Відкалібрувати') }}
+              </button>
+            </div>
+
+            <div id="calib-result" class="mt-2"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ── Step 3: the clips ─────────────────────────────────────────────── #}
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">{{ _('3. Відео') }}</div>
+        <div class="card-body">
+          <input type="file" id="video-files" class="form-control mb-3" multiple accept="video/*">
+
+          <button type="button" id="read-btn" class="btn btn-outline-primary" disabled>
+            {{ _('Прочитати час зйомки') }}
+          </button>
+          <button type="button" id="upload-btn" class="btn btn-success ms-2" disabled>
+            {{ _('Завантажити кадри') }}
+          </button>
+
+          <div class="progress mt-3" style="height: 22px;">
+            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <div id="progress-text" class="small text-muted mt-1"></div>
+
+          {# Showing the strip of pixels the reading came from, next to the date
+             it produced, is what lets a human catch a wrong date order before
+             anything reaches the database. #}
+          <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle" id="clips-table">
+              <thead>
+                <tr>
+                  <th>{{ _('Файл') }}</th>
+                  <th>{{ _('Що прочитано') }}</th>
+                  <th>{{ _('Час зйомки') }}</th>
+                  <th>{{ _('Кадрів') }}</th>
+                  <th>{{ _('Стан') }}</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{# The blueprint is mounted under /<lang_code>, so its static endpoint needs one
+   too — without it url_for raises a BuildError and the page never renders. #}
+<script src="{{ url_for('camera_traps.static', filename='js/video_slice.js', lang_code=g.lang_code) }}"></script>
+<script>
+$(function () {
+    'use strict';
+
+    const LANG = '{{ g.lang_code }}';
+    const csrfToken = $('#csrf-field').val();
+    const createBatchUrl = `/${LANG}/camera-traps/api/create-batch`;
+    const calibrateUrl   = `/${LANG}/camera-traps/api/video/calibrate`;
+    const readClipUrl    = `/${LANG}/camera-traps/api/video/read-clip`;
+    const processUrl     = `/${LANG}/camera-traps/api/video/process-frame`;
+    const finalizeUrl    = `/${LANG}/camera-traps/api/finalize-batch-async`;
+    const statusUrlBase  = `/${LANG}/camera-traps/api/batch-status/`;
+
+    const UPLOAD_ALLOWED = {{ 'true' if upload_allowed else 'false' }};
+    const PARALLEL = 4;
+    const POLL_MS = 2000;
+
+    const MSG_UNSUPPORTED = {{ _('Формат не підтримується браузером — це відео доведеться пропустити') | tojson }};
+    const MSG_UNREADABLE  = {{ _('Час зйомки не прочитано') | tojson }};
+    const MSG_READY       = {{ _('Готово') | tojson }};
+    const MSG_UPLOADED    = {{ _('Залито') | tojson }};
+
+    // Frames of each clip, kept in memory between reading and uploading so a
+    // clip is cut once rather than twice.
+    let clips = [];
+
+    function errorText(xhr, fallback) {
+        const body = xhr && xhr.responseJSON;
+        if (body && body.error) { return body.error; }
+        return fallback;
+    }
+
+    function stepSeconds() {
+        return parseFloat($('#step-seconds').val()) || 1;
+    }
+
+    // ─── Calibration ──────────────────────────────────────────────────────
+    // The operator reads the date off the frames; everything else follows from
+    // the frames themselves.
+
+    let calibClips = [];
+
+    $('#profile-select').on('change', function () {
+        const known = !!$(this).val();
+        $('#calibration-panel').toggleClass('d-none', known);
+        refreshButtons();
+    });
+
+    $('#calib-files').on('change', async function () {
+        const files = Array.from(this.files || []).slice(0, 3);
+        calibClips = [];
+        $('#calib-rows').empty();
+        $('#calib-result').empty();
+
+        for (const file of files) {
+            try {
+                const frames = await CTVideoSlicer.sliceVideo(file, stepSeconds());
+                calibClips.push({ file: file, frames: frames });
+            } catch (err) {
+                $('#calib-result').append(
+                    $('<div class="text-danger small"></div>')
+                        .text(file.name + ': ' + MSG_UNSUPPORTED));
+            }
+        }
+
+        calibClips.forEach(function (clip, index) {
+            const row = $(
+                '<div class="input-group input-group-sm mb-1">' +
+                '<span class="input-group-text"></span>' +
+                '<input type="datetime-local" step="1" class="form-control calib-stamp">' +
+                '</div>');
+            row.find('.input-group-text').text(clip.file.name);
+            $('#calib-rows').append(row);
+        });
+
+        $('#calib-prompt').toggleClass('d-none', calibClips.length === 0);
+    });
+
+    $('#calib-run').on('click', function () {
+        const stamps = $('.calib-stamp').map(function () { return $(this).val(); }).get();
+        if (stamps.some(function (s) { return !s; })) {
+            $('#calib-result').html(
+                $('<div class="text-danger small"></div>').text(
+                    {{ _('Заповніть дату й час для кожного відео') | tojson }}));
+            return;
+        }
+
+        const form = new FormData();
+        form.append('name', $('#camera-name').val() || '');
+        form.append('date_order', $('#date-order').val());
+        form.append('hour_format', $('#hour-format').val());
+        form.append('year_width', $('#year-width').val());
+        stamps.forEach(function (s) { form.append('timestamps', s); });
+        calibClips.forEach(function (clip, index) {
+            clip.frames.forEach(function (blob) {
+                form.append('clip' + index, blob, 'frame.jpg');
+            });
+        });
+
+        $('#calib-result').html($('<div class="small text-muted"></div>').text(
+            {{ _('Калібрування…') | tojson }}));
+
+        $.ajax({
+            url: calibrateUrl, method: 'POST', data: form,
+            processData: false, contentType: false,
+            headers: { 'X-CSRFToken': csrfToken }
+        }).done(function (resp) {
+            const option = $('<option></option>')
+                .attr('value', resp.profile_id)
+                .text($('#camera-name').val());
+            $('#profile-select').append(option).val(resp.profile_id).trigger('change');
+
+            let note = {{ _('Камеру збережено.') | tojson }};
+            if (resp.missing_digits && resp.missing_digits.length) {
+                // A digit this camera has not printed yet would read as unknown
+                // later, so it is better to ask for one more clip now than to
+                // have a clip fail halfway through a long upload.
+                note += ' ' + {{ _('Ще не траплялися цифри:') | tojson }} +
+                    ' ' + resp.missing_digits.join(', ') + '. ' +
+                    {{ _('Додайте ще одне відео для надійності.') | tojson }};
+            }
+            $('#calib-result').html($('<div class="text-success small"></div>').text(note));
+        }).fail(function (xhr) {
+            $('#calib-result').html($('<div class="text-danger small"></div>')
+                .text(errorText(xhr, {{ _('Помилка калібрування') | tojson }})));
+        });
+    });
+
+    // ─── Reading the clips ────────────────────────────────────────────────
+
+    $('#video-files').on('change', function () {
+        clips = Array.from(this.files || []).map(function (file) {
+            return { file: file, frames: null, reading: null, status: '' };
+        });
+        renderTable();
+        refreshButtons();
+    });
+
+    function renderTable() {
+        const body = $('#clips-table tbody').empty();
+        clips.forEach(function (clip, index) {
+            const row = $('<tr></tr>');
+            row.append($('<td></td>').text(clip.file.name));
+
+            const strip = $('<td></td>');
+            if (clip.reading && clip.reading.strip_png) {
+                strip.append($('<img class="img-fluid border" style="max-height:34px">')
+                    .attr('src', 'data:image/png;base64,' + clip.reading.strip_png));
+            }
+            row.append(strip);
+
+            const when = $('<td></td>');
+            if (clip.reading) {
+                when.text(clip.reading.start.replace('T', ' '));
+                if (!clip.reading.confident) {
+                    when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
+                        .text({{ _('перевірте') | tojson }}));
+                }
+                if (clip.reading.counter_matches === false) {
+                    when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
+                        .text({{ _('номер не збігся') | tojson }}));
+                }
+            }
+            row.append(when);
+
+            row.append($('<td></td>').text(clip.frames ? clip.frames.length : ''));
+            row.append($('<td class="small"></td>').text(clip.status));
+            body.append(row);
+        });
+    }
+
+    $('#read-btn').on('click', async function () {
+        const profileId = $('#profile-select').val();
+        const batchProbe = 'probe';
+        $(this).prop('disabled', true);
+
+        for (let index = 0; index < clips.length; index += 1) {
+            const clip = clips[index];
+            setProgress((index / clips.length) * 100,
+                {{ _('Нарізаю') | tojson }} + ' ' + clip.file.name);
+
+            try {
+                clip.frames = await CTVideoSlicer.sliceVideo(clip.file, stepSeconds());
+            } catch (err) {
+                clip.status = MSG_UNSUPPORTED;
+                renderTable();
+                continue;
+            }
+
+            const form = new FormData();
+            form.append('batch_id', batchProbe);
+            form.append('filename', clip.file.name);
+            form.append('profile_id', profileId);
+            form.append('step_seconds', stepSeconds());
+            // Only the frames needed to establish the time; the rest stay here
+            // until the clip is actually uploaded.
+            clip.frames.slice(0, 12).forEach(function (blob) {
+                form.append('frames', blob, 'frame.jpg');
+            });
+
+            try {
+                clip.reading = await $.ajax({
+                    url: readClipUrl, method: 'POST', data: form,
+                    processData: false, contentType: false,
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+                clip.status = MSG_READY;
+            } catch (xhr) {
+                clip.status = errorText(xhr, MSG_UNREADABLE);
+            }
+            renderTable();
+        }
+
+        setProgress(100, {{ _('Час зйомки прочитано') | tojson }});
+        refreshButtons();
+    });
+
+    // ─── Uploading ────────────────────────────────────────────────────────
+
+    $('#upload-btn').on('click', async function () {
+        const locationId = $('#location-select').val();
+        const profileId = $('#profile-select').val();
+        const ready = clips.filter(function (c) { return c.reading && c.frames; });
+        if (!ready.length) { return; }
+
+        $('#upload-btn, #read-btn').prop('disabled', true);
+        setProgress(2, {{ _('Підготовка…') | tojson }});
+
+        let batchId;
+        try {
+            const created = await $.ajax({
+                url: createBatchUrl, method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                data: JSON.stringify({
+                    location_id: parseInt(locationId, 10),
+                    total_files: ready.reduce(function (n, c) { return n + c.frames.length; }, 0)
+                })
+            });
+            batchId = created.batch_id;
+        } catch (xhr) {
+            setProgress(0, errorText(xhr, {{ _('Не вдалося створити batch') | tojson }}));
+            $('#upload-btn, #read-btn').prop('disabled', false);
+            return;
+        }
+
+        // The token was issued against the probe batch; re-read each clip
+        // against the real one so its frames cannot be attributed elsewhere.
+        let done = 0;
+        const total = ready.reduce(function (n, c) { return n + c.frames.length; }, 0);
+
+        for (const clip of ready) {
+            const form = new FormData();
+            form.append('batch_id', batchId);
+            form.append('filename', clip.file.name);
+            form.append('profile_id', profileId);
+            form.append('step_seconds', stepSeconds());
+            clip.frames.slice(0, 12).forEach(function (blob) {
+                form.append('frames', blob, 'frame.jpg');
+            });
+
+            let reading;
+            try {
+                reading = await $.ajax({
+                    url: readClipUrl, method: 'POST', data: form,
+                    processData: false, contentType: false,
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+            } catch (xhr) {
+                clip.status = errorText(xhr, MSG_UNREADABLE);
+                renderTable();
+                continue;
+            }
+
+            const jobs = [];
+            clip.frames.forEach(function (blob, frameIndex) {
+                // The title card is a black splash with the date on it and no
+                // wildlife in it. It gives the clip its time and must not be
+                // stored as a photo.
+                if (reading.card_index !== null && frameIndex === reading.card_index) {
+                    return;
+                }
+                jobs.push({ blob: blob, frameIndex: frameIndex });
+            });
+
+            await runPool(jobs, PARALLEL, async function (job) {
+                const body = new FormData();
+                body.append('location_id', locationId);
+                body.append('batch_id', batchId);
+                body.append('token', reading.token);
+                body.append('filename', clip.file.name);
+                body.append('frame_index', job.frameIndex);
+                body.append('save_original', $('#save-original').val());
+                body.append('file', job.blob,
+                    clip.file.name.replace(/\.[^.]+$/, '') + '_' +
+                    String(job.frameIndex).padStart(3, '0') + '.jpg');
+
+                try {
+                    await $.ajax({
+                        url: processUrl, method: 'POST', data: body,
+                        processData: false, contentType: false,
+                        headers: { 'X-CSRFToken': csrfToken }
+                    });
+                } catch (xhr) {
+                    clip.status = errorText(xhr, {{ _('Помилка кадру') | tojson }});
+                }
+                done += 1;
+                setProgress(5 + (done / total) * 80,
+                    done + ' / ' + total + ' ' + {{ _('кадрів') | tojson }});
+            });
+
+            if (!clip.status || clip.status === MSG_READY) {
+                clip.status = MSG_UPLOADED;
+            }
+            renderTable();
+        }
+
+        setProgress(88, {{ _('Групування серій…') | tojson }});
+        try {
+            await $.ajax({
+                url: finalizeUrl, method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                data: JSON.stringify({ batch_id: batchId })
+            });
+            await pollUntilDone(batchId);
+            setProgress(100, {{ _('Готово') | tojson }});
+        } catch (xhr) {
+            setProgress(88, errorText(xhr, {{ _('Помилка завершення') | tojson }}));
+        }
+        $('#read-btn').prop('disabled', false);
+    });
+
+    /** Run `worker` over `items` with at most `size` in flight. */
+    async function runPool(items, size, worker) {
+        let cursor = 0;
+        const runners = [];
+        for (let i = 0; i < Math.min(size, items.length); i += 1) {
+            runners.push((async function () {
+                while (cursor < items.length) {
+                    const item = items[cursor];
+                    cursor += 1;
+                    await worker(item);
+                }
+            }()));
+        }
+        await Promise.all(runners);
+    }
+
+    function pollUntilDone(batchId) {
+        return new Promise(function (resolve, reject) {
+            const timer = setInterval(function () {
+                $.get(statusUrlBase + batchId).done(function (status) {
+                    if (status.status === 'completed') {
+                        clearInterval(timer);
+                        resolve(status);
+                    } else if (status.status === 'failed') {
+                        clearInterval(timer);
+                        reject(new Error('failed'));
+                    }
+                }).fail(function () {
+                    clearInterval(timer);
+                    reject(new Error('status unavailable'));
+                });
+            }, POLL_MS);
+        });
+    }
+
+    function setProgress(percent, text) {
+        $('#progress-bar').css('width', Math.max(0, Math.min(100, percent)) + '%');
+        $('#progress-text').text(text || '');
+    }
+
+    function refreshButtons() {
+        const hasLocation = !!$('#location-select').val();
+        const hasProfile = !!$('#profile-select').val();
+        const hasFiles = clips.length > 0;
+        const hasReadings = clips.some(function (c) { return c.reading; });
+
+        $('#read-btn').prop('disabled', !(hasLocation && hasProfile && hasFiles));
+        $('#upload-btn').prop('disabled',
+            !(UPLOAD_ALLOWED && hasLocation && hasProfile && hasReadings));
+    }
+
+    $('#location-select').on('change', refreshButtons);
+    $('#profile-select').trigger('change');
+});
+</script>
+{% endblock %}

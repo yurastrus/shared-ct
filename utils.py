@@ -331,10 +331,17 @@ def create_upload_batch(location_id, user_id, total_files=None):
     finally:
         close_ct_session()
 
-def process_single_photo(file, location_id, user_id, batch_id, save_original=True):
+def process_single_photo(file, location_id, user_id, batch_id, save_original=True,
+                         captured_at_override=None):
     """
     Process a single file and save it with status 'uploaded'.
     Grouping into series happens later.
+
+    `captured_at_override` is for frames cut out of a video. Such a frame carries
+    no EXIF of its own — it never had any — but its capture time is known, having
+    been read from the timestamp the camera burns into the image (see
+    video_upload.py). Passing it here keeps video frames out of the 1900-01-01
+    placeholder path they would otherwise land in.
 
     Race-safety (fixed 2026-05-24, after /upload-fast Beta):
       • processed_files is updated with an atomic UPDATE ... RETURNING —
@@ -400,7 +407,7 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
             raise ValueError(f"Batch {batch_id} not found")
         photo_offset = int(new_count_row[0])
 
-        captured_at = extract_datetime_from_exif(file)
+        captured_at = captured_at_override or extract_datetime_from_exif(file)
 
         if captured_at is None:
             placeholder_date = datetime(1900, 1, 1)
