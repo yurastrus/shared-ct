@@ -2944,7 +2944,8 @@ def video_calibrate(lang_code):
     digits look like what, whether fields are zero-padded, whether seconds are
     printed at all — is worked out from the frames.
     """
-    from .video_upload import VideoUploadError, calibrate, save_profile
+    from .video_upload import (CODE_OVERLAY_UNSUPPORTED, VideoUploadError,
+                               calibrate, save_profile)
 
     try:
         name = (request.form.get('name') or '').strip()
@@ -2982,7 +2983,13 @@ def video_calibrate(lang_code):
             'missing_digits': missing,
         }), 200
 
-    except (VideoUploadError, ValueError) as e:
+    except VideoUploadError as e:
+        if getattr(e, 'code', None) == CODE_OVERLAY_UNSUPPORTED:
+            return jsonify({'error': _(
+                'Ця камера друкує час просто поверх зображення, а не на окремій '
+                'смузі. Така розкладка поки не читається.')}), 400
+        return jsonify({'error': str(e)}), 400
+    except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception:
         current_app.logger.exception(

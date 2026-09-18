@@ -55,7 +55,21 @@ MAX_FRAMES_TO_READ = 12
 
 
 class VideoUploadError(Exception):
-    """Something the operator needs to be told about in plain words."""
+    """Something the operator needs to be told about in plain words.
+
+    ``code`` names the cases the page has a translated message for. This module
+    stays free of the translation machinery -- it is shared between two projects
+    -- so it reports what happened and lets the route say it in the operator's
+    language.
+    """
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+#: This camera paints the time onto the picture instead of onto a strip.
+CODE_OVERLAY_UNSUPPORTED = 'overlay_unsupported'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -213,17 +227,60 @@ def calibrate(frames_by_clip: list[list[bytes]], timestamps: list[datetime],
     if not first:
         raise VideoUploadError('the first clip carried no frames')
 
-    try:
-        if vt.looks_like_title_card(first[0]):
-            cards = [vt.to_gray(frames[0]) for frames in frames_by_clip if frames]
+    if vt.looks_like_title_card(first[0]):
+        cards = [vt.to_gray(frames[0]) for frames in frames_by_clip if frames]
+        try:
             return vt.calibrate_card_profile(
                 cards, timestamps, date_order, hour_format, year_width, label=name)
+        except vt.TimestampError as exc:
+            raise VideoUploadError(str(exc))
 
+    bar_error = 'the frames do not match the given timestamp and date format'
+    try:
         return vt.calibrate_profile(
             first, timestamps[0], date_order, hour_format, year_width,
             step_seconds, label=name)
     except vt.TimestampError as exc:
-        raise VideoUploadError(str(exc))
+        bar_error = str(exc)
+
+    # No solid strip and no title card. Before reporting failure, check whether
+    # this is a camera that paints the time straight onto the picture: saying
+    # "the frames do not match the timestamp you typed" would send the operator
+    # hunting for a mistake they did not make.
+    try:
+        return vt.calibrate_overlay_profile(
+            first, timestamps[0], date_order, hour_format, year_width,
+            step_seconds, label=name)
+    except vt.TimestampError:
+        pass
+
+    if _writes_over_the_picture(first):
+        raise VideoUploadError(
+            'this camera writes the time over the picture instead of on a '
+            'strip, and that layout cannot be read yet',
+            code=CODE_OVERLAY_UNSUPPORTED)
+
+    raise VideoUploadError(str(bar_error))
+
+
+def _writes_over_the_picture(frames: list) -> bool:
+    """Does this clip carry outlined text drawn onto the photograph?
+
+    Used only to tell the operator something true when calibration fails. The
+    band is found reliably -- outlined glyphs stand out from any scene -- even
+    though the glyphs themselves cannot yet be read off one.
+    """
+    for hi, lo, k in vt._OVERLAY_PARAMS:
+        try:
+            bands = vt.find_overlay_bands(frames, hi, lo, k)
+        except vt.TimestampError:
+            continue
+        for band in bands:
+            # A timestamp is at least ten glyphs wherever it is written, so a
+            # band holding that many outlined shapes is text, not texture.
+            if len(vt.overlay_glyphs(frames[0], band, hi, lo, k)) >= 10:
+                return True
+    return False
 
 
 def read_clip(frames: list[bytes], profile: vt.CameraProfile,

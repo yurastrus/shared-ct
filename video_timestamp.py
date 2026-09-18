@@ -139,7 +139,41 @@ LAYOUT_BAR = 'bar'
 #: exists at all, has been observed to be years wrong.
 LAYOUT_CARD = 'card'
 
-LAYOUTS = (LAYOUT_BAR, LAYOUT_CARD)
+#: The timestamp painted straight onto the photograph, with no background strip
+#: behind it -- white glyphs with a dark outline. UOVision AVI and NVTIM MOV both
+#: do this, and it is common enough in the archives that it cannot be treated as
+#: an exotic case. Nothing that works for a solid bar works here: a bar is found
+#: by its flatness, and these rows are as varied as any photographed row.
+LAYOUT_OVERLAY = 'overlay'
+
+LAYOUTS = (LAYOUT_BAR, LAYOUT_CARD, LAYOUT_OVERLAY)
+
+#: Threshold triples tried when calibrating an overlay camera: the glyph has to
+#: be brighter than ``hi`` and have something darker than ``lo`` within ``k``
+#: pixels on both sides. No single triple suits every camera and exposure, so
+#: calibration tries them and keeps whichever one the operator's own reading can
+#: be reconciled with. See :func:`calibrate_overlay_profile`.
+_OVERLAY_PARAMS = (
+    (200, 110, 4), (215, 90, 5), (190, 120, 8), (200, 90, 6),
+    (180, 130, 6), (225, 80, 4), (170, 140, 10),
+)
+
+#: Bands offered per frame edge when looking for overlay text, best first.
+_OVERLAY_BAND_CANDIDATES = 3
+
+#: A row belongs to the line of text while it carries at least this share of the
+#: densest row's strokes.
+_OVERLAY_BAND_EDGE = 0.12
+
+#: A line of text never spans this much of the frame; without the cap a noisy
+#: clip grows one band over the whole picture.
+_OVERLAY_MAX_BAND = 0.12
+
+#: Share of the band's height a glyph must span. Scene speckle never does.
+_OVERLAY_MIN_GLYPH_HEIGHT = 0.4
+
+#: Pixels a glyph must have, which rejects the thinnest specks outright.
+_OVERLAY_MIN_GLYPH_PIXELS = 8
 
 # A title card is mostly background with a few lines of text; this is the share
 # of rows that must be flat for a frame to be treated as one.
@@ -392,6 +426,139 @@ def card_lines(gray: np.ndarray) -> list[tuple[int, int, bool]]:
     return [(a, b, dark) for a, b, dark in lines if b - a >= 6]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Overlay layout: text painted onto the photograph
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stroke_mask(gray: np.ndarray, hi: float, lo: float, k: int) -> np.ndarray:
+    """Pixels that look like a bright glyph stroke with a dark outline.
+
+    The outline is what separates these glyphs from the picture behind them.
+    Snow, sky and sunlit leaves are all bright, but only a drawn glyph is bright
+    *and* has something much darker within a couple of pixels on both sides. The
+    test is horizontal because strokes are mostly vertical; a stroke's own width
+    is what ``k`` has to span.
+    """
+    left = np.full(gray.shape, 255.0, dtype=np.float32)
+    right = np.full(gray.shape, 255.0, dtype=np.float32)
+    for shift in range(1, k + 1):
+        left = np.minimum(left, np.roll(gray, shift, axis=1))
+        right = np.minimum(right, np.roll(gray, -shift, axis=1))
+    return (gray > hi) & (left < lo) & (right < lo)
+
+
+def find_overlay_bands(frames: Sequence[np.ndarray], hi: float, lo: float,
+                       k: int, count: int = _OVERLAY_BAND_CANDIDATES
+                       ) -> list[tuple[int, int]]:
+    """Rows most likely to hold overlay text, best first.
+
+    Returns candidates rather than one answer on purpose. Scene texture can out-
+    score the text on a single clip, and there is no cheap way to be sure from
+    the pixels alone -- but there is a decisive test downstream: only the real
+    band can be reconciled with a timestamp. The caller tries them in order.
+    """
+    if not frames:
+        raise TimestampError('no frames supplied')
+
+    reference = np.median(np.stack(frames, axis=0), axis=0)
+    height = reference.shape[0]
+    density = stroke_mask(reference, hi, lo, k).sum(axis=1).astype(np.float64)
+
+    window = max(_MIN_BAR_HEIGHT, int(height * 0.06))
+    edge = max(window, int(height * _EDGE_FRACTION))
+
+    scored: list[tuple[float, tuple[int, int]]] = []
+    for top in range(0, height - window):
+        # Overlay text hugs an edge; the middle of the frame is the picture.
+        if edge <= top <= height - edge - window:
+            continue
+        scored.append((float(density[top:top + window].sum()), (top, top + window)))
+
+    scored.sort(key=lambda item: -item[0])
+
+    # Keep the best few, discarding windows that merely overlap the winner.
+    chosen: list[tuple[int, int]] = []
+    for _score, band in scored:
+        if all(band[1] <= other[0] or band[0] >= other[1] for other in chosen):
+            chosen.append(_fit_band(density, band, height))
+            if len(chosen) == count:
+                break
+    return chosen
+
+
+def _fit_band(density: np.ndarray, band: tuple[int, int],
+              height: int) -> tuple[int, int]:
+    """Grow a scored window until it covers the whole line of text.
+
+    The window that scores best is a fixed size and lands wherever the text is
+    densest, which is rarely where the text begins. Left as it is, it beheads the
+    tall digits or clips their feet, and a clipped glyph will not match a whole
+    one -- calibration then fails for a reason that looks like a wrong date.
+    """
+    top, bottom = band
+    peak = float(density[top:bottom].max()) if bottom > top else 0.0
+    if peak <= 0:
+        return band
+
+    floor = peak * _OVERLAY_BAND_EDGE
+    limit = max(band[1] - band[0], int(height * _OVERLAY_MAX_BAND)) 
+    while top > 0 and density[top - 1] >= floor and (bottom - top) < limit:
+        top -= 1
+    while bottom < height and density[bottom] >= floor and (bottom - top) < limit:
+        bottom += 1
+
+    # A glyph's outline sits just outside its ink, so a little padding keeps the
+    # shape whole without pulling in the picture.
+    top = max(0, top - 2)
+    bottom = min(height, bottom + 2)
+    return top, bottom
+
+
+def overlay_glyphs(gray: np.ndarray, band: tuple[int, int],
+                   hi: float, lo: float, k: int) -> list[np.ndarray]:
+    """Glyphs cut from a band of overlay text.
+
+    Cutting glyphs out of a photograph rather than off a solid strip means the
+    mask always carries some speckle -- a sunlit gap between leaves passes the
+    stroke test as readily as a stroke does. Those specks are discarded by the
+    one thing that reliably separates them from digits: a digit spans most of the
+    band's height, and a speck does not.
+    """
+    mask = stroke_mask(gray[band[0]:band[1]], hi, lo, k)
+    height = mask.shape[0]
+
+    out = []
+    for x0, x1 in _glyph_boxes(mask):
+        column = mask[:, x0:x1]
+        rows = np.where(column.any(axis=1))[0]
+        if rows.size == 0:
+            continue
+        if (rows[-1] - rows[0] + 1) < height * _OVERLAY_MIN_GLYPH_HEIGHT:
+            continue
+        if int(column.sum()) < _OVERLAY_MIN_GLYPH_PIXELS:
+            continue
+        glyph = _normalise_glyph(mask, x0, x1)
+        if glyph is not None:
+            out.append(glyph)
+    return out
+
+
+def read_overlay(gray: np.ndarray, profile: 'CameraProfile') -> str:
+    """Transcribe overlay text using the settings calibration settled on."""
+    bands = find_overlay_bands([gray], profile.overlay_hi, profile.overlay_lo,
+                               profile.overlay_k)
+    for band in bands:
+        glyphs = overlay_glyphs(gray, band, profile.overlay_hi,
+                                profile.overlay_lo, profile.overlay_k)
+        if len(glyphs) < _MIN_BAR_GLYPHS:
+            continue
+        chars = [profile.match(glyph)[0] for glyph in glyphs]
+        text = ''.join(chars)
+        if any(ch.isdigit() for ch in text):
+            return text
+    return ''
+
+
 def read_title_card(gray: np.ndarray, profile: 'CameraProfile') -> str:
     """Transcribe a title card, one line per output line."""
     out = []
@@ -429,6 +596,11 @@ class CameraProfile:
     padded: bool = True
     #: Does it print seconds at all? A title card usually does not.
     has_seconds: bool = True
+    #: Thresholds that isolate this camera's overlay glyphs from the picture
+    #: behind them. Settled by calibration, not guessed at read time.
+    overlay_hi: float = 200.0
+    overlay_lo: float = 110.0
+    overlay_k: int = 4
     dark_background: bool = True
     label: str = ''
 
@@ -449,6 +621,9 @@ class CameraProfile:
             'year_width': self.year_width,
             'padded': self.padded,
             'has_seconds': self.has_seconds,
+            'overlay_hi': self.overlay_hi,
+            'overlay_lo': self.overlay_lo,
+            'overlay_k': self.overlay_k,
             'dark_background': self.dark_background,
             'label': self.label,
         }
@@ -468,6 +643,9 @@ class CameraProfile:
             year_width=int(data.get('year_width', 4)),
             padded=bool(data.get('padded', True)),
             has_seconds=bool(data.get('has_seconds', True)),
+            overlay_hi=float(data.get('overlay_hi', 200.0)),
+            overlay_lo=float(data.get('overlay_lo', 110.0)),
+            overlay_k=int(data.get('overlay_k', 4)),
             dark_background=bool(data.get('dark_background', True)),
             label=data.get('label', ''),
         )
@@ -795,7 +973,8 @@ def _consistent(mapping: dict[int, str], used: dict[str, int],
 
 
 def _match_from(sequence: Sequence[int], position: int, expected: str,
-                index: int, mapping: dict[int, str], used: dict[str, int]):
+                index: int, mapping: dict[int, str], used: dict[str, int],
+                skips: int = 0):
     """Align ``expected`` against slots starting at ``position``.
 
     Digits must each take a slot. Separators may not: a colon or a dot is often
@@ -822,25 +1001,34 @@ def _match_from(sequence: Sequence[int], position: int, expected: str,
             if char.isdigit():
                 next_used[char] = cluster
             yield from _match_from(sequence, position + 1, expected,
-                                   index + 1, next_map, next_used)
+                                   index + 1, next_map, next_used, skips)
 
     if not char.isdigit():
         yield from _match_from(sequence, position, expected,
-                               index + 1, mapping, used)
+                               index + 1, mapping, used, skips)
+
+    # Overlay text is cut out of the photograph itself, so scene texture
+    # occasionally survives as an extra "glyph" wedged between two digits.
+    # A small budget for discarding such intruders keeps the run contiguous;
+    # the timestamp is long enough that the constraint stays decisive.
+    if skips > 0 and position < len(sequence):
+        yield from _match_from(sequence, position + 1, expected,
+                               index, mapping, used, skips - 1)
 
 
 def _find_run(sequence: Sequence[int], expected: str,
-              mapping: dict[int, str], used: dict[str, int]):
+              mapping: dict[int, str], used: dict[str, int], skips: int = 0):
     """Find where ``expected`` sits in one frame's slot sequence."""
     digits_needed = sum(1 for ch in expected if ch.isdigit())
     for start in range(0, max(1, len(sequence) - digits_needed + 1)):
         for local_map, local_used in _match_from(
-                sequence, start, expected, 0, dict(mapping), dict(used)):
+                sequence, start, expected, 0, dict(mapping), dict(used), skips):
             yield start, local_map, local_used
 
 
 def learn_templates(per_frame: Sequence[Sequence[np.ndarray]],
-                    expected: Sequence[str]) -> dict[str, np.ndarray]:
+                    expected: Sequence[str],
+                    skips: int = 0) -> dict[str, np.ndarray]:
     """Label glyph shapes by reconciling them with text known to be present.
 
     ``per_frame`` holds the glyphs cut from each image, ``expected`` the string
@@ -864,7 +1052,7 @@ def learn_templates(per_frame: Sequence[Sequence[np.ndarray]],
         if index == len(labels):
             return mapping
         for _start, next_map, next_used in _find_run(
-                labels[index], expected[index], mapping, used):
+                labels[index], expected[index], mapping, used, skips):
             result = resolve(index + 1, next_map, next_used)
             if result is not None:
                 return result
@@ -924,6 +1112,69 @@ def calibrate_profile(frames: Sequence, first_timestamp: datetime,
 # ─────────────────────────────────────────────────────────────────────────────
 # Reading a clip
 # ─────────────────────────────────────────────────────────────────────────────
+
+#: Extra glyph slots calibration may discard per frame when reconciling overlay
+#: text: scene texture cut out alongside the digits.
+_OVERLAY_SKIP_BUDGET = 6
+
+
+def calibrate_overlay_profile(frames: Sequence, first_timestamp: datetime,
+                              date_order: str, hour_format: str = '24',
+                              year_width: int = 4,
+                              step_seconds: float = 1.0,
+                              label: str = '') -> CameraProfile:
+    """Learn a camera that paints its timestamp onto the photograph.
+
+    There is no universal way to cut such glyphs out of a picture: thresholds
+    that isolate white-on-dark text over foliage let snow through, and thresholds
+    that reject snow lose the text at dusk. Rather than chase one setting that
+    suits every camera, this searches a small grid of them.
+
+    The search can afford to be crude because the test is not. The operator has
+    told us what the frames say, and the clock ticks, so a setting is either one
+    under which the whole expected sequence lays over the glyphs of every frame,
+    or it is wrong. Scene texture surviving as a stray glyph is tolerated up to a
+    small budget; anything more and the reconciliation fails, as it should.
+
+    Whatever setting succeeds is stored, so reading later costs one pass.
+    """
+    grays = [to_gray(f) for f in frames]
+    if len(grays) < 2:
+        raise TimestampError('calibration needs at least two frames')
+
+    expected = [
+        render_expected(first_timestamp + timedelta(seconds=round(i * step_seconds)),
+                        date_order, hour_format, year_width)
+        for i in range(len(grays))
+    ]
+
+    for hi, lo, k in _OVERLAY_PARAMS:
+        for band in find_overlay_bands(grays, hi, lo, k):
+            per_frame = [overlay_glyphs(g, band, hi, lo, k) for g in grays]
+            if any(len(glyphs) < _MIN_BAR_GLYPHS for glyphs in per_frame):
+                continue
+            try:
+                templates = learn_templates(per_frame, expected,
+                                            skips=_OVERLAY_SKIP_BUDGET)
+            except TimestampError:
+                continue
+
+            return CameraProfile(
+                templates=templates,
+                layout=LAYOUT_OVERLAY,
+                date_order=date_order,
+                hour_format=hour_format,
+                year_width=year_width,
+                dark_background=False,
+                overlay_hi=hi,
+                overlay_lo=lo,
+                overlay_k=k,
+                label=label,
+            )
+
+    raise TimestampError(
+        'the frames do not match the given timestamp and date format')
+
 
 def calibrate_card_profile(cards: Sequence, timestamps: Sequence[datetime],
                            date_order: str, hour_format: str = '12',
@@ -1066,24 +1317,39 @@ def read_clip(frames: Sequence, profile: CameraProfile,
     if profile.layout == LAYOUT_CARD:
         return _read_card_clip(grays, profile, step_seconds)
 
+    if profile.layout == LAYOUT_OVERLAY:
+        return _vote_over_frames(
+            [read_overlay(gray, profile) for gray in grays],
+            profile, step_seconds)
+
     bar = find_info_bar(grays)
 
-    # Each frame offers every timestamp that could be hiding in its bar. A wrong
-    # offer comes from the temperature or the counter, which do not advance one
-    # second per frame; the right one does. Voting on the implied clip start
-    # therefore separates them without trusting any single frame.
-    votes: dict[datetime, int] = {}
-    offers: list[list[datetime]] = []
-    sample_text = ''
-
-    for index, gray in enumerate(grays):
+    texts = []
+    for gray in grays:
         try:
             text, _worst = profile.read_bar(gray, bar)
         except TimestampError:
-            offers.append([])
-            continue
-        if index == 0:
-            sample_text = text
+            text = ''
+        texts.append(text)
+
+    return _vote_over_frames(texts, profile, step_seconds)
+
+
+def _vote_over_frames(texts: Sequence[str], profile: CameraProfile,
+                      step_seconds: float) -> ClipReading:
+    """Turn one transcription per frame into the clip's per-frame capture times.
+
+    Shared by every layout whose timestamp carries seconds. Each frame offers
+    every timestamp that could be hiding in its text; a wrong offer comes from a
+    temperature, a counter or a scrap of scene texture, none of which advance one
+    second per frame, while the right one does. Voting on the implied clip start
+    separates them without trusting any single frame.
+    """
+    votes: dict[datetime, int] = {}
+    offers: list[list[datetime]] = []
+    sample_text = texts[0] if texts else ''
+
+    for index, text in enumerate(texts):
         found = candidate_timestamps(text, profile.date_order,
                                      profile.hour_format, profile.year_width)
         offers.append(found)
@@ -1122,7 +1388,7 @@ def read_clip(frames: Sequence, profile: CameraProfile,
     return ClipReading(
         start=per_frame[0],
         per_frame=per_frame,
-        agreement=agreeing / len(grays),
+        agreement=agreeing / len(texts),
         sample_text=sample_text,
         counter=_extract_counter(sample_text),
     )
