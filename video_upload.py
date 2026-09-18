@@ -67,14 +67,21 @@ def _serializer() -> URLSafeTimedSerializer:
 
 
 def issue_clip_token(batch_id: str, filename: str, start: datetime,
-                     step_seconds: float, card_index: int | None) -> str:
-    """Sign a clip's established start time for the browser to carry back.
+                     step_seconds: float, card_index: int | None,
+                     offsets: list[int] | None = None) -> str:
+    """Sign a clip's established timing for the browser to carry back.
 
     The browser needs to label each frame it uploads, but it must not be able to
-    decide what the label says. Signing the start time here keeps the decision on
-    the server while leaving the bookkeeping on the client, and avoids a server
-    side session entry per clip that would have to be cleaned up after every
-    abandoned upload.
+    decide what the label says. Signing the timing here keeps the decision on the
+    server while leaving the bookkeeping on the client, and avoids a server-side
+    session entry per clip that would have to be cleaned up after every abandoned
+    upload.
+
+    ``offsets`` carries each sampled frame's own reading, in seconds from the
+    start. Without it the whole point of reading every frame separately would be
+    lost: a camera's overlay clock runs independently of the frame rate and does
+    skip a second now and then, and assuming a perfectly even step would record
+    every frame after such a skip one second early.
     """
     return _serializer().dumps({
         'b': batch_id,
@@ -82,6 +89,7 @@ def issue_clip_token(batch_id: str, filename: str, start: datetime,
         't': start.isoformat(timespec='seconds'),
         's': float(step_seconds),
         'c': card_index,
+        'o': offsets or [],
     })
 
 
@@ -107,6 +115,15 @@ def frame_capture_time(token: str, batch_id: str, filename: str,
         raise VideoUploadError('negative frame index')
 
     start = datetime.fromisoformat(data['t'])
+
+    # Frames that were read individually use their own reading. Beyond those --
+    # a long clip is only sampled far enough to establish its timing, not read
+    # end to end -- the even step is the best available answer and is accurate
+    # to the second or two that an overlay clock drifts.
+    offsets = data.get('o') or []
+    if frame_index < len(offsets):
+        return start + timedelta(seconds=int(offsets[frame_index]))
+
     return start + timedelta(seconds=round(frame_index * float(data['s'])))
 
 
@@ -237,6 +254,8 @@ def read_clip(frames: list[bytes], profile: vt.CameraProfile,
 
     return {
         'start': reading.start.isoformat(timespec='seconds'),
+        'offsets': [int((stamp - reading.start).total_seconds())
+                    for stamp in reading.per_frame],
         'agreement': round(reading.agreement, 2),
         'confident': reading.confident,
         'card_index': reading.card_index,

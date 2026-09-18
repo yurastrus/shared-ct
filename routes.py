@@ -3020,7 +3020,7 @@ def video_read_clip(lang_code):
 
         result['token'] = issue_clip_token(
             batch_id, filename, datetime.fromisoformat(result['start']),
-            step_seconds, result['card_index'])
+            step_seconds, result['card_index'], result['offsets'])
         result['success'] = True
         return jsonify(result), 200
 

@@ -4,13 +4,8 @@
 from flask import Blueprint
 
 # Blueprint name doubles as the templates folder name.
-# static_folder serves this module's own assets (currently the browser-side
-# video slicer used by /upload-video). Namespaced under the blueprint so it
-# cannot collide with the host application's /static.
 camera_traps_bp = Blueprint('camera_traps', __name__,
-                            template_folder='templates',
-                            static_folder='static',
-                            static_url_path='/camera-traps-static')
+                            template_folder='templates')
 
 from .domain import ct_domain, _ as _ct
 

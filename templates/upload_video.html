@@ -20,175 +20,195 @@
 
 {% block title %}{{ _('Завантаження відео фотопасток') }}{% endblock %}
 
-{% block ct_content %}
-<div class="container-fluid py-3">
+{# Bootstrap is not loaded by the base layout; every CT page that uses its
+   classes pulls it in here, exactly as upload_fast.html does. #}
+{% block ct_head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  /* The strip of pixels each reading came from, shown beside the parsed date.
+     Pixel-exact on purpose: it is evidence for the operator's eye, not
+     decoration, so smoothing it would defeat the point. */
+  .clip-strip { max-height: 36px; max-width: 100%; image-rendering: pixelated;
+                border: 1px solid var(--border-color); border-radius: 3px;
+                background: #000; }
+  #clips-table td { vertical-align: middle; font-size: 0.85rem; }
+  .video-grid { display: grid; grid-template-columns: 420px 1fr; gap: 12px;
+                align-items: start; }
+  @media (max-width: 992px) { .video-grid { grid-template-columns: 1fr; } }
+  .video-hint { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
+  .field-row { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+  .field-row > label { font-size: 0.8rem; font-weight: 500;
+                       color: var(--text-secondary); margin: 0; }
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+                gap: 8px 12px; }
+  .calib-block { border-top: 1px solid var(--border-color); margin-top: 10px;
+                 padding-top: 10px; }
+</style>
+{% endblock %}
 
-  <h2 class="mb-1">{{ _('Завантаження відео') }}</h2>
-  <p class="text-muted">
+{% block ct_content %}
+<input type="hidden" id="csrf-field" name="csrf_token" value="{{ csrf_token() }}"/>
+
+<div class="container-fluid px-3 py-2">
+
+  <div class="d-flex align-items-center mb-2">
+    <h4 class="mb-0" style="font-size:1.2rem;">{{ _('Завантаження відео з фотопасток') }}</h4>
+  </div>
+  <p class="video-hint mb-2">
     {{ _('Відео ріжеться на кадри просто у браузері — на сервер їде лише кадри, а не саме відео.') }}
   </p>
 
-  <input type="hidden" id="csrf-field" name="csrf_token" value="{{ csrf_token() }}"/>
-
   {% if not upload_allowed %}
-    <div class="alert alert-danger">
+    <div class="alert alert-danger py-2">
       {{ _('Завантаження недоступне: замало місця на диску.') }}
       {% if free_mb is not none %}({{ free_mb }} {{ _('МБ') }}){% endif %}
     </div>
   {% endif %}
 
-  <div class="row g-3">
+  <div class="video-grid">
 
-    {# ── Step 1: where ─────────────────────────────────────────────────── #}
-    <div class="col-lg-4">
-      <div class="card h-100">
-        <div class="card-header">{{ _('1. Місце') }}</div>
-        <div class="card-body">
-          <label for="location-select" class="form-label">{{ _('Локація') }}</label>
-          <select id="location-select" class="form-select">
-            <option value="">{{ _('-- Будь ласка, виберіть --') }}</option>
-            {% for loc in locations_data %}
-              <option value="{{ loc.id }}">{{ loc.name }}</option>
+    {# ── Left column: where and which camera ───────────────────────────── #}
+    <div class="d-flex flex-column gap-2">
+
+      <div class="step-card">
+        <div class="step-title"><span class="step-num">1</span>{{ _('Локація') }}</div>
+        <select id="video-location-select" class="form-select">
+          <option value="">{{ _('-- Будь ласка, виберіть --') }}</option>
+          {% for loc in locations_data %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="step-card">
+        <div class="step-title"><span class="step-num">2</span>{{ _('Камера і формат дати') }}</div>
+
+        <div class="field-row">
+          <label for="profile-select">{{ _('Модель камери') }}</label>
+          <select id="profile-select" class="form-select">
+            <option value="">{{ _('-- Нова камера (потрібне калібрування) --') }}</option>
+            {% for p in camera_profiles %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
             {% endfor %}
           </select>
+          <div class="video-hint">
+            {{ _('Камеру калібрують один раз. Далі всі папки з неї читаються без питань.') }}
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div class="field-row">
+            <label for="step-seconds">{{ _('Кадрів') }}</label>
+            <select id="step-seconds" class="form-select">
+              <option value="1" selected>{{ _('1 кадр / с') }}</option>
+              <option value="2">{{ _('1 кадр / 2 с') }}</option>
+              <option value="5">{{ _('1 кадр / 5 с') }}</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <label for="save-original">{{ _('Оригінали') }}</label>
+            <select id="save-original" class="form-select">
+              <option value="true" selected>{{ _('Зберігати') }}</option>
+              <option value="false">{{ _('Лише мініатюри') }}</option>
+            </select>
+          </div>
+        </div>
+
+        {# The format selector is not a convenience. Read with a two-digit year,
+           "2001/07/2014:02:33" also spells a perfectly plausible 2020-01-07
+           20:14:02, and that ghost advances one second per frame exactly like
+           the real reading — no cross-check can expose it. Only a declared
+           format can. #}
+        <div id="calibration-panel" class="calib-block">
+          <div class="field-grid">
+            <div class="field-row">
+              <label for="date-order">{{ _('Порядок дати') }}</label>
+              <select id="date-order" class="form-select">
+                <option value="ymd" selected>{{ _('РРРР / ММ / ДД') }}</option>
+                <option value="dmy">{{ _('ДД / ММ / РРРР') }}</option>
+                <option value="mdy">{{ _('ММ / ДД / РРРР') }}</option>
+                <option value="ydm">{{ _('РРРР / ДД / ММ') }}</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="year-width">{{ _('Рік') }}</label>
+              <select id="year-width" class="form-select">
+                <option value="4" selected>{{ _('4 цифри (2026)') }}</option>
+                <option value="2">{{ _('2 цифри (26)') }}</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="hour-format">{{ _('Час') }}</label>
+              <select id="hour-format" class="form-select">
+                <option value="24" selected>{{ _('24 год') }}</option>
+                <option value="12">{{ _('12 год') }}</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="camera-name">{{ _('Назва камери') }}</label>
+              <input type="text" id="camera-name" class="form-control"
+                     placeholder="{{ _('напр. Fujifilm AVI') }}">
+            </div>
+          </div>
+
+          <div class="field-row mt-2">
+            <label for="calib-files">{{ _('Виберіть 2–3 відео цієї камери для калібрування') }}</label>
+            <input type="file" id="calib-files" class="form-control" multiple accept="video/*">
+          </div>
+
+          <div id="calib-prompt" class="d-none mt-2">
+            <p class="video-hint mb-2">
+              {{ _('Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди — визначиться саме.') }}
+            </p>
+            <div id="calib-rows"></div>
+            <button type="button" id="calib-run" class="btn btn-primary btn-sm mt-2">
+              {{ _('Відкалібрувати') }}
+            </button>
+          </div>
+
+          <div id="calib-result" class="mt-2"></div>
         </div>
       </div>
     </div>
 
-    {# ── Step 2: which camera ──────────────────────────────────────────── #}
-    <div class="col-lg-8">
-      <div class="card h-100">
-        <div class="card-header">{{ _('2. Камера і формат дати') }}</div>
-        <div class="card-body">
+    {# ── Right column: the clips themselves ────────────────────────────── #}
+    <div class="step-card">
+      <div class="step-title"><span class="step-num">3</span>{{ _('Відео') }}</div>
 
-          <div class="row g-2 align-items-end">
-            <div class="col-md-6">
-              <label for="profile-select" class="form-label">{{ _('Модель камери') }}</label>
-              <select id="profile-select" class="form-select">
-                <option value="">{{ _('-- Нова камера (потрібне калібрування) --') }}</option>
-                {% for p in camera_profiles %}
-                  <option value="{{ p.id }}">{{ p.name }}</option>
-                {% endfor %}
-              </select>
-              <div class="form-text">
-                {{ _('Камеру калібрують один раз. Далі всі папки з неї читаються без питань.') }}
-              </div>
-            </div>
-            <div class="col-md-3">
-              <label for="step-seconds" class="form-label">{{ _('Кадрів') }}</label>
-              <select id="step-seconds" class="form-select">
-                <option value="1" selected>{{ _('1 кадр / с') }}</option>
-                <option value="2">{{ _('1 кадр / 2 с') }}</option>
-                <option value="5">{{ _('1 кадр / 5 с') }}</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="save-original" class="form-label">{{ _('Оригінали') }}</label>
-              <select id="save-original" class="form-select">
-                <option value="true" selected>{{ _('Зберігати') }}</option>
-                <option value="false">{{ _('Лише мініатюри') }}</option>
-              </select>
-            </div>
-          </div>
-
-          {# The format selector is not a convenience. Read with a two-digit
-             year, "2001/07/2014:02:33" also spells a perfectly plausible
-             2020-01-07 20:14:02, and that ghost advances one second per frame
-             exactly like the real reading — no cross-check can expose it. Only
-             a declared format can. #}
-          <div id="calibration-panel" class="mt-3 border-top pt-3">
-            <div class="row g-2">
-              <div class="col-md-4">
-                <label for="date-order" class="form-label">{{ _('Порядок дати') }}</label>
-                <select id="date-order" class="form-select">
-                  <option value="ymd" selected>{{ _('РРРР / ММ / ДД') }}</option>
-                  <option value="dmy">{{ _('ДД / ММ / РРРР') }}</option>
-                  <option value="mdy">{{ _('ММ / ДД / РРРР') }}</option>
-                  <option value="ydm">{{ _('РРРР / ДД / ММ') }}</option>
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label for="year-width" class="form-label">{{ _('Рік') }}</label>
-                <select id="year-width" class="form-select">
-                  <option value="4" selected>{{ _('4 цифри (2026)') }}</option>
-                  <option value="2">{{ _('2 цифри (26)') }}</option>
-                </select>
-              </div>
-              <div class="col-md-2">
-                <label for="hour-format" class="form-label">{{ _('Час') }}</label>
-                <select id="hour-format" class="form-select">
-                  <option value="24" selected>{{ _('24 год') }}</option>
-                  <option value="12">{{ _('12 год') }}</option>
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label for="camera-name" class="form-label">{{ _('Назва камери') }}</label>
-                <input type="text" id="camera-name" class="form-control"
-                       placeholder="{{ _('напр. Fujifilm AVI') }}">
-              </div>
-            </div>
-
-            <div class="mt-3">
-              <label for="calib-files" class="form-label">
-                {{ _('Виберіть 2–3 відео цієї камери для калібрування') }}
-              </label>
-              <input type="file" id="calib-files" class="form-control" multiple accept="video/*">
-            </div>
-
-            <div id="calib-prompt" class="mt-3 d-none">
-              <p class="mb-2">
-                {{ _('Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди — визначиться саме.') }}
-              </p>
-              <div id="calib-rows"></div>
-              <button type="button" id="calib-run" class="btn btn-primary mt-2">
-                {{ _('Відкалібрувати') }}
-              </button>
-            </div>
-
-            <div id="calib-result" class="mt-2"></div>
-          </div>
-
-        </div>
+      <div class="field-row">
+        <input type="file" id="video-files" class="form-control" multiple accept="video/*">
       </div>
-    </div>
 
-    {# ── Step 3: the clips ─────────────────────────────────────────────── #}
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header">{{ _('3. Відео') }}</div>
-        <div class="card-body">
-          <input type="file" id="video-files" class="form-control mb-3" multiple accept="video/*">
+      <div class="d-flex gap-2 flex-wrap">
+        <button type="button" id="video-read-btn" class="btn btn-outline-primary btn-sm" disabled>
+          {{ _('Прочитати час зйомки') }}
+        </button>
+        <button type="button" id="video-upload-btn" class="btn btn-success btn-sm" disabled>
+          {{ _('Завантажити кадри') }}
+        </button>
+      </div>
 
-          <button type="button" id="read-btn" class="btn btn-outline-primary" disabled>
-            {{ _('Прочитати час зйомки') }}
-          </button>
-          <button type="button" id="upload-btn" class="btn btn-success ms-2" disabled>
-            {{ _('Завантажити кадри') }}
-          </button>
+      <div class="progress mt-2" style="height:20px;">
+        <div id="video-progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <div id="video-progress-text" class="video-hint"></div>
 
-          <div class="progress mt-3" style="height: 22px;">
-            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
-          </div>
-          <div id="progress-text" class="small text-muted mt-1"></div>
-
-          {# Showing the strip of pixels the reading came from, next to the date
-             it produced, is what lets a human catch a wrong date order before
-             anything reaches the database. #}
-          <div class="table-responsive mt-3">
-            <table class="table table-sm align-middle" id="clips-table">
-              <thead>
-                <tr>
-                  <th>{{ _('Файл') }}</th>
-                  <th>{{ _('Що прочитано') }}</th>
-                  <th>{{ _('Час зйомки') }}</th>
-                  <th>{{ _('Кадрів') }}</th>
-                  <th>{{ _('Стан') }}</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
+      {# Showing the strip of pixels the reading came from, next to the date it
+         produced, is what lets a human catch a wrong date order before anything
+         reaches the database. #}
+      <div class="table-responsive mt-2">
+        <table class="table table-sm" id="clips-table">
+          <thead>
+            <tr>
+              <th>{{ _('Файл') }}</th>
+              <th>{{ _('Що прочитано') }}</th>
+              <th>{{ _('Час зйомки') }}</th>
+              <th>{{ _('Кадрів') }}</th>
+              <th>{{ _('Стан') }}</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
@@ -197,9 +217,10 @@
 {% endblock %}
 
 {% block scripts %}
-{# The blueprint is mounted under /<lang_code>, so its static endpoint needs one
-   too — without it url_for raises a BuildError and the page never renders. #}
-<script src="{{ url_for('camera_traps.static', filename='js/video_slice.js', lang_code=g.lang_code) }}"></script>
+{# jQuery is not loaded by the base layout either; each CT page pulls in what it
+   uses. Without it nothing on this page runs at all. #}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/video_slice.js', lang_code=g.lang_code) }}?v=1"></script>
 <script>
 $(function () {
     'use strict';
@@ -371,7 +392,7 @@ $(function () {
         });
     }
 
-    $('#read-btn').on('click', async function () {
+    $('#video-read-btn').on('click', async function () {
         const profileId = $('#profile-select').val();
         const batchProbe = 'probe';
         $(this).prop('disabled', true);
@@ -419,13 +440,13 @@ $(function () {
 
     // ─── Uploading ────────────────────────────────────────────────────────
 
-    $('#upload-btn').on('click', async function () {
-        const locationId = $('#location-select').val();
+    $('#video-upload-btn').on('click', async function () {
+        const locationId = $('#video-location-select').val();
         const profileId = $('#profile-select').val();
         const ready = clips.filter(function (c) { return c.reading && c.frames; });
         if (!ready.length) { return; }
 
-        $('#upload-btn, #read-btn').prop('disabled', true);
+        $('#video-upload-btn, #video-read-btn').prop('disabled', true);
         setProgress(2, {{ _('Підготовка…') | tojson }});
 
         let batchId;
@@ -441,7 +462,7 @@ $(function () {
             batchId = created.batch_id;
         } catch (xhr) {
             setProgress(0, errorText(xhr, {{ _('Не вдалося створити batch') | tojson }}));
-            $('#upload-btn, #read-btn').prop('disabled', false);
+            $('#video-upload-btn, #video-read-btn').prop('disabled', false);
             return;
         }
 
@@ -492,9 +513,7 @@ $(function () {
                 body.append('filename', clip.file.name);
                 body.append('frame_index', job.frameIndex);
                 body.append('save_original', $('#save-original').val());
-                body.append('file', job.blob,
-                    clip.file.name.replace(/\.[^.]+$/, '') + '_' +
-                    String(job.frameIndex).padStart(3, '0') + '.jpg');
+                body.append('file', job.blob, frameFileName(clip, reading, job.frameIndex));
 
                 try {
                     await $.ajax({
@@ -528,8 +547,34 @@ $(function () {
         } catch (xhr) {
             setProgress(88, errorText(xhr, {{ _('Помилка завершення') | tojson }}));
         }
-        $('#read-btn').prop('disabled', false);
+        $('#video-read-btn').prop('disabled', false);
     });
+
+    /**
+     * Name a frame after the moment it was taken, not after its position.
+     *
+     * The pipeline refuses duplicates on (location, file name, capture time),
+     * which is what stops the same clip being uploaded twice. Numbering frames
+     * by position would quietly defeat that: re-run the same clip at one frame
+     * every two seconds and the frame from t+2s arrives as "_001" instead of
+     * "_002", a name the database has not seen, so a second photo of the very
+     * same second is stored. Naming by the clock makes the key identical no
+     * matter which sampling step produced the frame.
+     */
+    function frameFileName(clip, reading, frameIndex) {
+        const stem = clip.file.name.replace(/\.[^.]+$/, '');
+        const taken = new Date(reading.start);
+        // The same offsets the server signed into the token, so the name and the
+        // stored capture time can never disagree.
+        const offsets = reading.offsets || [];
+        const shift = frameIndex < offsets.length
+            ? offsets[frameIndex]
+            : Math.round(frameIndex * stepSeconds());
+        taken.setSeconds(taken.getSeconds() + shift);
+        const pad = (n) => String(n).padStart(2, '0');
+        return stem + '_' + pad(taken.getHours()) + pad(taken.getMinutes()) +
+            pad(taken.getSeconds()) + '.jpg';
+    }
 
     /** Run `worker` over `items` with at most `size` in flight. */
     async function runPool(items, size, worker) {
@@ -567,22 +612,22 @@ $(function () {
     }
 
     function setProgress(percent, text) {
-        $('#progress-bar').css('width', Math.max(0, Math.min(100, percent)) + '%');
-        $('#progress-text').text(text || '');
+        $('#video-progress-bar').css('width', Math.max(0, Math.min(100, percent)) + '%');
+        $('#video-progress-text').text(text || '');
     }
 
     function refreshButtons() {
-        const hasLocation = !!$('#location-select').val();
+        const hasLocation = !!$('#video-location-select').val();
         const hasProfile = !!$('#profile-select').val();
         const hasFiles = clips.length > 0;
         const hasReadings = clips.some(function (c) { return c.reading; });
 
-        $('#read-btn').prop('disabled', !(hasLocation && hasProfile && hasFiles));
-        $('#upload-btn').prop('disabled',
+        $('#video-read-btn').prop('disabled', !(hasLocation && hasProfile && hasFiles));
+        $('#video-upload-btn').prop('disabled',
             !(UPLOAD_ALLOWED && hasLocation && hasProfile && hasReadings));
     }
 
-    $('#location-select').on('change', refreshButtons);
+    $('#video-location-select').on('change', refreshButtons);
     $('#profile-select').trigger('change');
 });
 </script>
