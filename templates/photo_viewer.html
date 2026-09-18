@@ -39,6 +39,16 @@
                     <strong>{{ _('Час:') }}</strong> {{ photo.captured_at.strftime('%d.%m.%Y %H:%M:%S') }} |
                     <strong>{{ _('ID:') }}</strong> {{ photo.id }}
                 </div>
+
+                {# Owner of the image — shown under every frame, not just in the
+                   gallery: this is the full-size view people download from. #}
+                <div class="photo-copyright">
+                    {% if rights_holder %}
+                        {{ _('© Фото належать') }} {{ rights_holder }}. {{ _('Копіювання і поширення заборонене.') }}
+                    {% else %}
+                        {{ _('© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.') }}
+                    {% endif %}
+                </div>
             </div>
         </div>
 

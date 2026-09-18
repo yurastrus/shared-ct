@@ -139,6 +139,7 @@
                         </button>
                         
                         <div id="photo-info" class="photo-info"></div>
+                        <div id="photo-copyright" class="photo-copyright"></div>
 
                         <!-- Автопрокрутка серії (клієнтський плеєр на тумбнейлах) -->
                         <div id="autoplay-controls" class="autoplay-controls" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; font-size:0.9rem;">
@@ -379,7 +380,10 @@ $(document).ready(function() {
         congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
         noReviewSeries: "{{ _('Немає серій для перегляду, які б відповідали критеріям.') }}",
         counterText: "{{ _('Залишилось вам:') }}",
-        alreadyIdentifiedTitle: "{{ _('У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою думку.') }}"
+        alreadyIdentifiedTitle: "{{ _('У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою думку.') }}",
+        rightsPrefix: "{{ _('© Фото належать') }}",
+        rightsSuffix: "{{ _('Копіювання і поширення заборонене.') }}",
+        rightsGeneric: "{{ _('© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.') }}"
     };
 
     // Render the "Залишилось вам: N (M)" counter from the current state.
@@ -678,6 +682,13 @@ $(document).ready(function() {
             `${translations.time}: ${photo.captured_at} | ` +
             `${translations.photo} ${currentPhotoIndex + 1} / ${photoCount}`
         );
+
+        // Owner of the photo, named under every frame: the images belong to the
+        // institution running the camera, not to whoever is identifying them.
+        const rightsHolder = currentObservation.rights_holder;
+        $('#photo-copyright').text(rightsHolder
+            ? `${translations.rightsPrefix} ${rightsHolder}. ${translations.rightsSuffix}`
+            : translations.rightsGeneric);
 
         prevBtn.toggle(currentPhotoIndex > 0);
         nextBtn.toggle(currentPhotoIndex < photoCount - 1);

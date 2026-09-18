@@ -1357,6 +1357,17 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     transition: color 0.3s ease;
 }
 
+/* Copyright notice under a photo. Photos belong to the institution that runs
+   the camera; every page that displays one has to say so. Deliberately quiet
+   (small, secondary colour) but always present — not a hover tooltip. */
+.photo-copyright {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    opacity: 0.85;
+}
+
 /* Navigation arrows — hidden by default, shown via JS in gallery/identification */
 .nav-arrow {
     position: absolute;

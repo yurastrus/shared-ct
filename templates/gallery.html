@@ -58,6 +58,7 @@
                 <button type="button" id="next-btn" class="nav-arrow">&gt;</button>
                 
                 <div id="photo-info" class="photo-info"></div>
+                <div id="photo-copyright" class="photo-copyright"></div>
             </div>
 
             <!-- Right column: info and controls -->
@@ -128,6 +129,7 @@ $(document).ready(function() {
     const galleryWrapper = $('#gallery-wrapper');
     const photoDisplay = $('#photo-display');
     const photoInfo = $('#photo-info');
+    const photoCopyright = $('#photo-copyright');
     const photoDetailsContent = $('#photo-details-content');
     const prevBtn = $('#prev-btn');
     const nextBtn = $('#next-btn');
@@ -219,6 +221,13 @@ $(document).ready(function() {
             <strong>{{ _('Час:') }}</strong> ${photo.captured_at} | 
             <strong>{{ _('Фото') }}</strong> ${currentPhotoIndex + 1} / ${photoCount}
         `);
+
+        // Copyright notice: the photo belongs to the institution that runs the
+        // camera, so the owner is named under every frame.
+        const rightsHolder = photo.rights_holder;
+        photoCopyright.text(rightsHolder
+            ? '{{ _("© Фото належать") }} ' + rightsHolder + '. {{ _("Копіювання і поширення заборонене.") }}'
+            : '{{ _("© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.") }}');
 
         // Update detailed info.
         photoDetailsContent.html(`

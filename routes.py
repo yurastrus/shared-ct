@@ -3354,6 +3354,8 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
                              photo=photo, 
                              observation=observation,
                              series_photos=series_photos,
+                             rights_holder=photo_rights_holder(
+                                 ct_session, observation.location_id),
                              current_photo_index=current_photo_index)
     except Exception as e:
         current_app.logger.error(f"Error in view_photo: {e}", exc_info=True) # exc_info added for better diagnostics
@@ -4358,6 +4360,7 @@ def next_observation_for_identification(lang_code):
             response_data = {
                 'observation_id': observation.id,
                 'location_name': observation.location.name if observation.location else '',
+                'rights_holder': photo_rights_holder(ct_session, observation.location_id),
                 'photos': photos_data
             }
             try:
@@ -4556,6 +4559,7 @@ def next_observation_for_identification(lang_code):
         response_data = {
             'observation_id': observation.id,
             'location_name': observation.location.name,
+            'rights_holder': photo_rights_holder(ct_session, observation.location_id),
             'photos': photos_data,
             # True when this series already has someone else's identification
             # (in normal mode the query excludes series this user touched, so any
@@ -4879,6 +4883,34 @@ def get_review_filters(lang_code):
     finally:
         close_ct_session()
 
+def photo_rights_holder(ct_session, location_id, lang=None):
+    """Institution(s) owning a location, for the photo copyright notice.
+
+    Photos belong to the park that runs the camera, not to the platform, so
+    every page that shows a photo has to name that park. Locations are M2M with
+    institutions (``location_institutions`` in ct_db, names in the main DB), so
+    a shared location yields several names joined by a comma. ``None`` means the
+    location carries no institution — the caller then shows a generic notice
+    rather than an empty one.
+    """
+    if not location_id:
+        return None
+    lang = lang or getattr(g, 'lang_code', 'uk')
+    inst_ids = [
+        row.institution_id
+        for row in ct_session.query(location_institutions)
+        .filter(location_institutions.c.location_id == location_id).all()
+    ]
+    if not inst_ids:
+        return None
+    names = [
+        inst.label(lang) for inst in Institution.query
+        .filter(Institution.id.in_(inst_ids))
+        .order_by(Institution.name_uk).all()
+    ]
+    return ', '.join(n for n in names if n) or None
+
+
 def _gallery_species_name(species, with_scientific=False):
     """Localised display name for a species, incl. negative-id special
     categories (Human, Empty, Vehicle, …). ``with_scientific`` appends the
@@ -5045,6 +5077,15 @@ def get_gallery_photos(lang_code):
             return jsonify({'message': _('Для вибраного виду немає фото у вибраному.')}), 404
 
         photos_data = []
+        # One lookup per location, not per photo: a gallery page is dozens of
+        # photos from a handful of locations.
+        rights_cache = {}
+        def cached_rights(location_id):
+            if location_id not in rights_cache:
+                rights_cache[location_id] = photo_rights_holder(
+                    ct_session, location_id)
+            return rights_cache[location_id]
+
         for photo, species in selected:
             # Attribution shown only to managers: earliest identification author.
             added_by_username = None
@@ -5070,6 +5111,7 @@ def get_gallery_photos(lang_code):
                                  _external=True),
                 'captured_at': photo.captured_at.strftime('%d.%m.%Y %H:%M:%S'),
                 'location_name': photo.observation.location.name,
+                'rights_holder': cached_rights(photo.observation.location_id),
                 'species_name': _gallery_species_name(species),
                 'observation_id': photo.observation_id,
                 'sequence_number': photo.sequence_number
