@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-18 16:54+0300\n"
+"POT-Creation-Date: 2026-09-18 18:36+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -265,7 +265,7 @@ msgid "Невірний формат дати й часу"
 msgstr "Invalid date and time"
 
 #: app/camera_traps/routes.py:2990
-#: app/camera_traps/templates/upload_video.html:325
+#: app/camera_traps/templates/upload_video.html:327
 msgid "Помилка калібрування"
 msgstr "Calibration failed"
 
@@ -1125,7 +1125,7 @@ msgid "Адмін-панель — фотопастки"
 msgstr "Admin panel — camera traps"
 
 #: app/camera_traps/templates/admin.html:10
-#: app/camera_traps/templates/overview.html:157
+#: app/camera_traps/templates/overview.html:163
 msgid "Адмін-панель"
 msgstr "Admin panel"
 
@@ -1552,7 +1552,7 @@ msgid "Фото"
 msgstr "Photo"
 
 #: app/camera_traps/templates/admin.html:387
-#: app/camera_traps/templates/upload_video.html:221
+#: app/camera_traps/templates/upload_video.html:223
 msgid "Залито"
 msgstr "Uploaded"
 
@@ -2160,7 +2160,7 @@ msgid "До розділів"
 msgstr "To sections"
 
 #: app/camera_traps/templates/ct_data_export.html:3
-#: app/camera_traps/templates/overview.html:141
+#: app/camera_traps/templates/overview.html:147
 msgid "Експорт даних"
 msgstr "Data export"
 
@@ -2789,7 +2789,7 @@ msgstr "No data"
 
 #: app/camera_traps/templates/expertise.html:3
 #: app/camera_traps/templates/expertise.html:49
-#: app/camera_traps/templates/overview.html:163
+#: app/camera_traps/templates/overview.html:169
 msgid "Експертність верифікаторів"
 msgstr "Verifier expertise"
 
@@ -3709,7 +3709,7 @@ msgid "Клацніть локацію, щоб відфільтрувати де
 msgstr "Click a location to filter deployments."
 
 #: app/camera_traps/templates/manage_deployments.html:179
-#: app/camera_traps/templates/overview.html:128
+#: app/camera_traps/templates/overview.html:134
 msgid "Деплойменти"
 msgstr "Deployments"
 
@@ -4332,46 +4332,55 @@ msgid "Додати фото з пасток до бази даних."
 msgstr "Add new camera trap photos to the database."
 
 #: app/camera_traps/templates/overview.html:115
+#: app/camera_traps/templates/upload_video.html:26
+msgid "Завантаження відео"
+msgstr "Video upload"
+
+#: app/camera_traps/templates/overview.html:116
+msgid "Відео ріжеться на кадри у браузері й лягає в базу як серія фото."
+msgstr "Clips are cut into frames in your browser and land in the database as a photo series."
+
+#: app/camera_traps/templates/overview.html:121
 msgid "Імпорт класифікації"
 msgstr "Classification import"
 
-#: app/camera_traps/templates/overview.html:116
+#: app/camera_traps/templates/overview.html:122
 msgid "Накласти результати локального DeepFaune (CSV) на фото локації."
 msgstr "Overlay results of a local DeepFaune run (CSV) onto location photos."
 
-#: app/camera_traps/templates/overview.html:123
+#: app/camera_traps/templates/overview.html:129
 msgid "Локації"
 msgstr "Locations"
 
-#: app/camera_traps/templates/overview.html:124
+#: app/camera_traps/templates/overview.html:130
 msgid "Керування точками встановлення пасток."
 msgstr "Manage camera trap deployment points."
 
-#: app/camera_traps/templates/overview.html:129
+#: app/camera_traps/templates/overview.html:135
 msgid "Редагування даних встановлень та контролю якості."
 msgstr "Edit deployment data and quality control."
 
-#: app/camera_traps/templates/overview.html:133
+#: app/camera_traps/templates/overview.html:139
 msgid "Якість даних"
 msgstr "Data quality"
 
-#: app/camera_traps/templates/overview.html:134
+#: app/camera_traps/templates/overview.html:140
 msgid "Карта та графіки контролю якості деплойментів."
 msgstr "Map and charts of deployment quality control."
 
-#: app/camera_traps/templates/overview.html:142
+#: app/camera_traps/templates/overview.html:148
 msgid "Завантажити відфільтровані дані у форматах CSV / Darwin Core."
 msgstr "Download filtered data as CSV / Darwin Core."
 
-#: app/camera_traps/templates/overview.html:153
+#: app/camera_traps/templates/overview.html:159
 msgid "Адміністрування"
 msgstr "Administration"
 
-#: app/camera_traps/templates/overview.html:158
+#: app/camera_traps/templates/overview.html:164
 msgid "Перерахунок аналітики, очищення фото та інші технічні дії."
 msgstr "Recalculate analytics, clean up photos and other maintenance actions."
 
-#: app/camera_traps/templates/overview.html:164
+#: app/camera_traps/templates/overview.html:170
 msgid "Збіг визначень з остаточним рішенням серії, за людьми або за видами."
 msgstr ""
 "Agreement of identifications with the final decision of a series, by "
@@ -5049,15 +5058,13 @@ msgstr "Photos uploaded"
 msgid "Завантаження відео фотопасток"
 msgstr "Camera-trap video upload"
 
-#: app/camera_traps/templates/upload_video.html:26
-msgid "Завантаження відео"
-msgstr "Video upload"
-
 #: app/camera_traps/templates/upload_video.html:28
 msgid ""
 "Відео ріжеться на кадри просто у браузері — на сервер їде лише кадри, а "
 "не саме відео."
-msgstr "Clips are cut into frames right in your browser, so only the frames are uploaded, never the video itself."
+msgstr ""
+"Clips are cut into frames right in your browser, so only the frames are "
+"uploaded, never the video itself."
 
 #: app/camera_traps/templates/upload_video.html:35
 msgid "Завантаження недоступне: замало місця на диску."
@@ -5077,7 +5084,9 @@ msgstr "-- New camera (needs calibration) --"
 
 #: app/camera_traps/templates/upload_video.html:74
 msgid "Камеру калібрують один раз. Далі всі папки з неї читаються без питань."
-msgstr "A camera is calibrated once. Every later folder from it is read without questions."
+msgstr ""
+"A camera is calibrated once. Every later folder from it is read without "
+"questions."
 
 #: app/camera_traps/templates/upload_video.html:78
 #: app/camera_traps/templates/upload_video.html:184
@@ -5161,7 +5170,10 @@ msgid ""
 "Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе "
 "інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди —"
 " визначиться саме."
-msgstr "Type the date and time exactly as shown on the frame. That is the only question: everything else, which digits look like what, whether there are leading zeros, whether seconds are printed at all, works itself out."
+msgstr ""
+"Type the date and time exactly as shown on the frame. That is the only "
+"question: everything else, which digits look like what, whether there are"
+" leading zeros, whether seconds are printed at all, works itself out."
 
 #: app/camera_traps/templates/upload_video.html:144
 msgid "Відкалібрувати"
@@ -5195,76 +5207,76 @@ msgstr "Capture time"
 msgid "Стан"
 msgstr "Status"
 
-#: app/camera_traps/templates/upload_video.html:218
+#: app/camera_traps/templates/upload_video.html:220
 msgid "Формат не підтримується браузером — це відео доведеться пропустити"
 msgstr "Your browser cannot open this format, so this clip has to be skipped"
 
-#: app/camera_traps/templates/upload_video.html:219
+#: app/camera_traps/templates/upload_video.html:221
 msgid "Час зйомки не прочитано"
 msgstr "Capture time could not be read"
 
-#: app/camera_traps/templates/upload_video.html:220
-#: app/camera_traps/templates/upload_video.html:525
+#: app/camera_traps/templates/upload_video.html:222
+#: app/camera_traps/templates/upload_video.html:527
 msgid "Готово"
 msgstr "Done"
 
-#: app/camera_traps/templates/upload_video.html:284
+#: app/camera_traps/templates/upload_video.html:286
 msgid "Заповніть дату й час для кожного відео"
 msgstr "Fill in the date and time for every clip"
 
-#: app/camera_traps/templates/upload_video.html:301
+#: app/camera_traps/templates/upload_video.html:303
 msgid "Калібрування…"
 msgstr "Calibrating..."
 
-#: app/camera_traps/templates/upload_video.html:313
+#: app/camera_traps/templates/upload_video.html:315
 msgid "Камеру збережено."
 msgstr "Camera saved."
 
-#: app/camera_traps/templates/upload_video.html:318
+#: app/camera_traps/templates/upload_video.html:320
 msgid "Ще не траплялися цифри:"
 msgstr "Digits not seen yet:"
 
-#: app/camera_traps/templates/upload_video.html:320
+#: app/camera_traps/templates/upload_video.html:322
 msgid "Додайте ще одне відео для надійності."
 msgstr "Add one more clip to be safe."
 
-#: app/camera_traps/templates/upload_video.html:357
+#: app/camera_traps/templates/upload_video.html:359
 msgid "перевірте"
 msgstr "check"
 
-#: app/camera_traps/templates/upload_video.html:361
+#: app/camera_traps/templates/upload_video.html:363
 msgid "номер не збігся"
 msgstr "number mismatch"
 
-#: app/camera_traps/templates/upload_video.html:380
+#: app/camera_traps/templates/upload_video.html:382
 msgid "Нарізаю"
 msgstr "Cutting"
 
-#: app/camera_traps/templates/upload_video.html:414
+#: app/camera_traps/templates/upload_video.html:416
 msgid "Час зйомки прочитано"
 msgstr "Capture times read"
 
-#: app/camera_traps/templates/upload_video.html:427
+#: app/camera_traps/templates/upload_video.html:429
 msgid "Підготовка…"
 msgstr "Preparing..."
 
-#: app/camera_traps/templates/upload_video.html:441
+#: app/camera_traps/templates/upload_video.html:443
 msgid "Не вдалося створити batch"
 msgstr "Could not create the batch"
 
-#: app/camera_traps/templates/upload_video.html:504
+#: app/camera_traps/templates/upload_video.html:506
 msgid "Помилка кадру"
 msgstr "Frame failed"
 
-#: app/camera_traps/templates/upload_video.html:508
+#: app/camera_traps/templates/upload_video.html:510
 msgid "кадрів"
 msgstr "frames"
 
-#: app/camera_traps/templates/upload_video.html:517
+#: app/camera_traps/templates/upload_video.html:519
 msgid "Групування серій…"
 msgstr "Grouping into series..."
 
-#: app/camera_traps/templates/upload_video.html:527
+#: app/camera_traps/templates/upload_video.html:529
 msgid "Помилка завершення"
 msgstr "Finalisation failed"
 

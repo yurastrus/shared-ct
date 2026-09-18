@@ -110,6 +110,12 @@
                 <span class="hub-card__desc">{{ _('Додати фото з пасток до бази даних.') }}</span>
             </a>
 
+            <a class="hub-card" href="{{ url_for('camera_traps.upload_video', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🎞️</span>
+                <span class="hub-card__title">{{ _('Завантаження відео') }}</span>
+                <span class="hub-card__desc">{{ _('Відео ріжеться на кадри у браузері й лягає в базу як серія фото.') }}</span>
+            </a>
+
             <a class="hub-card" href="{{ url_for('camera_traps.import_classification', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🧠</span>
                 <span class="hub-card__title">{{ _('Імпорт класифікації') }}</span>
