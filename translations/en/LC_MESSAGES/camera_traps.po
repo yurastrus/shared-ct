@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-18 20:03+0300\n"
+"POT-Creation-Date: 2026-09-18 20:26+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -169,7 +169,8 @@ msgstr "Error loading the behaviour analysis page."
 #: app/camera_traps/templates/upload.html:347
 #: app/camera_traps/templates/upload_fast.html:449
 #: app/camera_traps/templates/upload_fast.html:591
-#: app/camera_traps/templates/upload_video.html:76
+#: app/camera_traps/templates/upload_video.html:102
+#: app/camera_traps/templates/upload_video.html:303
 msgid "-- Будь ласка, виберіть --"
 msgstr "-- Please select --"
 
@@ -265,7 +266,7 @@ msgid "Невірний формат дати й часу"
 msgstr "Invalid date and time"
 
 #: app/camera_traps/routes.py:2990
-#: app/camera_traps/templates/upload_video.html:348
+#: app/camera_traps/templates/upload_video.html:512
 msgid "Помилка калібрування"
 msgstr "Calibration failed"
 
@@ -1205,7 +1206,7 @@ msgstr "Recent requests"
 
 #: app/camera_traps/templates/admin.html:102
 #: app/camera_traps/templates/identification.html:374
-#: app/camera_traps/templates/upload_video.html:141
+#: app/camera_traps/templates/upload_video.html:170
 msgid "Час"
 msgstr "Time"
 
@@ -1368,7 +1369,7 @@ msgstr "total"
 
 #: app/camera_traps/templates/admin.html:256
 #: app/camera_traps/templates/admin.html:267
-#: app/camera_traps/templates/upload_video.html:64
+#: app/camera_traps/templates/upload_video.html:76
 msgid "МБ"
 msgstr "MB"
 
@@ -1540,7 +1541,8 @@ msgstr "By location"
 #: app/camera_traps/templates/identification.html:373
 #: app/camera_traps/templates/upload.html:30
 #: app/camera_traps/templates/upload_fast.html:117
-#: app/camera_traps/templates/upload_video.html:74
+#: app/camera_traps/templates/upload_video.html:85
+#: app/camera_traps/templates/upload_video.html:100
 msgid "Локація"
 msgstr "Location"
 
@@ -1552,7 +1554,7 @@ msgid "Фото"
 msgstr "Photo"
 
 #: app/camera_traps/templates/admin.html:387
-#: app/camera_traps/templates/upload_video.html:244
+#: app/camera_traps/templates/upload_video.html:279
 msgid "Залито"
 msgstr "Uploaded"
 
@@ -2141,7 +2143,7 @@ msgstr "Month"
 #: app/camera_traps/templates/manage_deployments.html:196
 #: app/camera_traps/templates/manage_deployments.html:222
 #: app/camera_traps/templates/upload_stats.html:78
-#: app/camera_traps/templates/upload_video.html:134
+#: app/camera_traps/templates/upload_video.html:163
 msgid "Рік"
 msgstr "Year"
 
@@ -2608,6 +2610,7 @@ msgstr "-- All habitats --"
 #: app/camera_traps/templates/service_log.html:158
 #: app/camera_traps/templates/upload.html:302
 #: app/camera_traps/templates/upload_fast.html:485
+#: app/camera_traps/templates/upload_video.html:336
 msgid "OSM"
 msgstr "OSM"
 
@@ -2618,6 +2621,7 @@ msgstr "OSM"
 #: app/camera_traps/templates/service_log.html:158
 #: app/camera_traps/templates/upload.html:302
 #: app/camera_traps/templates/upload_fast.html:485
+#: app/camera_traps/templates/upload_video.html:336
 msgid "Супутник"
 msgstr "Satellite"
 
@@ -2701,6 +2705,7 @@ msgstr "Region"
 
 #: app/camera_traps/templates/data_quality.html:96
 #: app/camera_traps/templates/institution_stats.html:71
+#: app/camera_traps/templates/upload_video.html:88
 msgid "Установа"
 msgstr "Institution"
 
@@ -2716,7 +2721,7 @@ msgstr "Design"
 
 #: app/camera_traps/templates/data_quality.html:96
 #: app/camera_traps/templates/manage_deployments.html:244
-#: app/camera_traps/templates/upload_video.html:87
+#: app/camera_traps/templates/upload_video.html:116
 msgid "Модель камери"
 msgstr "Camera model"
 
@@ -3441,6 +3446,7 @@ msgstr "Institution:"
 #: app/camera_traps/templates/import_classification.html:42
 #: app/camera_traps/templates/upload.html:39
 #: app/camera_traps/templates/upload_fast.html:121
+#: app/camera_traps/templates/upload_video.html:90
 msgid "-- Усі доступні установи --"
 msgstr "-- All available institutions --"
 
@@ -5059,11 +5065,11 @@ msgstr "Photos uploaded"
 msgid "Завантаження відео фотопасток"
 msgstr "Camera-trap video upload"
 
-#: app/camera_traps/templates/upload_video.html:55
+#: app/camera_traps/templates/upload_video.html:67
 msgid "Завантаження відео з фотопасток"
 msgstr "Camera-trap video upload"
 
-#: app/camera_traps/templates/upload_video.html:58
+#: app/camera_traps/templates/upload_video.html:70
 msgid ""
 "Відео ріжеться на кадри просто у браузері — на сервер їде лише кадри, а "
 "не саме відео."
@@ -5071,102 +5077,102 @@ msgstr ""
 "Clips are cut into frames right in your browser, so only the frames are "
 "uploaded, never the video itself."
 
-#: app/camera_traps/templates/upload_video.html:63
+#: app/camera_traps/templates/upload_video.html:75
 msgid "Завантаження недоступне: замало місця на диску."
 msgstr "Upload unavailable: not enough disk space."
 
-#: app/camera_traps/templates/upload_video.html:84
+#: app/camera_traps/templates/upload_video.html:113
 msgid "Камера і формат дати"
 msgstr "Camera and date format"
 
-#: app/camera_traps/templates/upload_video.html:89
+#: app/camera_traps/templates/upload_video.html:118
 msgid "-- Нова камера (потрібне калібрування) --"
 msgstr "-- New camera (needs calibration) --"
 
-#: app/camera_traps/templates/upload_video.html:95
+#: app/camera_traps/templates/upload_video.html:124
 msgid "Камеру калібрують один раз. Далі всі папки з неї читаються без питань."
 msgstr ""
 "A camera is calibrated once. Every later folder from it is read without "
 "questions."
 
-#: app/camera_traps/templates/upload_video.html:101
-#: app/camera_traps/templates/upload_video.html:206
+#: app/camera_traps/templates/upload_video.html:130
+#: app/camera_traps/templates/upload_video.html:241
 msgid "Кадрів"
 msgstr "Frames"
 
-#: app/camera_traps/templates/upload_video.html:103
+#: app/camera_traps/templates/upload_video.html:132
 msgid "1 кадр / с"
 msgstr "1 frame / s"
 
-#: app/camera_traps/templates/upload_video.html:104
+#: app/camera_traps/templates/upload_video.html:133
 msgid "1 кадр / 2 с"
 msgstr "1 frame / 2 s"
 
-#: app/camera_traps/templates/upload_video.html:105
+#: app/camera_traps/templates/upload_video.html:134
 msgid "1 кадр / 5 с"
 msgstr "1 frame / 5 s"
 
-#: app/camera_traps/templates/upload_video.html:109
+#: app/camera_traps/templates/upload_video.html:138
 msgid "Оригінали"
 msgstr "Originals"
 
-#: app/camera_traps/templates/upload_video.html:111
+#: app/camera_traps/templates/upload_video.html:140
 msgid "Зберігати"
 msgstr "Keep"
 
-#: app/camera_traps/templates/upload_video.html:112
+#: app/camera_traps/templates/upload_video.html:141
 msgid "Лише мініатюри"
 msgstr "Thumbnails only"
 
-#: app/camera_traps/templates/upload_video.html:125
+#: app/camera_traps/templates/upload_video.html:154
 msgid "Порядок дати"
 msgstr "Date order"
 
-#: app/camera_traps/templates/upload_video.html:127
+#: app/camera_traps/templates/upload_video.html:156
 msgid "РРРР / ММ / ДД"
 msgstr "YYYY / MM / DD"
 
-#: app/camera_traps/templates/upload_video.html:128
+#: app/camera_traps/templates/upload_video.html:157
 msgid "ДД / ММ / РРРР"
 msgstr "DD / MM / YYYY"
 
-#: app/camera_traps/templates/upload_video.html:129
+#: app/camera_traps/templates/upload_video.html:158
 msgid "ММ / ДД / РРРР"
 msgstr "MM / DD / YYYY"
 
-#: app/camera_traps/templates/upload_video.html:130
+#: app/camera_traps/templates/upload_video.html:159
 msgid "РРРР / ДД / ММ"
 msgstr "YYYY / DD / MM"
 
-#: app/camera_traps/templates/upload_video.html:136
+#: app/camera_traps/templates/upload_video.html:165
 msgid "4 цифри (2026)"
 msgstr "4 digits (2026)"
 
-#: app/camera_traps/templates/upload_video.html:137
+#: app/camera_traps/templates/upload_video.html:166
 msgid "2 цифри (26)"
 msgstr "2 digits (26)"
 
-#: app/camera_traps/templates/upload_video.html:143
+#: app/camera_traps/templates/upload_video.html:172
 msgid "24 год"
 msgstr "24-hour"
 
-#: app/camera_traps/templates/upload_video.html:144
+#: app/camera_traps/templates/upload_video.html:173
 msgid "12 год"
 msgstr "12-hour"
 
-#: app/camera_traps/templates/upload_video.html:148
+#: app/camera_traps/templates/upload_video.html:177
 msgid "Назва камери"
 msgstr "Camera name"
 
-#: app/camera_traps/templates/upload_video.html:150
+#: app/camera_traps/templates/upload_video.html:179
 msgid "напр. Fujifilm AVI"
 msgstr "e.g. Fujifilm AVI"
 
-#: app/camera_traps/templates/upload_video.html:155
+#: app/camera_traps/templates/upload_video.html:184
 msgid "Виберіть 2–3 відео цієї камери для калібрування"
 msgstr "Pick 2-3 clips from this camera to calibrate it"
 
-#: app/camera_traps/templates/upload_video.html:161
+#: app/camera_traps/templates/upload_video.html:190
 msgid ""
 "Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе "
 "інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди —"
@@ -5176,108 +5182,108 @@ msgstr ""
 "question: everything else, which digits look like what, whether there are"
 " leading zeros, whether seconds are printed at all, works itself out."
 
-#: app/camera_traps/templates/upload_video.html:165
+#: app/camera_traps/templates/upload_video.html:194
 msgid "Відкалібрувати"
 msgstr "Calibrate"
 
-#: app/camera_traps/templates/upload_video.html:176
+#: app/camera_traps/templates/upload_video.html:204
 msgid "Відео"
 msgstr "Video"
 
-#: app/camera_traps/templates/upload_video.html:184
+#: app/camera_traps/templates/upload_video.html:212
 msgid "Прочитати час зйомки"
 msgstr "Read capture time"
 
-#: app/camera_traps/templates/upload_video.html:187
+#: app/camera_traps/templates/upload_video.html:215
 msgid "Завантажити кадри"
 msgstr "Upload frames"
 
-#: app/camera_traps/templates/upload_video.html:203
+#: app/camera_traps/templates/upload_video.html:238
 msgid "Файл"
 msgstr "File"
 
-#: app/camera_traps/templates/upload_video.html:204
+#: app/camera_traps/templates/upload_video.html:239
 msgid "Що прочитано"
 msgstr "What was read"
 
-#: app/camera_traps/templates/upload_video.html:205
+#: app/camera_traps/templates/upload_video.html:240
 msgid "Час зйомки"
 msgstr "Capture time"
 
-#: app/camera_traps/templates/upload_video.html:207
+#: app/camera_traps/templates/upload_video.html:242
 msgid "Стан"
 msgstr "Status"
 
-#: app/camera_traps/templates/upload_video.html:241
+#: app/camera_traps/templates/upload_video.html:276
 msgid "Формат не підтримується браузером — це відео доведеться пропустити"
 msgstr "Your browser cannot open this format, so this clip has to be skipped"
 
-#: app/camera_traps/templates/upload_video.html:242
+#: app/camera_traps/templates/upload_video.html:277
 msgid "Час зйомки не прочитано"
 msgstr "Capture time could not be read"
 
-#: app/camera_traps/templates/upload_video.html:243
-#: app/camera_traps/templates/upload_video.html:548
+#: app/camera_traps/templates/upload_video.html:278
+#: app/camera_traps/templates/upload_video.html:710
 msgid "Готово"
 msgstr "Done"
 
-#: app/camera_traps/templates/upload_video.html:307
+#: app/camera_traps/templates/upload_video.html:471
 msgid "Заповніть дату й час для кожного відео"
 msgstr "Fill in the date and time for every clip"
 
-#: app/camera_traps/templates/upload_video.html:324
+#: app/camera_traps/templates/upload_video.html:488
 msgid "Калібрування…"
 msgstr "Calibrating..."
 
-#: app/camera_traps/templates/upload_video.html:336
+#: app/camera_traps/templates/upload_video.html:500
 msgid "Камеру збережено."
 msgstr "Camera saved."
 
-#: app/camera_traps/templates/upload_video.html:341
+#: app/camera_traps/templates/upload_video.html:505
 msgid "Ще не траплялися цифри:"
 msgstr "Digits not seen yet:"
 
-#: app/camera_traps/templates/upload_video.html:343
+#: app/camera_traps/templates/upload_video.html:507
 msgid "Додайте ще одне відео для надійності."
 msgstr "Add one more clip to be safe."
 
-#: app/camera_traps/templates/upload_video.html:380
+#: app/camera_traps/templates/upload_video.html:544
 msgid "перевірте"
 msgstr "check"
 
-#: app/camera_traps/templates/upload_video.html:384
+#: app/camera_traps/templates/upload_video.html:548
 msgid "номер не збігся"
 msgstr "number mismatch"
 
-#: app/camera_traps/templates/upload_video.html:403
+#: app/camera_traps/templates/upload_video.html:567
 msgid "Нарізаю"
 msgstr "Cutting"
 
-#: app/camera_traps/templates/upload_video.html:437
+#: app/camera_traps/templates/upload_video.html:601
 msgid "Час зйомки прочитано"
 msgstr "Capture times read"
 
-#: app/camera_traps/templates/upload_video.html:450
+#: app/camera_traps/templates/upload_video.html:614
 msgid "Підготовка…"
 msgstr "Preparing..."
 
-#: app/camera_traps/templates/upload_video.html:464
+#: app/camera_traps/templates/upload_video.html:628
 msgid "Не вдалося створити batch"
 msgstr "Could not create the batch"
 
-#: app/camera_traps/templates/upload_video.html:527
+#: app/camera_traps/templates/upload_video.html:689
 msgid "Помилка кадру"
 msgstr "Frame failed"
 
-#: app/camera_traps/templates/upload_video.html:531
+#: app/camera_traps/templates/upload_video.html:693
 msgid "кадрів"
 msgstr "frames"
 
-#: app/camera_traps/templates/upload_video.html:540
+#: app/camera_traps/templates/upload_video.html:702
 msgid "Групування серій…"
 msgstr "Grouping into series..."
 
-#: app/camera_traps/templates/upload_video.html:550
+#: app/camera_traps/templates/upload_video.html:712
 msgid "Помилка завершення"
 msgstr "Finalisation failed"
 
