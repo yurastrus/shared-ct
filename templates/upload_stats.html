@@ -35,7 +35,7 @@
         <!-- Filter panel (scope only — no species filter) -->
         <form id="filters-form" method="GET" class="filters-panel">
             <input type="hidden" name="days" value="{{ days }}">
-            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+            <div class="filter-group filter-group-wide">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
                 <select id="scope-select" name="scope" class="form-control">
                     <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>

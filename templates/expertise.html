@@ -117,7 +117,7 @@
                 {% endif %}
             </div>
 
-            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+            <div class="filter-group filter-group-wide">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
                 <select id="scope-select" name="scope" class="form-control">
                     <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
@@ -142,7 +142,7 @@
 
             {# The narrowing filter belongs to the axis the table is NOT grouped by. #}
             {% if mode == 'users' %}
-            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+            <div class="filter-group filter-group-wide">
                 <label for="species-select">{{ _('Вид:') }}</label>
                 <select id="species-select" name="species_id" class="form-control">
                     <option value="">{{ _('Усі види') }}</option>
@@ -152,7 +152,7 @@
                 </select>
             </div>
             {% else %}
-            <div class="filter-group" style="flex: 0 1 320px; min-width: 200px;">
+            <div class="filter-group filter-group-wide">
                 <label for="verifier-select">{{ _('Верифікатор:') }}</label>
                 <select id="verifier-select" name="user_id" class="form-control">
                     <option value="">{{ _('Усі верифікатори') }}</option>
@@ -163,7 +163,7 @@
             </div>
             {% endif %}
 
-            <div class="filter-group" style="flex: 0 1 130px;">
+            <div class="filter-group filter-group-narrow">
                 <label for="min-n">{{ _('Мін. серій:') }}</label>
                 <input type="number" id="min-n" name="min" class="form-control" min="1" value="{{ min_n }}">
             </div>
