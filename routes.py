@@ -2508,6 +2508,17 @@ def create_batch(lang_code):
                 f"[ct-upload] create-batch rejected (no location_id) user={current_user.id}")
             return jsonify({'error': _('Location ID is required')}), 400
 
+        # Optional clock correction for the whole batch (/upload-fast). Validated
+        # here so a malformed value is refused before any photo is written.
+        from .utils import parse_time_offset
+        try:
+            time_offset_seconds = parse_time_offset(data.get('time_offset_seconds'))
+        except ValueError:
+            current_app.logger.warning(
+                f"[ct-upload] create-batch rejected (bad time offset) user={current_user.id} "
+                f"value={data.get('time_offset_seconds')!r}")
+            return jsonify({'error': _('Некоректний зсув часу')}), 400
+
         # Storage guard: refuse to start a NEW upload when free space is below the
         # minimum (an in-progress upload is unaffected — this only runs here). If
         # free space can't be determined, allow the upload rather than false-block.
@@ -2523,10 +2534,11 @@ def create_batch(lang_code):
             }), 507
 
         from .utils import create_upload_batch
-        batch_id = create_upload_batch(int(location_id), current_user.id, total_files)
+        batch_id = create_upload_batch(int(location_id), current_user.id, total_files,
+                                       time_offset_seconds=time_offset_seconds)
         current_app.logger.info(
             f"[ct-upload] create-batch OK user={current_user.id} location_id={location_id} "
-            f"total_files={total_files} batch={batch_id}")
+            f"total_files={total_files} batch={batch_id} time_offset_s={time_offset_seconds}")
 
         # Pause AI classification while this upload runs (lease-based; refreshed
         # by process-single heartbeats and cleared after grouping). Best-effort —
@@ -2537,6 +2549,7 @@ def create_batch(lang_code):
         return jsonify({
             'success': True,
             'batch_id': batch_id,
+            'time_offset_seconds': time_offset_seconds,
             'message': _('Batch створено успішно')
         }), 201
         

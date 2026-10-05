@@ -210,12 +210,50 @@ def is_allowed_upload_extension(filename, config=None):
 EXIF_MIN_VALID_DATE = datetime(2010, 1, 1)
 EXIF_MAX_FUTURE_DRIFT = timedelta(hours=24)
 
+# Upper bound for a batch clock correction. A camera that lost power falls back
+# to its factory date (often 2000-01-01), so fixing it legitimately needs a
+# shift of a quarter century; 50 years covers that and still rejects nonsense.
+# Must stay in step with MAX_OFFSET_SECONDS in static/js/time_shift.js.
+MAX_TIME_OFFSET_SECONDS = 50 * 366 * 24 * 3600
 
-def extract_datetime_from_exif(file_stream):
+
+def parse_time_offset(value):
+    """Validate a batch time offset coming from the client; return int seconds.
+
+    None / '' mean "no shift" (0). Anything that is not a whole number of
+    seconds within ±MAX_TIME_OFFSET_SECONDS raises ValueError, so a malformed
+    request can never write a silently wrong captured_at.
+    """
+    if value is None or value == '':
+        return 0
+    if isinstance(value, bool):
+        raise ValueError("time offset must be a number of seconds")
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError("time offset must be a whole number of seconds")
+        value = int(value)
+    elif isinstance(value, str):
+        try:
+            value = int(value.strip())
+        except ValueError:
+            raise ValueError("time offset must be a whole number of seconds")
+    elif not isinstance(value, int):
+        raise ValueError("time offset must be a number of seconds")
+    if abs(value) > MAX_TIME_OFFSET_SECONDS:
+        raise ValueError("time offset is out of range")
+    return value
+
+
+def extract_datetime_from_exif(file_stream, offset=None):
     """Read date and time from the EXIF data of a file, including sub-seconds.
 
-    Returns None if the tag is absent, cannot be parsed, OR the date is
-    implausible (earlier than EXIF_MIN_VALID_DATE or further than
+    `offset` (a timedelta) is the batch clock correction. It is added BEFORE the
+    plausibility check, on purpose: a camera reset to 2000 reads as implausible,
+    and the shift is exactly how the user makes it plausible again. Checking the
+    raw value first would send that photo to the placeholder date regardless.
+
+    Returns None if the tag is absent, cannot be parsed, OR the (shifted) date
+    is implausible (earlier than EXIF_MIN_VALID_DATE or further than
     EXIF_MAX_FUTURE_DRIFT into the future).
     """
     try:
@@ -242,6 +280,9 @@ def extract_datetime_from_exif(file_stream):
 
                     # Add microseconds to the datetime object
                     dt_object += timedelta(microseconds=microseconds)
+
+            if offset:
+                dt_object += offset
 
             # Sanity-guard: camera clock reset (e.g. year 2000) or drifted into the future
             if (dt_object < EXIF_MIN_VALID_DATE
@@ -303,8 +344,13 @@ def _verify_files_on_disk(paths):
             f"File was not written to disk (disk full?): {os.path.basename(p)}"
         )
 
-def create_upload_batch(location_id, user_id, total_files=None):
-    """Create a new batch for file uploads."""
+def create_upload_batch(location_id, user_id, total_files=None,
+                        time_offset_seconds=0):
+    """Create a new batch for file uploads.
+
+    `time_offset_seconds` is the clock correction applied to every photo of the
+    batch (see UploadBatch.time_offset_seconds). Validate it with
+    parse_time_offset before passing it in."""
     ct_session = get_ct_session()
 
     try:
@@ -315,7 +361,8 @@ def create_upload_batch(location_id, user_id, total_files=None):
             location_id=location_id,
             uploaded_by_id=user_id,
             status='uploading',
-            total_files=total_files or 0
+            total_files=total_files or 0,
+            time_offset_seconds=time_offset_seconds or 0,
         )
 
         ct_session.add(batch)
@@ -394,20 +441,30 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
         # used as a seconds-offset for the placeholder captured_at when
         # there is no EXIF (previously all such photos got the same offset
         # → duplicate conflicts).
+        # The same statement also returns the batch clock correction, so the
+        # shift costs no extra query per photo.
         new_count_row = ct_session.execute(
             text(
                 "UPDATE upload_batches "
                 "SET processed_files = COALESCE(processed_files, 0) + 1 "
                 "WHERE id = :b "
-                "RETURNING processed_files"
+                "RETURNING processed_files, time_offset_seconds"
             ),
             {"b": batch_id},
         ).first()
         if new_count_row is None:
             raise ValueError(f"Batch {batch_id} not found")
         photo_offset = int(new_count_row[0])
+        time_offset = int(new_count_row[1] or 0)
 
-        captured_at = captured_at_override or extract_datetime_from_exif(file)
+        # The shift corrects a wrong camera clock, so it applies to EXIF time
+        # only. A video frame's time is read from the burned-in stamp and
+        # already final; a photo with no EXIF gets the placeholder unshifted.
+        if captured_at_override is not None:
+            captured_at = captured_at_override
+        else:
+            captured_at = extract_datetime_from_exif(
+                file, offset=timedelta(seconds=time_offset) if time_offset else None)
 
         if captured_at is None:
             placeholder_date = datetime(1900, 1, 1)
@@ -688,7 +745,8 @@ def get_batch_status(batch_id):
             'processed_files': batch.processed_files,
             'created_at': batch.created_at.isoformat(),
             'completed_at': batch.completed_at.isoformat() if batch.completed_at else None,
-            'error_message': batch.error_message
+            'error_message': batch.error_message,
+            'time_offset_seconds': batch.time_offset_seconds or 0,
         }
 
     except Exception as e:

@@ -96,6 +96,27 @@
     .map-filter-group { flex-wrap: wrap; }
     .map-filter-range { width: 100%; }
   }
+  /* Time shift (step 3) */
+  .ts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .ts-sign { width: auto; }
+  .ts-field { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: .82rem; color: #495057; }
+  .ts-num { width: 64px; }
+  .ts-badge { margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: .75rem;
+              font-weight: 600; background: #fff3cd; color: #664d03; border: 1px solid #ffe69c; }
+  .ts-calc, .ts-preview { border: 1px solid #e3e6ea; border-radius: 6px; padding: 8px 10px;
+                          margin-top: 10px; background: #fff; }
+  .ts-calc-title { font-size: .78rem; font-weight: 600; color: #6c757d; margin-bottom: 4px; }
+  /* A datetime-local field with seconds needs ~210px: side by side only when
+     the left panel is wide enough, stacked otherwise. */
+  .ts-calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+  .ts-table-wrap { overflow-x: auto; }
+  .ts-table { font-size: .78rem; }
+  .ts-table td { white-space: nowrap; }
+  .ts-table tr.ts-namerow td { max-width: 0; overflow: hidden; text-overflow: ellipsis;
+                               color: #6c757d; font-size: .72rem; border-bottom: 0; padding-bottom: 0; }
+  .ts-table tr.ts-bad td { color: #842029; background: #f8d7da; }
+  .ts-table tr.ts-noexif td { color: #6c757d; font-style: italic; }
+  .ts-table td.ts-changed { font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -214,11 +235,76 @@
                 </div>
             </div>
 
-            <!-- STEP 3: Deployment / quality control (optional, collapsed) -->
+            <!-- STEP 3: Time shift (optional, collapsed). The server stores the
+                 offset on the batch and adds it to every photo's EXIF time;
+                 this block only helps pick the number and previews it. -->
+            <div class="step-card">
+                <details id="time-shift-block">
+                    <summary class="step-title" style="cursor:pointer; list-style:none;">
+                        <span class="step-num">3</span>{{ _('Зсув часу') }}
+                        <span class="text-muted small" style="font-weight:normal;">({{ _('необов\'язково') }})</span>
+                        <span id="ts-summary-badge" class="ts-badge" style="display:none;"></span>
+                    </summary>
+                    <div style="margin-top:10px;">
+                        <small class="text-muted d-block mb-2">
+                            {{ _('Якщо годинник камери був виставлений неправильно (літній час, переплутані AM/PM, не та дата), вкажіть зсув. Його буде додано до часу зйомки всіх фото цього завантаження.') }}
+                        </small>
+
+                        <div class="ts-row">
+                            <select id="ts-sign" class="form-select form-select-sm ts-sign" aria-label="{{ _('Напрямок зсуву') }}">
+                                <option value="1">+</option>
+                                <option value="-1">&minus;</option>
+                            </select>
+                            <label class="ts-field"><input type="number" min="0" step="1" id="ts-days" class="form-control form-control-sm ts-num" value="0"><span>{{ _('дн.') }}</span></label>
+                            <label class="ts-field"><input type="number" min="0" step="1" id="ts-hours" class="form-control form-control-sm ts-num" value="0"><span>{{ _('год') }}</span></label>
+                            <label class="ts-field"><input type="number" min="0" step="1" id="ts-minutes" class="form-control form-control-sm ts-num" value="0"><span>{{ _('хв') }}</span></label>
+                            <label class="ts-field"><input type="number" min="0" step="1" id="ts-seconds" class="form-control form-control-sm ts-num" value="0"><span>{{ _('с') }}</span></label>
+                            <button type="button" id="ts-reset" class="btn btn-sm btn-outline-secondary">{{ _('Скинути') }}</button>
+                        </div>
+                        <div id="ts-total" class="small text-muted mt-1"></div>
+                        <div id="ts-error" class="small text-danger mt-1" style="display:none;"></div>
+
+                        <div class="ts-calc">
+                            <div class="ts-calc-title">{{ _('Порахувати зсув за прикладом') }}</div>
+                            <small class="text-muted d-block mb-2">{{ _('Виберіть фото, перевірте, який час записала камера, і вкажіть, який час мав бути насправді.') }}</small>
+                            <div class="mb-2">
+                                <label class="form-label text-muted small mb-1" for="ts-ref-photo">{{ _('Фото-приклад') }}</label>
+                                <select id="ts-ref-photo" class="form-select form-select-sm" disabled>
+                                    <option value="">{{ _('Спершу виберіть фото на кроці 2') }}</option>
+                                </select>
+                            </div>
+                            <div class="ts-calc-grid">
+                                <div>
+                                    <label class="form-label text-muted small mb-1" for="ts-current">{{ _('Час на камері') }}</label>
+                                    <input type="datetime-local" step="1" id="ts-current" class="form-control form-control-sm">
+                                </div>
+                                <div>
+                                    <label class="form-label text-muted small mb-1" for="ts-desired">{{ _('Правильний час') }}</label>
+                                    <input type="datetime-local" step="1" id="ts-desired" class="form-control form-control-sm">
+                                </div>
+                            </div>
+                            <button type="button" id="ts-calc-btn" class="btn btn-sm btn-outline-primary mt-2">{{ _('Порахувати') }}</button>
+                        </div>
+
+                        <div id="ts-preview" class="ts-preview" style="display:none;">
+                            <div class="ts-calc-title">{{ _('Як зміниться час') }}</div>
+                            <div id="ts-preview-note" class="small text-muted mb-1"></div>
+                            <div class="ts-table-wrap">
+                                <table class="table table-sm ts-table mb-0">
+                                    <thead><tr><th>{{ _('Було') }}</th><th>{{ _('Стане') }}</th></tr></thead>
+                                    <tbody id="ts-preview-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- STEP 4: Deployment / quality control (optional, collapsed) -->
             <div class="step-card">
                 <details id="deployment-block">
                     <summary class="step-title" style="cursor:pointer; list-style:none;">
-                        <span class="step-num">3</span>{{ _('Деплоймент і контроль якості') }}
+                        <span class="step-num">4</span>{{ _('Деплоймент і контроль якості') }}
                         <span class="text-muted small" style="font-weight:normal;">({{ _('необов\'язково') }})</span>
                     </summary>
                     <div style="margin-top:10px;">
@@ -278,9 +364,9 @@
                 </details>
             </div>
 
-            <!-- STEP 4: Upload -->
+            <!-- STEP 5: Upload -->
             <div class="step-card">
-                <div class="step-title"><span class="step-num">4</span>{{ _('Завантаження') }}</div>
+                <div class="step-title"><span class="step-num">5</span>{{ _('Завантаження') }}</div>
 
                 <button id="upload-btn" type="button" disabled>▲ {{ _('Завантажити та обробити') }}</button>
 
@@ -362,6 +448,8 @@
 <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/time_shift.js', lang_code=g.lang_code) }}?v=1"></script>
 
 <script>
 $(document).ready(function () {
@@ -692,6 +780,7 @@ $(document).ready(function () {
         selectedFiles = Array.from(fileList).filter(f => /\.(jpe?g)$/i.test(f.name));
         displayFileList();
         $('#upload-success-message').hide();
+        tsLoadSamples();
     }
 
     $('#file-input').on('change',   e => setFiles(e.target.files));
@@ -701,7 +790,169 @@ $(document).ready(function () {
         $('#file-input,#folder-input').val('');
         $('#file-summary-row,#file-list').hide();
         checkReady();
+        tsLoadSamples();
     });
+
+    // ─── Time shift (step 3) ─────────────────────────────────────────────
+    // The number goes to create-batch; the server stores it on the batch and
+    // applies it to every photo. Everything below is preview and calculator.
+    const TS = window.CtTimeShift;
+    const TS_LABELS = {
+        d: {{ _('дн.') | tojson }}, h: {{ _('год') | tojson }},
+        m: {{ _('хв') | tojson }},  s: {{ _('с') | tojson }}
+    };
+    const TS_SAMPLE_HEAD = 4, TS_SAMPLE_TAIL = 2;
+    const MSG_TS_BAD_FIELD   = {{ _('Поля зсуву мають містити цілі невідʼємні числа.') | tojson }};
+    const MSG_TS_TOO_BIG     = {{ _('Зсув завеликий (понад 50 років).') | tojson }};
+    const MSG_TS_NEED_BOTH   = {{ _('Вкажіть обидва часи: на камері і правильний.') | tojson }};
+    const MSG_TS_TOTAL       = {{ _('Разом:') | tojson }};
+    const MSG_TS_SECONDS     = {{ _('с') | tojson }};
+    const MSG_TS_NONE        = {{ _('Зсуву немає: час фото лишиться як є.') | tojson }};
+    const MSG_TS_NO_EXIF     = {{ _('немає часу EXIF, зсув не застосовується') | tojson }};
+    const MSG_TS_IMPLAUSIBLE = {{ _('неправдоподібна дата: сервер поставить заглушку') | tojson }};
+    const MSG_TS_NO_LIB      = {{ _('Не вдалося завантажити читач EXIF, тож приклад недоступний. Зсув однаково буде застосовано під час завантаження.') | tojson }};
+    const MSG_TS_READING     = {{ _('Читаю час зйомки…') | tojson }};
+    const MSG_TS_SAMPLE_NOTE = {{ _('Перші %(head)s і останні %(tail)s фото за назвою файлу.', head='__H__', tail='__T__') | tojson }};
+    const MSG_TS_BATCH_HAS   = {{ _('Зсув часу цього завантаження:') | tojson }};
+    const MSG_TS_ALL_SHOWN   ={{ _('Усі вибрані фото.') | tojson }};
+    const MSG_TS_ALL_NO_EXIF ={{ _('У вибраних прикладах немає часу EXIF. Такі фото отримають заглушку, зсув їх не стосується.') | tojson }};
+    const MSG_TS_PICK_FIRST  = {{ _('Спершу виберіть фото на кроці 2') | tojson }};
+    const MSG_TS_PICK_PHOTO  = {{ _('-- виберіть фото --') | tojson }};
+    const MSG_TS_CONFIRM     = {{ _('Час усіх фото цього завантаження буде зсунуто на %(offset)s. Продовжити?', offset='__OFF__') | tojson }};
+    const MSG_TS_RESUME      = {{ _('Незавершене завантаження цієї локації вже має зсув %(old)s, а зараз вказано %(new)s. Зсув батчу змінити не можна: продовжити його зі зсувом %(old)s?', old='__OLD__', new='__NEW__') | tojson }};
+
+    let tsSamples = [];      // [{file, name, exifMs}]
+    let tsSampleToken = 0;   // a newer selection makes older async reads stale
+
+    function tsFmt(sec) { return TS.formatOffset(sec, TS_LABELS); }
+
+    /** Current offset from the fields: {ok, seconds} or {ok:false, error}. */
+    function tsReadOffset() {
+        const raw = ['#ts-days', '#ts-hours', '#ts-minutes', '#ts-seconds'].map(id => $(id).val());
+        for (const v of raw) {
+            if (v === '' || v == null) continue;
+            const n = Number(v);
+            if (!Number.isInteger(n) || n < 0) return { ok: false, error: MSG_TS_BAD_FIELD };
+        }
+        const seconds = TS.partsToSeconds({
+            sign: +$('#ts-sign').val(), days: raw[0], hours: raw[1], minutes: raw[2], seconds: raw[3],
+        });
+        if (!TS.isValidOffset(seconds)) return { ok: false, error: MSG_TS_TOO_BIG };
+        return { ok: true, seconds };
+    }
+
+    function tsWriteOffset(seconds) {
+        const p = TS.secondsToParts(seconds);
+        $('#ts-sign').val(String(p.sign));
+        $('#ts-days').val(p.days); $('#ts-hours').val(p.hours);
+        $('#ts-minutes').val(p.minutes); $('#ts-seconds').val(p.seconds);
+    }
+
+    function tsRender() {
+        const r = tsReadOffset();
+        if (!r.ok) {
+            $('#ts-error').text(r.error).show();
+            $('#ts-total').text('');
+            $('#ts-summary-badge').hide();
+            return;
+        }
+        $('#ts-error').hide();
+        const off = r.seconds;
+        $('#ts-total').text(off === 0 ? MSG_TS_NONE
+            : `${MSG_TS_TOTAL} ${tsFmt(off)} (${off > 0 ? '+' : '−'}${Math.abs(off)} ${MSG_TS_SECONDS})`);
+        if (off === 0) $('#ts-summary-badge').hide();
+        else $('#ts-summary-badge').text(tsFmt(off)).show();
+        tsRenderPreview(off);
+    }
+
+    function tsRenderPreview(off) {
+        if (!selectedFiles.length) { $('#ts-preview').hide(); return; }
+        $('#ts-preview').show();
+        if (!window.exifr) {
+            $('#ts-preview-note').text(MSG_TS_NO_LIB);
+            $('#ts-preview-body').empty();
+            return;
+        }
+        if (!tsSamples.length) { $('#ts-preview-note').text(MSG_TS_READING); return; }
+        const rows = tsSamples.map(s => TS.previewRow(s, off));
+        const allMissing = rows.every(r => r.state === 'no_exif');
+        $('#ts-preview-note').text(
+            allMissing ? MSG_TS_ALL_NO_EXIF
+            : selectedFiles.length <= TS_SAMPLE_HEAD + TS_SAMPLE_TAIL ? MSG_TS_ALL_SHOWN
+            : MSG_TS_SAMPLE_NOTE.replace('__H__', TS_SAMPLE_HEAD).replace('__T__', TS_SAMPLE_TAIL));
+        const $body = $('#ts-preview-body').empty();
+        rows.forEach(r => {
+            // The file name gets a row of its own: in the narrow left panel a
+            // third column pushed "will be", the one that matters, off screen.
+            $('<tr class="ts-namerow">').append(
+                $('<td colspan="2" class="ts-name">').text(r.name).attr('title', r.name)).appendTo($body);
+            const $tr = $('<tr>');
+            if (r.state === 'no_exif') {
+                $tr.addClass('ts-noexif');
+                $('<td colspan="2">').text(MSG_TS_NO_EXIF).appendTo($tr);
+            } else {
+                $('<td>').text(TS.formatDateTime(r.before)).appendTo($tr);
+                const $after = $('<td>').text(TS.formatDateTime(r.after)).appendTo($tr);
+                if (off !== 0) $after.addClass('ts-changed');
+                if (r.state === 'implausible') {
+                    $tr.addClass('ts-bad');
+                    $after.attr('title', MSG_TS_IMPLAUSIBLE).append(' ⚠');
+                }
+            }
+            $body.append($tr);
+        });
+    }
+
+    function tsFillRefSelect() {
+        const $sel = $('#ts-ref-photo').empty();
+        const usable = tsSamples.filter(s => s.exifMs != null);
+        if (!usable.length) {
+            $sel.append(new Option(MSG_TS_PICK_FIRST, '')).prop('disabled', true);
+            return;
+        }
+        $sel.append(new Option(MSG_TS_PICK_PHOTO, '')).prop('disabled', false);
+        tsSamples.forEach((s, i) => {
+            if (s.exifMs != null) $sel.append(new Option(`${s.name} (${TS.formatDateTime(s.exifMs)})`, String(i)));
+        });
+    }
+
+    async function tsLoadSamples() {
+        const token = ++tsSampleToken;
+        tsSamples = [];
+        tsFillRefSelect();
+        tsRender();
+        if (!selectedFiles.length || !window.exifr) return;
+        const samples = await TS.readSamples(selectedFiles, TS_SAMPLE_HEAD, TS_SAMPLE_TAIL);
+        if (token !== tsSampleToken) return;   // the selection changed meanwhile
+        tsSamples = samples;
+        tsFillRefSelect();
+        tsRender();
+    }
+
+    $('#ts-sign, #ts-days, #ts-hours, #ts-minutes, #ts-seconds').on('input change', tsRender);
+    $('#ts-reset').on('click', () => { tsWriteOffset(0); tsRender(); });
+
+    $('#ts-ref-photo').on('change', function () {
+        const s = tsSamples[+$(this).val()];
+        if (!$(this).val() || !s || s.exifMs == null) return;
+        const v = TS.toLocalInput(s.exifMs);
+        $('#ts-current').val(v);
+        // Start the correct time from the same value: usually only one part
+        // (the hour, the day) is wrong, and the user edits just that.
+        $('#ts-desired').val(v);
+    });
+
+    $('#ts-calc-btn').on('click', () => {
+        const cur = TS.parseLocalInput($('#ts-current').val());
+        const des = TS.parseLocalInput($('#ts-desired').val());
+        if (cur == null || des == null) { $('#ts-error').text(MSG_TS_NEED_BOTH).show(); return; }
+        const off = TS.offsetBetween(cur, des);
+        if (!TS.isValidOffset(off)) { $('#ts-error').text(MSG_TS_TOO_BIG).show(); return; }
+        tsWriteOffset(off);
+        tsRender();
+    });
+
+    tsRender();
 
     // ─── Resumable ───────────────────────────────────────────────────────
     function loadResumeState() {
@@ -724,13 +975,19 @@ $(document).ready(function () {
                     clearResumeState();
                     return;
                 }
+                const batchOffset = data.time_offset_seconds || 0;
                 $('#resume-text').text(
                     `{{ _('Batch') }} ${st.batchId.slice(0,8)}..., ` +
                     `${data.processed_files || 0} / ${data.total_files || 0} ` +
-                    `{{ _('файлів. Натисніть «Продовжити», виберіть ту саму папку, файли вже залиті будуть пропущені.') }}`
+                    `{{ _('файлів. Натисніть «Продовжити», виберіть ту саму папку, файли вже залиті будуть пропущені.') }}` +
+                    (batchOffset ? ` ${MSG_TS_BATCH_HAS} ${tsFmt(batchOffset)}.` : '')
                 );
+                // The server is the source of truth for the batch's shift; keep
+                // the local copy in step with it (older states have none).
+                saveResumeState(Object.assign({}, st, { timeOffset: batchOffset }));
                 $('#resume-banner').show();
-                $('#resume-continue-btn').data('batchId', st.batchId).data('locationId', st.locationId);
+                $('#resume-continue-btn').data('batchId', st.batchId).data('locationId', st.locationId)
+                    .data('timeOffset', batchOffset);
             })
             .fail(() => clearResumeState());
     }
@@ -744,7 +1001,7 @@ $(document).ready(function () {
             return alert('{{ _("Виберіть ту саму папку чи файли, що й попереднього разу.") }}');
         }
         $('#resume-banner').hide();
-        resumeUpload(selectedFiles, locId, batchId);
+        resumeUpload(selectedFiles, locId, batchId, $(this).data('timeOffset') || 0);
     });
 
     // ─── Upload ────────────────────────────────────────────────────────────
@@ -937,7 +1194,7 @@ $(document).ready(function () {
             .text(UPLOAD_BTN_TEXT);
     }
 
-    async function runFullUpload(files, locationId, existingBatchId) {
+    async function runFullUpload(files, locationId, existingBatchId, timeOffsetSeconds) {
         $('#upload-btn').prop('disabled', true).text('{{ _("Завантаження...") }}');
         $('#upload-progress').show();
         $('#error-alert,#upload-success-message').hide();
@@ -953,9 +1210,13 @@ $(document).ready(function () {
                 const createResp = await $.ajax({
                     url: createBatchUrl, method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-                    data: JSON.stringify({ location_id: parseInt(locationId), total_files: files.length })
+                    data: JSON.stringify({
+                        location_id: parseInt(locationId), total_files: files.length,
+                        time_offset_seconds: timeOffsetSeconds || 0
+                    })
                 });
                 batchId = createResp.batch_id;
+                timeOffsetSeconds = createResp.time_offset_seconds || 0;
             } else {
                 // Resumable: fetch already-uploaded files.
                 const list = await $.get(uploadedFilesUrl(batchId));
@@ -964,7 +1225,8 @@ $(document).ready(function () {
                     `{{ _("Знайдено") }} ${alreadyUploaded.size} {{ _("уже залитих файлів — пропускаю їх") }}`
                 );
             }
-            saveResumeState({ batchId, locationId, total: files.length, ts: Date.now() });
+            saveResumeState({ batchId, locationId, total: files.length, ts: Date.now(),
+                              timeOffset: timeOffsetSeconds || 0 });
 
             // Phase 1: parallel file upload.
             const result = await uploadWithPool(files, locationId, batchId, alreadyUploaded);
@@ -1006,8 +1268,8 @@ $(document).ready(function () {
         }
     }
 
-    function startUpload(files, locationId)               { runFullUpload(files, locationId, null); }
-    function resumeUpload(files, locationId, batchId)     { runFullUpload(files, locationId, batchId); }
+    function startUpload(files, locationId, offset)          { runFullUpload(files, locationId, null, offset); }
+    function resumeUpload(files, locationId, batchId, offset) { runFullUpload(files, locationId, batchId, offset); }
 
     // On load: if storage is below the minimum, show the button blocked + message.
     if (!UPLOAD_ALLOWED) {
@@ -1022,12 +1284,26 @@ $(document).ready(function () {
         if (!locationId || locationId === '-1' || locationId === '0') {
             return alert('{{ _("Виберіть дійсне місце перед завантаженням.") }}');
         }
+        const ts = tsReadOffset();
+        if (!ts.ok) {
+            $('#time-shift-block').prop('open', true);
+            return alert(ts.error);
+        }
         // If an incomplete batch exists, resume it rather than creating a new one.
+        // Its shift was fixed when it was created; a different value in the
+        // form cannot apply to half a batch, so say so instead of ignoring it.
         const st = loadResumeState();
         if (st && st.batchId && String(st.locationId) === String(locationId)) {
-            resumeUpload(selectedFiles, locationId, st.batchId);
+            const batchOffset = st.timeOffset || 0;
+            if (batchOffset !== ts.seconds &&
+                !confirm(MSG_TS_RESUME.split('__OLD__').join(tsFmt(batchOffset)).replace('__NEW__', tsFmt(ts.seconds)))) {
+                return;
+            }
+            resumeUpload(selectedFiles, locationId, st.batchId, batchOffset);
         } else {
-            startUpload(selectedFiles, locationId);
+            // A wrong shift is invisible once stored, so a non-zero one is confirmed.
+            if (ts.seconds !== 0 && !confirm(MSG_TS_CONFIRM.replace('__OFF__', tsFmt(ts.seconds)))) return;
+            startUpload(selectedFiles, locationId, ts.seconds);
         }
     });
 
@@ -1037,6 +1313,11 @@ $(document).ready(function () {
         $('#file-summary-row,#file-list,#upload-success-message').hide();
         clearResumeState();
         checkReady();
+        // The next set is usually another camera with its own clock: never
+        // carry a shift over silently.
+        tsWriteOffset(0);
+        $('#ts-current,#ts-desired').val('');
+        tsLoadSamples();
     });
 
     const initial = $('#location-select').val();

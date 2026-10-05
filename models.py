@@ -291,6 +291,13 @@ class UploadBatch(CTBase):
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+    # Clock correction for the whole batch, in seconds, added to each photo's
+    # EXIF time before it is stored (DST, AM/PM mix-up, wrong date on the
+    # camera). Kept on the batch so a resumed upload cannot drift to another
+    # value, and so the original time stays recoverable: captured_at - offset.
+    # Created on existing DBs by scripts/init_time_offset.py.
+    time_offset_seconds = Column(Integer, nullable=False, default=0,
+                                 server_default='0')
 
     # Relationships
     location = relationship('Location')
