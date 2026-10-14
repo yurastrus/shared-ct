@@ -14,17 +14,25 @@ import time
 from datetime import datetime
 
 from flask import current_app, flash, g, jsonify, redirect, render_template, request, url_for
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 from . import camera_traps_bp
 from . import access as ct_access
 from . import gap_analysis as ga
 from . import gap_metrics as gm
 from .database import get_ct_session, close_ct_session
+from .decorators import role_required
 from .domain import _
 from .routes import (DOMESTIC_SPECIES_IDS, build_ecoregions, get_accessible_institutions,
                      resolve_scope)
 from .utils import get_institution_filter
+
+# Testing phase: the PAGE (and its hub card) is admin-only. The JSON API only
+# requires a signed-in user, so nothing in it has to change on opening day; it
+# already applies the caller's institution access to every query. To open the
+# page: set this to False and drop the `is_admin` guard around the card in
+# templates/overview.html (the page then needs login, like the API).
+GAP_ANALYSIS_ADMIN_ONLY = True
 
 GAP_CACHE_TTL_SECONDS = 600
 GAP_CACHE_MAX_ENTRIES = 32
@@ -111,6 +119,14 @@ def _gap_grid(ct_session, p):
 @camera_traps_bp.route('/analysis/gap-analysis')
 def gap_analysis_page(lang_code):
     """Gap analysis page: where the camera-trap data are thin, and in what sense."""
+    # login_required first: role_required redirects anonymous users to a
+    # non-existent endpoint, which the video routes avoid the same way.
+    if GAP_ANALYSIS_ADMIN_ONLY:
+        return login_required(role_required('admin')(_render_gap_page))(lang_code)
+    return login_required(_render_gap_page)(lang_code)
+
+
+def _render_gap_page(lang_code):
     try:
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         institutions = get_accessible_institutions(is_admin)
@@ -146,6 +162,7 @@ def _json_endpoint(name, produce):
 
 
 @camera_traps_bp.route('/api/gap-analysis/grid')
+@login_required
 def api_gap_grid(lang_code):
     """Grid layer (cells with metrics + empty cells), summary and location points."""
     def produce(ct_session, p):
@@ -156,6 +173,7 @@ def api_gap_grid(lang_code):
 
 
 @camera_traps_bp.route('/api/gap-analysis/cell/<code>')
+@login_required
 def api_gap_cell(lang_code, code):
     """Accumulation curve, species and locations of one grid cell."""
     def produce(ct_session, p):
@@ -168,6 +186,7 @@ def api_gap_cell(lang_code, code):
 
 
 @camera_traps_bp.route('/api/gap-analysis/kernel')
+@login_required
 def api_gap_kernel(lang_code):
     """Kernel effort surface (camera-days per km²) for the chosen bandwidth."""
     def produce(ct_session, p):
@@ -181,6 +200,7 @@ def api_gap_kernel(lang_code):
 
 
 @camera_traps_bp.route('/api/gap-analysis/biotopes')
+@login_required
 def api_gap_biotopes(lang_code):
     """Effort and completeness pooled by biotope (gaps in environmental space)."""
     def produce(ct_session, p):
