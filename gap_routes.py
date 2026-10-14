@@ -69,7 +69,7 @@ def _request_params():
     """Validated filters shared by every gap-analysis endpoint."""
     args = request.args
     scale = args.get('scale', type=int)
-    unit = args.get('unit', ga.UNIT_DAY)
+    unit = args.get('unit', ga.DEFAULT_UNIT)
     taxon = args.get('taxon', 'mammals')
     start = _parse_date(args.get('start_date'))
     end = _parse_date(args.get('end_date'))
@@ -80,7 +80,7 @@ def _request_params():
                   if current_user.is_authenticated else [])
     return {
         'scale': scale if scale in gm.GRID_SCALES_M else 5000,
-        'unit': unit if unit in (ga.UNIT_DAY, ga.UNIT_WEEK) else ga.UNIT_DAY,
+        'unit': unit if unit in (ga.UNIT_DAY, ga.UNIT_WEEK) else ga.DEFAULT_UNIT,
         'taxon': taxon if taxon in ga.TAXON_GROUPS else 'mammals',
         'species_id': args.get('species_id', type=int),
         'scope': args.get('scope', ''),
@@ -139,7 +139,7 @@ def _render_gap_page(lang_code):
             ecoregions=build_ecoregions(institutions, g.lang_code),
             selected_scope=selected_scope,
             grid_scales=gm.GRID_SCALES_M,
-            kernel_bandwidths=GAP_KERNEL_BANDWIDTHS_M,
+            kernel_bandwidths=[(bw, round(gm.home_range_km2(bw))) for bw in GAP_KERNEL_BANDWIDTHS_M],
             min_units=gm.MIN_UNITS_FOR_ESTIMATE,
             pool_radius_km=ga.POOL_RADIUS_M // 1000,
         )

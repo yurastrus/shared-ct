@@ -21,6 +21,12 @@ Two stricter guards, because here a camera-day is a claim that a species
   can be a record yet;
 * a deployment interval counts only if it holds at least one verified series
   day, so deployments whose photos never reached the database add nothing.
+
+Those unverified-only days are not thrown away: they are kept as
+``pending_days`` and shown, because on the real data (Oct 2026) they were 47%
+of all location-days with series (25.4k of 53.8k) and 46 locations had nothing
+else. Without them a red or grey cell would read as "no cameras" when it means
+"nobody has verified the photos yet", which calls for a different action.
 """
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -32,7 +38,10 @@ from . import gap_metrics as gm
 
 VERIFIED_STATUSES = ('completed', 'archived')
 
-# Deployments with these flags never count as effort, whatever the user picks.
+# Deployment *intervals* with these flags never count as effort, whatever the
+# user picks. Days with verified series inside such a deployment still do (the
+# photos prove the camera ran that day); excluding those as well is the opt-in
+# QC filter, as on every other page of the module.
 ALWAYS_EXCLUDED_DEPLOYMENT_FLAGS = (
     'qc_data_not_usable', 'qc_non_functional', 'qc_stolen', 'qc_no_data_uploaded_by_pa',
 )
@@ -56,12 +65,27 @@ MAX_EMPTY_CELLS = 20000
 
 UNIT_DAY = 'day'
 UNIT_WEEK = 'week'
+# Default unit: the camera-week. Records of one species at one camera are
+# strongly autocorrelated day to day (real data, Oct 2026: P(record tomorrow |
+# record today) = 0.235 against a mean daily p of 0.080), which breaks the
+# independence both Chao2 and 1 - (1 - p)^T assume and makes day units
+# overconfident. Weeks soften it; the day unit stays available.
+DEFAULT_UNIT = UNIT_WEEK
+
+# Days per unit, for the detection side. Incidence statistics (Chao2,
+# coverage) count units as occasions, partial or not. Detection confidence
+# must not: a camera that ran 10 scattered days in 10 different weeks would
+# otherwise get 10 full weeks of exposure (lynx: 59% instead of ~15%). So
+# p is a rate per full-unit equivalent (hits / (camera-days / L)) and exposure
+# in a cell is camera-days / L.
+UNIT_LENGTH_DAYS = {UNIT_DAY: 1, UNIT_WEEK: 7}
 
 
 @dataclass
 class GapData:
     locations: dict = field(default_factory=dict)    # id -> {name, lat, lon, x, y}
     effort_days: dict = field(default_factory=dict)  # id -> set[date]
+    pending_days: dict = field(default_factory=dict)  # id -> set[date], unverified-only
     detections: dict = field(default_factory=dict)   # id -> {species_id: set[date]}
     species: dict = field(default_factory=dict)      # id -> {name_uk, name_en, scientific}
     biotopes: dict = field(default_factory=dict)     # location id -> [biotope_id]
@@ -170,6 +194,10 @@ def fetch_gap_data(session, inst_condition, inst_params, start_date=None, end_da
         verified_days, unverified_days, deployments,
         start_date=_as_date(start_date), end_date=_as_date(end_date),
         max_gap_days=max_gap_days)
+    for lid, days in unverified_days.items():
+        days = days - verified_days.get(lid, set())
+        if days:
+            data.pending_days[lid] = days
 
     # 4. Detection days per species (consensus winner of verified series).
     categories = TAXON_GROUPS.get(taxon, TAXON_GROUPS['mammals'])
@@ -273,17 +301,18 @@ def _species_label(info, lang):
 
 
 def species_detection_probabilities(data, unit, min_units=1):
-    """{species_id: per-unit detection probability} over the whole scope.
+    """{species_id: detection probability per full unit} over the whole scope.
 
-    Species recorded in fewer than ``min_units`` units are left out: one lucky
-    record gives a p that says more about chance than about the species.
+    Hits are units with a record; exposure is camera-days / unit length at the
+    locations where the species was recorded (see UNIT_LENGTH_DAYS). Species
+    recorded in fewer than ``min_units`` units are left out: one lucky record
+    gives a p that says more about chance than about the species.
     """
-    units_by_loc = {lid: {unit_key(d, unit) for d in days}
-                    for lid, days in data.effort_days.items()}
+    length = UNIT_LENGTH_DAYS[unit]
     hits = defaultdict(int)
-    exposure = defaultdict(int)
+    exposure = defaultdict(float)
     for lid, per_species in data.detections.items():
-        n_units = len(units_by_loc.get(lid, ()))
+        n_units = len(data.effort_days.get(lid, ())) / length
         for sid, days in per_species.items():
             hits[sid] += len({unit_key(d, unit) for d in days})
             exposure[sid] += n_units
@@ -333,15 +362,18 @@ def _sample_metrics(data, location_ids, unit, res_m=None, pool=None):
     units, camera_days, incidence = _pool(data, location_ids, unit)
     T = len(units)
     cd = len(camera_days)
+    pending = sum(len(data.pending_days.get(lid, ())) for lid in location_ids)
+    exposure = cd / UNIT_LENGTH_DAYS[unit]   # full-unit equivalents, for detection
     rich = gm.richness_stats(incidence.values(), T)
     temporal = gm.temporal_coverage(camera_days)
     cd_per_unit = cd / T if T else 0
     extra_units = gm.units_to_coverage(list(incidence.values()), T, 0.95)
-    sensitivity = gm.pool_sensitivity(pool or {}, T, incidence.keys())
+    sensitivity = gm.pool_sensitivity(pool or {}, exposure, incidence.keys())
     out = {
         'n_locations': len(location_ids),
         'camera_days': cd,
         'T': T,
+        'exposure_units': round(exposure, 2),
         'S_obs': rich['S_obs'],
         'Q1': rich['Q1'],
         'Q2': rich['Q2'],
@@ -349,6 +381,9 @@ def _sample_metrics(data, location_ids, unit, res_m=None, pool=None):
         'coverage': _r(rich['coverage'], 3),
         'completeness': _r(rich['completeness'], 3),
         'estimable': rich['estimable'],
+        'unstable': rich['unstable'],
+        'pending_days': pending,
+        'verified_share': _r(cd / (cd + pending), 3) if cd + pending else None,
         'extra_camera_days_cov95': (None if extra_units is None
                                     else int(round(extra_units * cd_per_unit))),
         'months': temporal['months'],
@@ -416,7 +451,7 @@ def empty_cells(area, occupied, res_m, limit=MAX_EMPTY_CELLS):
     return out, False
 
 
-def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
+def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
                include_empty=True):
     """Grid layer: one feature per occupied cell, plus empty cells of the study area.
 
@@ -426,7 +461,7 @@ def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
     """
     by_cell = defaultdict(list)
     for lid, loc in data.locations.items():
-        if lid not in data.effort_days:
+        if lid not in data.effort_days and lid not in data.pending_days:
             continue
         by_cell[gm.cell_origin(loc['x'], loc['y'], res_m)].append(lid)
 
@@ -445,17 +480,18 @@ def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
                                    'location_ids': sorted(lids)}
         top = sorted(incidence.items(), key=lambda kv: -kv[1])
         metrics.update(
-            code=code, status='data',
+            # 'unverified': cameras stood here, but not one day is verified yet
+            code=code, status='data' if metrics['camera_days'] else 'unverified',
             ring=gm.cell_polygon_wgs84(x0, y0, res_m),
             species=[_species_label(data.species.get(sid), lang) for sid, _ in top],
-            likely_missed=likely_missed(data, cell_pool, incidence, metrics['T'], lang),
+            likely_missed=likely_missed(data, cell_pool, incidence, metrics['exposure_units'], lang),
             pool_size=len(cell_pool),
         )
         if focus_species_id:
             detected = focus_species_id in incidence
             metrics['focus_detected'] = detected
             metrics['focus_confidence'] = 1.0 if detected else _r(
-                gm.detection_confidence(focus_p, metrics['T']), 3)
+                gm.detection_confidence(focus_p, metrics['exposure_units']), 3)
         cells.append(metrics)
 
     truncated = False
@@ -468,8 +504,9 @@ def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
                           'camera_days': 0, 'composite': 0, 'effort_score': 0})
 
     all_lids = [lid for lids in by_cell.values() for lid in lids]
+    n_unverified = sum(1 for c in cells if c['status'] == 'unverified')
     total, _ = _sample_metrics(data, all_lids, unit, pool=pool)
-    unit_days = total['camera_days'] / total['T'] if total['T'] else 1
+    unit_days = UNIT_LENGTH_DAYS[unit]
 
     def _detectability(sid, p):
         need = gm.units_for_confidence(p, 0.95)
@@ -480,7 +517,8 @@ def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
 
     summary = {
         'scale_m': res_m, 'unit': unit,
-        'n_cells_with_data': len(by_cell),
+        'n_cells_with_data': len(by_cell) - n_unverified,
+        'n_unverified_cells': n_unverified,
         'n_empty_cells': sum(1 for c in cells if c['status'] == 'empty'),
         'empty_truncated': truncated,
         'total': total,
@@ -493,9 +531,9 @@ def build_grid(data, res_m, unit=UNIT_DAY, focus_species_id=None, lang='uk',
     return {'cells': cells, 'incidence': incidence_by_code, 'summary': summary}
 
 
-def likely_missed(data, pool, incidence, T, lang='uk', limit=3):
+def likely_missed(data, pool, incidence, exposure, lang='uk', limit=3):
     """Pool species not recorded here, least likely to have been detected first."""
-    rows = [(gm.detection_confidence(p, T), sid) for sid, p in pool.items() if sid not in incidence]
+    rows = [(gm.detection_confidence(p, exposure), sid) for sid, p in pool.items() if sid not in incidence]
     rows.sort()
     return [{'name': _species_label(data.species.get(sid), lang), 'confidence': round(c, 3)}
             for c, sid in rows[:limit]]
@@ -519,29 +557,33 @@ def build_kernel(data, bandwidth_m):
               for lid, loc in data.locations.items()]
     pixel, surface = gm.kernel_effort_surface(points, bandwidth_m)
     if not surface:
-        return {'pixel_m': pixel, 'bandwidth_m': bandwidth_m, 'pixels': [], 'max': 0}
+        return {'pixel_m': pixel, 'bandwidth_m': bandwidth_m, 'pixels': [], 'max': 0,
+                'home_range_km2': round(gm.home_range_km2(bandwidth_m))}
     peak = max(surface.values())
     floor = peak * 1e-3   # drop the far tails, they only cost bytes
     pixels = [{'ring': gm.cell_polygon_wgs84(x0, y0, pixel, ndigits=5), 'value': round(v, 3)}
               for (x0, y0), v in surface.items() if v >= floor]
-    return {'pixel_m': pixel, 'bandwidth_m': bandwidth_m, 'pixels': pixels, 'max': round(peak, 3)}
+    return {'pixel_m': pixel, 'bandwidth_m': bandwidth_m, 'pixels': pixels, 'max': round(peak, 3),
+            'home_range_km2': round(gm.home_range_km2(bandwidth_m))}
 
 
 def location_points(data):
     """Camera locations with their effort and richness, for the point layer."""
     out = []
     for lid, loc in data.locations.items():
-        days = data.effort_days.get(lid)
-        if not days:
+        days = data.effort_days.get(lid, set())
+        pending = data.pending_days.get(lid, set())
+        if not days and not pending:
             continue
+        span = days or pending
         out.append({'id': lid, 'name': loc['name'], 'lat': loc['lat'], 'lon': loc['lon'],
-                    'camera_days': len(days),
+                    'camera_days': len(days), 'pending_days': len(pending),
                     'S_obs': len(data.detections.get(lid, {})),
-                    'first': min(days).isoformat(), 'last': max(days).isoformat()})
+                    'first': min(span).isoformat(), 'last': max(span).isoformat()})
     return out
 
 
-def biotope_summary(data, unit=UNIT_DAY, lang='uk'):
+def biotope_summary(data, unit=DEFAULT_UNIT, lang='uk'):
     """Effort and completeness pooled by biotope (a location counts in each of its biotopes).
 
     The environmental side of the gap: a biotope with little effort or low
@@ -584,9 +626,11 @@ def cell_detail(grid_result, code, data, lang='uk'):
                 'units': n}
                for sid, n in sorted(incidence.items(), key=lambda kv: -kv[1])]
     locations = [{'id': lid, 'name': data.locations[lid]['name'],
-                  'camera_days': len(data.effort_days.get(lid, ()))}
+                  'camera_days': len(data.effort_days.get(lid, ())),
+                  'pending_days': len(data.pending_days.get(lid, ()))}
                  for lid in entry['location_ids'] if lid in data.locations]
     return {'code': code, 'T': T, 'camera_days': entry['camera_days'],
             'S_obs': rich['S_obs'], 'chao2': _r(rich['chao2'], 2),
             'coverage': _r(rich['coverage'], 3), 'estimable': rich['estimable'],
+            'unstable': rich['unstable'],
             'curve': curve, 'species': species, 'locations': locations}

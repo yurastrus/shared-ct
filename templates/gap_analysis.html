@@ -104,8 +104,8 @@
         <div class="filter-group">
             <label for="unit-select">{{ _('Одиниця вибірки:') }}</label>
             <select id="unit-select" class="form-control">
+                <option value="week" selected>{{ _('Камеро-тиждень') }}</option>
                 <option value="day">{{ _('Камеро-доба') }}</option>
-                <option value="week">{{ _('Камеро-тиждень') }}</option>
             </select>
         </div>
         <div class="filter-group">
@@ -126,10 +126,12 @@
                     <span class="hint">{{ _('Середнє геометричне зусиль, чутливості до пулу видів і покриття сезонів. Слабкий хоч один вимір робить клітинку червоною.') }}</span></label>
                 <label><input type="radio" name="layer" value="effort"> {{ _('Зусилля (камеро-доби)') }}
                     <span class="hint">{{ _('Логарифмічна шкала. Зелений означає приблизно камеру, що працює цілий рік, на кожен кілометр масштабу.') }}</span></label>
+                <label><input type="radio" name="layer" value="verified"> {{ _('Верифіковано') }}
+                    <span class="hint">{{ _('Частка днів із серіями, які вже перевірено. Червоне тут означає не брак камер, а чергу на верифікацію.') }}</span></label>
                 <label><input type="radio" name="layer" value="pool"> {{ _('Чутливість до пулу видів') }}
                     <span class="hint">{{ _('Яку частку видів, зафіксованих у радіусі %(km)s км, ми б уже виявили тут за наявних зусиль, якби всі вони тут жили.', km=pool_radius_km) }}</span></label>
                 <label><input type="radio" name="layer" value="coverage"> {{ _('Покриття вибірки (Chao & Jost)') }}
-                    <span class="hint">{{ _('Імовірність, що наступна камеро-доба не дасть нового виду. Зважене на поширені види, тож рідкісних майже не помічає.') }}</span></label>
+                    <span class="hint">{{ _('Імовірність, що наступна одиниця вибірки не дасть нового виду. Зважене на поширені види, тож рідкісних майже не помічає.') }}</span></label>
                 <label><input type="radio" name="layer" value="completeness"> {{ _('Повнота: виявлено / Chao2') }}
                     <span class="hint">{{ _('Частка оціненого видового багатства клітинки, яку вже зафіксовано.') }}</span></label>
                 <label><input type="radio" name="layer" value="temporal"> {{ _('Покриття сезонів') }}
@@ -140,11 +142,11 @@
                     <select id="species-select" class="form-control form-control-sm"></select>
                 </div>
                 <label><input type="radio" name="layer" value="kernel"> {{ _('Ядерна щільність зусиль') }}
-                    <span class="hint">{{ _('Кожна камера розмазує свої камеро-доби гаусовим ядром. Ширину ядра варто читати як розмір індивідуальної ділянки тварини.') }}</span></label>
+                    <span class="hint">{{ _('Кожна камера розмазує свої камеро-доби гаусовим ядром. У дужках площа індивідуальної ділянки, якій відповідає ширина ядра (95% нормального розподілу).') }}</span></label>
                 <div class="gap-sub" id="kernel-sub" hidden>
                     <select id="bandwidth-select" class="form-control form-control-sm">
-                        {% for bw in kernel_bandwidths %}
-                        <option value="{{ bw }}" {% if bw == 2500 %}selected{% endif %}>σ = {{ '%g' % (bw / 1000) }} {{ _('км') }}</option>
+                        {% for bw, area in kernel_bandwidths %}
+                        <option value="{{ bw }}" {% if bw == 2500 %}selected{% endif %}>σ = {{ '%g' % (bw / 1000) }} {{ _('км') }} (≈ {{ area }} {{ _('км²') }})</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -200,9 +202,13 @@
             <li>{{ _('Реєстрація означає консенсусний вид верифікованої серії. Свійські тварини, люди, транспорт і групи вищого рангу («Куницеві») не враховуються.') }}</li>
             <li>{{ _('Сітка EEA на проєкції ETRS89-LAEA (EPSG:3035), та сама, що в модулі SDM. Камери однієї клітинки об\'єднуються в одну вибірку.') }}</li>
             <li>{{ _('Chao2 і покриття вибірки рахуються за частотами трапляння (Chao et al. 2014, як iNEXT). Менше %(n)s одиниць вибірки в клітинці означає, що оцінка не робиться (штрихова межа).', n=min_units) }}</li>
-            <li>{{ _('Імовірність виявлення виду дорівнює частці одиниць вибірки з реєстрацією на тих локаціях, де вид фіксувався хоч раз. Це оцінка зверху, бо вона спирається на місця, де вид точно є; для ранжування клітинок її досить, але модель зайнятості вона не замінює.') }}</li>
+            <li>{{ _('Імовірність виявлення виду дорівнює кількості одиниць вибірки з реєстрацією, поділеній на повні одиниці зусиль (камеро-доби / 7 для тижня) на тих локаціях, де вид фіксувався хоч раз. Тож розкидані дні не рахуються як повні тижні. Це оцінка зверху, бо вона спирається на місця, де вид точно є; для ранжування клітинок її досить, але модель зайнятості вона не замінює.') }}</li>
             <li>{{ _('Пул видів клітинки складають види з радіуса %(km)s км, зафіксовані щонайменше в 3 одиницях вибірки.', km=pool_radius_km) }}</li>
             <li>{{ _('Досліджувана територія: буфер 5 км навколо камер із замиканням 10 км. Діри між групами камер до 20 км стають сірими клітинками.') }}</li>
+            <li>{{ _('За замовчуванням одиниця вибірки дорівнює камеро-тижню. Реєстрації одного виду на одній камері в сусідні дні сильно залежні (імовірність реєстрації завтра після реєстрації сьогодні втричі вища за середню), а Chao2 і ймовірність пропуску припускають незалежні одиниці. Із камеро-добою обидві оцінки надто оптимістичні.') }}</li>
+            <li>{{ _('Фіолетові клітинки мають камери, але жодного перевіреного дня. Це черга на верифікацію, а не прогалина в польових роботах.') }}</li>
+            <li>{{ _('Пул видів не враховує біотопу: видра чи бобер потраплять у «найімовірніше пропущені» і там, де води немає. Читати цей список треба з картою оселищ у голові.') }}</li>
+            <li>{{ _('Крапкова межа на шарах покриття й повноти означає, що є види, зафіксовані один раз, але жодного, зафіксованого двічі. Оцінка тоді спирається на поодинокі випадки, а з одним таким видом взагалі показує «нічого не пропущено», тож довіряти їй не можна.') }}</li>
         </ul>
     </details>
 </div>
@@ -256,6 +262,12 @@
         noBiotope: {{ _('Без біотопу')|tojson }},
         speciesShort: {{ _('Видів')|tojson }},
         confidence: {{ _('Імовірність виявлення')|tojson }},
+        verified: {{ _('Верифіковано')|tojson }},
+        pendingDays: {{ _('Неверифікованих днів')|tojson }},
+        unverifiedCell: {{ _('Камери є, перевірених днів нема')|tojson }},
+        unstable: {{ _('Нестійка оцінка: синглтони без дублетонів')|tojson }},
+        noPool: {{ _('Немає пулу видів для порівняння')|tojson }},
+        homeRange: {{ _('ділянка ≈')|tojson }},
         none: '—',
     };
 
@@ -335,8 +347,9 @@
 
     // Value (0..1, or null when not estimable) the current layer colours a cell by.
     function cellValue(c, layer) {
-        if (c.status === 'empty') return undefined;
+        if (c.status !== 'data') return layer === 'verified' && c.status === 'unverified' ? 0 : undefined;
         switch (layer) {
+            case 'verified': return c.verified_share;
             case 'composite': return c.composite;
             case 'effort': return c.effort_score;
             case 'pool': return c.pool_sensitivity;
@@ -361,6 +374,8 @@
             if (noFocus) {
                 if (c.status === 'empty' && !showEmpty) return;
                 style = {color: '#666', weight: 0.6, fillOpacity: 0};
+            } else if (c.status === 'unverified' && layer !== 'verified') {
+                style = {color: '#4a1486', weight: 1.2, fillColor: '#6a51a3', fillOpacity: 0.45};
             } else if (v === undefined) {
                 if (!showEmpty) return;
                 style = {color: '#888', weight: 0.5, fillColor: '#9e9e9e', fillOpacity: 0.35};
@@ -368,12 +383,15 @@
                 style = {color: '#7a0000', weight: 1.5, dashArray: '4 3', fillColor: ramp(0), fillOpacity: 0.45};
             } else {
                 const detected = layer === 'species' && c.focus_detected;
-                style = {color: detected ? '#0b3d91' : '#555', weight: detected ? 2 : 0.6,
+                const shaky = ['coverage', 'completeness'].includes(layer) && c.unstable;
+                style = {color: detected ? '#0b3d91' : (shaky ? '#222' : '#555'),
+                         weight: detected ? 2 : (shaky ? 1.5 : 0.6),
+                         dashArray: shaky ? '1 3' : null,
                          fillColor: ramp(v), fillOpacity: 0.7};
             }
             const poly = L.polygon(c.ring.map(([lon, lat]) => [lat, lon]), style);
             poly.bindTooltip(tooltipFor(c, layer), {sticky: true});
-            if (c.status === 'data') poly.on('click', () => openCell(c));
+            if (c.status !== 'empty') poly.on('click', () => openCell(c));
             poly.addTo(gridLayer);
         });
         drawLegend(layer);
@@ -381,10 +399,14 @@
 
     function tooltipFor(c, layer) {
         if (c.status === 'empty') return `<b>${esc(c.code)}</b><br>${esc(T.empty)}`;
+        if (c.status === 'unverified') return `<b>${esc(c.code)}</b><br>${esc(T.unverifiedCell)}`
+            + `<br>${esc(T.locations)}: ${c.n_locations} · ${esc(T.pendingDays)}: ${num(c.pending_days)}`;
         let html = `<b>${esc(c.code)}</b><br>${esc(T.cameraDays)}: ${num(c.camera_days)} · ${esc(T.locations)}: ${c.n_locations}`
             + `<br>${esc(T.species)}: ${c.S_obs}` + (c.estimable ? ` · Chao2 ${c.chao2}` : ` · <i>${esc(T.notEstimable)}</i>`)
             + `<br>${esc(T.pool)}: ${pct(c.pool_sensitivity)} · ${esc(T.months)}: ${c.months_covered}/12`
-            + `<br>${esc(T.composite)}: ${pct(c.composite)}`;
+            + `<br>${esc(T.composite)}: ${pct(c.composite)}`
+            + (c.pending_days ? `<br>${esc(T.verified)}: ${pct(c.verified_share)} (${esc(T.pendingDays)}: ${num(c.pending_days)})` : '')
+            + (c.unstable ? `<br><i>${esc(T.unstable)}</i>` : '');
         if (layer === 'species') {
             html += `<br><b>${c.focus_detected ? esc(T.detected) : esc(T.confidence) + ': ' + pct(c.focus_confidence)}</b>`;
         }
@@ -393,7 +415,7 @@
 
     function drawLegend(layer) {
         const el = $('gap-legend');
-        const titles = {composite: T.composite, effort: T.effort + ', ' + T.cameraDays.toLowerCase(),
+        const titles = {verified: T.verified, composite: T.composite, effort: T.effort + ', ' + T.cameraDays.toLowerCase(),
             pool: T.pool, coverage: T.coverage, completeness: T.completeness, temporal: T.temporal,
             species: T.confidence, kernel: T.density};
         let ticks = ['0%', '50%', '100%'];
@@ -407,11 +429,18 @@
             const v = (s) => (Math.pow(10, s * Math.log10(1 + kernel.max)) - 1).toFixed(s ? 1 : 0);
             ticks = ['0', v(0.5), v(1)];
         }
-        let html = `<b>${esc(titles[layer])}</b><div class="bar"></div><div class="ticks">${ticks.map((t) => `<span>${esc(t)}</span>`).join('')}</div>`;
+        const extra = layer === 'kernel' && kernel ? ` (σ ${kernel.bandwidth_m / 1000} km, ${esc(T.homeRange)} ${kernel.home_range_km2} km²)` : '';
+        let html = `<b>${esc(titles[layer])}</b>${extra}<div class="bar"></div><div class="ticks">${ticks.map((t) => `<span>${esc(t)}</span>`).join('')}</div>`;
         if (layer !== 'kernel') {
             html += `<div><span class="sw" style="background:#9e9e9e;opacity:.6"></span>${esc(T.empty)}</div>`;
-            if (['coverage', 'completeness', 'pool'].includes(layer)) {
-                html += `<div><span class="sw" style="border:1.5px dashed #7a0000;background:${ramp(0)}"></span>${esc(T.notEstimable)}</div>`;
+            if (layer !== 'verified') {
+                html += `<div><span class="sw" style="background:#6a51a3;opacity:.7"></span>${esc(T.unverifiedCell)}</div>`;
+            }
+            if (['coverage', 'completeness', 'pool', 'composite'].includes(layer)) {
+                html += `<div><span class="sw" style="border:1.5px dashed #7a0000;background:${ramp(0)}"></span>${esc(layer === 'coverage' || layer === 'completeness' ? T.notEstimable : T.noPool)}</div>`;
+            }
+            if (['coverage', 'completeness'].includes(layer)) {
+                html += `<div><span class="sw" style="border:1.5px dotted #222;background:${ramp(1)}"></span>${esc(T.unstable)}</div>`;
             }
             if (layer === 'species') {
                 html += `<div><span class="sw" style="border:2px solid #0b3d91;background:${ramp(1)}"></span>${esc(T.detected)}</div>`;
@@ -439,7 +468,8 @@
         grid.locations.forEach((l) => {
             L.circleMarker([l.lat, l.lon], {pane: 'locations', renderer: locRenderer,
                 radius: 3.5, color: '#222', weight: 1, fillColor: '#fff', fillOpacity: 1})
-                .bindTooltip(`<b>${esc(l.name)}</b><br>${esc(T.cameraDays)}: ${num(l.camera_days)}<br>${esc(T.speciesCount)}: ${l.S_obs}<br>${esc(l.first)} … ${esc(l.last)}`)
+                .bindTooltip(`<b>${esc(l.name)}</b><br>${esc(T.cameraDays)}: ${num(l.camera_days)}`
+                    + (l.pending_days ? `<br>${esc(T.pendingDays)}: ${num(l.pending_days)}` : '') + `<br>${esc(T.speciesCount)}: ${l.S_obs}<br>${esc(l.first)} … ${esc(l.last)}`)
                 .addTo(locLayer);
         });
     }
@@ -460,6 +490,7 @@
             [T.coverage, pct(t.coverage)], [T.months, t.months_covered + '/12'],
             [T.years, t.year_first ? `${t.year_first}–${t.year_last}` : T.none],
             [T.cells, num(grid.summary.n_cells_with_data)],
+            [T.pendingDays, num(t.pending_days)],
         ];
         $('gap-stats').innerHTML = items.map(([l, v]) =>
             `<div class="gap-stat"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
@@ -501,6 +532,8 @@
         $('cell-summary').innerHTML = `<b>${esc(d.code)}</b><br>`
             + `${esc(T.cameraDays)}: ${num(d.camera_days)} · ${esc(T.units)}: ${num(d.T)} · ${esc(T.species)}: ${d.S_obs}`
             + (d.estimable ? ` · Chao2: ${d.chao2} · ${esc(T.coverage)}: ${pct(d.coverage)}` : ` · <i>${esc(T.notEstimable)}</i>`)
+            + (d.unstable ? `<br><i>${esc(T.unstable)}</i>` : '')
+            + (c.pending_days ? `<br>${esc(T.pendingDays)}: ${num(c.pending_days)} (${esc(T.verified)}: ${pct(c.verified_share)})` : '')
             + `<br>${esc(T.pool)}: ${pct(c.pool_sensitivity)} · ${esc(T.months)}: ${c.months_covered}/12`
             + (c.extra_camera_days_cov95 ? ` · ${esc(T.extraCd)}: ${num(c.extra_camera_days_cov95)}` : '');
         const obs = d.curve.filter((p) => p.units <= d.T).map((p) => ({x: p.camera_days, y: p.S}));
@@ -523,7 +556,7 @@
         $('cell-lists').innerHTML =
             list(T.recorded, d.species.map((s) => `${esc(s.name)} (${s.units})`))
             + list(T.likelyMissed, (c.likely_missed || []).map((m) => `${esc(m.name)} (${pct(m.confidence)})`))
-            + list(T.cams, d.locations.map((l) => `${esc(l.name)} (${num(l.camera_days)})`));
+            + list(T.cams, d.locations.map((l) => `${esc(l.name)} (${num(l.camera_days)}${l.pending_days ? ' + ' + num(l.pending_days) + '?' : ''})`));
     }
 
     // ── Loading ────────────────────────────────────────────────────────────

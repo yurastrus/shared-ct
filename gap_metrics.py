@@ -122,9 +122,16 @@ def richness_stats(incidence, T):
         T: number of sampling units.
 
     Returns:
-        dict with S_obs, Q1, Q2, U, T, chao2, coverage, completeness and
+        dict with S_obs, Q1, Q2, U, T, chao2, coverage, completeness,
         ``estimable`` (False when T is below MIN_UNITS_FOR_ESTIMATE, in which
-        case chao2/coverage/completeness are None).
+        case chao2/coverage/completeness are None) and ``unstable``.
+
+    ``unstable`` marks singletons without doubletons (Q1 > 0, Q2 = 0). The
+    bias-corrected f0 is then Q1(Q1-1)/2, which is 0 for a single singleton:
+    one species seen once yields "nothing left to find" and coverage 1.0. That
+    is what iNEXT returns too, so the value is kept, but it rests on no
+    doubleton at all and the page must not read it as completeness. On the
+    real data (Oct 2026) this was 45 of the 107 cells with coverage 1.0.
     """
     ys = [int(y) for y in incidence if y and y > 0]
     S = len(ys)
@@ -133,7 +140,8 @@ def richness_stats(incidence, T):
     U = sum(ys)
     out = {'S_obs': S, 'Q1': Q1, 'Q2': Q2, 'U': U, 'T': int(T),
            'chao2': None, 'coverage': None, 'completeness': None,
-           'estimable': T >= MIN_UNITS_FOR_ESTIMATE}
+           'estimable': T >= MIN_UNITS_FOR_ESTIMATE,
+           'unstable': T >= MIN_UNITS_FOR_ESTIMATE and Q1 > 0 and Q2 == 0}
     if not out['estimable']:
         return out
     if S == 0:
@@ -340,10 +348,17 @@ def composite_score(effort, completeness, temporal):
     """Geometric mean of the three dimensions, each in 0..1.
 
     Geometric, not arithmetic: a cell that is strong on two dimensions and
-    empty on the third is still a gap. A missing value counts as 0. The page
-    passes pool sensitivity as ``completeness`` (see pool_sensitivity).
+    empty on the third is still a gap. The page passes pool sensitivity as
+    ``completeness`` (see pool_sensitivity); when it is None (no species pool
+    to judge against) the composite is None too, i.e. "cannot say", not 0.
+
+    Effort and pool sensitivity both grow with the number of units, so the
+    composite leans on effort more than the three equal exponents suggest.
+    It is a convenience for a first look; the separate layers are the analysis.
     """
-    parts = [effort or 0.0, completeness or 0.0, temporal or 0.0]
+    if completeness is None:
+        return None
+    parts = [effort or 0.0, completeness, temporal or 0.0]
     if min(parts) <= 0:
         return 0.0
     return (parts[0] * parts[1] * parts[2]) ** (1 / 3)
@@ -351,13 +366,20 @@ def composite_score(effort, completeness, temporal):
 
 # ─── Kernel effort surface ────────────────────────────────────────────────────
 
+def home_range_km2(bandwidth_m):
+    """Area of the 95% contour of a bivariate normal with σ = bandwidth_m."""
+    return 2 * math.pi * (bandwidth_m / 1000) ** 2 * math.log(20)
+
+
 def kernel_effort_surface(points, bandwidth_m, pixel_m=None, cutoff_sigmas=3.0):
     """Gaussian kernel density of camera-days.
 
     Args:
         points: iterable of (x, y, camera_days) in EPSG:3035 metres.
-        bandwidth_m: kernel standard deviation; read it as the home-range
-            scale of the animals in question.
+        bandwidth_m: kernel standard deviation σ. The 95% contour of a
+            bivariate normal encloses 2π σ² ln 20 ≈ 18.8 σ², so σ ≈ (home-range
+            radius) / 2.45: σ = 1 km matches a ~19 km² range, 2.5 km ~120 km²,
+            5 km ~470 km², 10 km ~1900 km² (see home_range_km2).
         pixel_m: output pixel size; defaults to half the bandwidth.
         cutoff_sigmas: kernels are truncated at this many bandwidths.
 
