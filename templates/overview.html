@@ -50,9 +50,9 @@
                 <span class="hub-card__desc">{{ _('Поширення видів на мапі локацій.') }}</span>
             </a>
 
-            {# Managers and admins while in testing; opens together with
-               GAP_ANALYSIS_MIN_ROLE in gap_routes.py. #}
-            {% if can_manage %}
+            {# Every signed-in user; data limited by institution access.
+               Follows GAP_ANALYSIS_MIN_ROLE in gap_routes.py. #}
+            {% if current_user.is_authenticated %}
             <a class="hub-card" href="{{ url_for('camera_traps.gap_analysis_page', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🧩</span>
                 <span class="hub-card__title">{{ _('Прогалини в даних') }} <small>Beta</small></span>

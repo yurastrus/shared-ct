@@ -27,12 +27,11 @@ from .routes import (DOMESTIC_SPECIES_IDS, build_ecoregions, get_accessible_inst
                      resolve_scope)
 from .utils import get_institution_filter
 
-# Testing phase: the PAGE (and its hub card) is for managers and admins only.
-# The JSON API only requires a signed-in user, so nothing in it has to change on
-# opening day; it already applies the caller's institution access to every
-# query. To open the page to every signed-in user: set this to None and drop the
-# `can_manage` guard around the card in templates/overview.html.
-GAP_ANALYSIS_MIN_ROLE = 'manager'   # role_required hierarchy: admin passes too
+# Page and API are open to every signed-in user; the data each user sees is
+# limited by institution access (public locations + their institutions, admin
+# sees all), the same rule as the rest of the module. Set a role here (e.g.
+# 'manager') to restrict the page again, and guard the card in overview.html.
+GAP_ANALYSIS_MIN_ROLE = None
 
 GAP_CACHE_TTL_SECONDS = 600
 GAP_CACHE_MAX_ENTRIES = 32
