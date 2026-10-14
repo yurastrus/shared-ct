@@ -23,4 +23,5 @@ def _inject_ct_translations():
 
 
 from . import routes
+from . import gap_routes
 from .database import init_ct_database

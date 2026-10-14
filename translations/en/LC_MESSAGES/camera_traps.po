@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-05 20:52+0300\n"
+"POT-Creation-Date: 2026-10-14 11:13+0300\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -82,6 +82,11 @@ msgstr "Favorite"
 #: app/camera_traps/templates/upload_fast.html:360
 msgid "Коментар"
 msgstr "Comment"
+
+#: app/camera_traps/gap_routes.py:132 app/camera_traps/routes.py:7727
+#: app/camera_traps/routes.py:7867
+msgid "Помилка завантаження сторінки."
+msgstr "Error loading page."
 
 #: app/camera_traps/routes.py:186 app/camera_traps/routes.py:210
 #: app/camera_traps/routes.py:4153 app/camera_traps/routes.py:4356
@@ -755,10 +760,6 @@ msgstr "Statistics recalculated successfully! The map will be updated."
 msgid "Під час перерахунку сталася помилка."
 msgstr "An error occurred during recalculation."
 
-#: app/camera_traps/routes.py:7727 app/camera_traps/routes.py:7867
-msgid "Помилка завантаження сторінки."
-msgstr "Error loading page."
-
 #: app/camera_traps/templates/_qc_filter_block.html:10
 #: app/camera_traps/templates/manage_deployments.html:283
 #: app/camera_traps/templates/upload_fast.html:341
@@ -966,12 +967,14 @@ msgstr "Species:"
 
 #: app/camera_traps/templates/activity_heatmap.html:225
 #: app/camera_traps/templates/daily_activity.html:20
+#: app/camera_traps/templates/gap_analysis.html:89
 #: app/camera_traps/templates/species_detailed.html:21
 msgid "Період з:"
 msgstr "Period from:"
 
 #: app/camera_traps/templates/activity_heatmap.html:230
 #: app/camera_traps/templates/daily_activity.html:24
+#: app/camera_traps/templates/gap_analysis.html:93
 #: app/camera_traps/templates/species_detailed.html:25
 msgid "до:"
 msgstr "to:"
@@ -981,6 +984,7 @@ msgstr "to:"
 #: app/camera_traps/templates/daily_activity.html:29
 #: app/camera_traps/templates/dashboard.html:30
 #: app/camera_traps/templates/expertise.html:121
+#: app/camera_traps/templates/gap_analysis.html:67
 #: app/camera_traps/templates/species_dashboard.html:49
 #: app/camera_traps/templates/upload_stats.html:39
 msgid "Установа / Екорегіон:"
@@ -991,6 +995,7 @@ msgstr "Institution / Ecoregion:"
 #: app/camera_traps/templates/daily_activity.html:32
 #: app/camera_traps/templates/dashboard.html:32
 #: app/camera_traps/templates/expertise.html:123
+#: app/camera_traps/templates/gap_analysis.html:69
 #: app/camera_traps/templates/species_dashboard.html:52
 #: app/camera_traps/templates/upload_stats.html:41
 msgid "Всі дані"
@@ -1012,6 +1017,7 @@ msgstr "Available to me"
 #: app/camera_traps/templates/daily_activity.html:37
 #: app/camera_traps/templates/dashboard.html:34
 #: app/camera_traps/templates/expertise.html:125
+#: app/camera_traps/templates/gap_analysis.html:71
 #: app/camera_traps/templates/identification.html:17
 #: app/camera_traps/templates/manage_locations.html:128
 #: app/camera_traps/templates/species_dashboard.html:57
@@ -1027,6 +1033,7 @@ msgstr "Institutions"
 #: app/camera_traps/templates/daily_activity.html:46
 #: app/camera_traps/templates/dashboard.html:43
 #: app/camera_traps/templates/expertise.html:134
+#: app/camera_traps/templates/gap_analysis.html:80
 #: app/camera_traps/templates/identification.html:26
 #: app/camera_traps/templates/species_dashboard.html:66
 #: app/camera_traps/templates/upload_stats.html:52
@@ -1109,6 +1116,7 @@ msgid "Гру"
 msgstr "Dec"
 
 #: app/camera_traps/templates/activity_heatmap.html:328
+#: app/camera_traps/templates/gap_analysis.html:238
 #: app/camera_traps/templates/species_detailed.html:82
 msgid "-- Виберіть вид --"
 msgstr "-- Select species --"
@@ -1139,7 +1147,7 @@ msgid "Адмін-панель — фотопастки"
 msgstr "Admin panel — camera traps"
 
 #: app/camera_traps/templates/admin.html:10
-#: app/camera_traps/templates/overview.html:172
+#: app/camera_traps/templates/overview.html:178
 msgid "Адмін-панель"
 msgstr "Admin panel"
 
@@ -1802,6 +1810,7 @@ msgid "Всі доступні дані"
 msgstr "All available data"
 
 #: app/camera_traps/templates/behavior_analysis.html:71
+#: app/camera_traps/templates/gap_analysis.html:255
 msgid "Біотоп"
 msgstr "Habitat"
 
@@ -2094,12 +2103,12 @@ msgstr "detections"
 #: app/camera_traps/templates/contributors.html:3
 #: app/camera_traps/templates/contributors.html:27
 #: app/camera_traps/templates/dashboard.html:99
-#: app/camera_traps/templates/overview.html:79
+#: app/camera_traps/templates/overview.html:85
 msgid "Всі учасники"
 msgstr "All Contributors"
 
 #: app/camera_traps/templates/contributors.html:28
-#: app/camera_traps/templates/overview.html:80
+#: app/camera_traps/templates/overview.html:86
 msgid "Повний перелік учасників та їхній внесок за ковзні періоди."
 msgstr "Full list of contributors and their input over rolling periods."
 
@@ -2113,6 +2122,7 @@ msgstr "All species"
 #: app/camera_traps/templates/contributors.html:65
 #: app/camera_traps/templates/dashboard.html:72
 #: app/camera_traps/templates/expertise.html:179
+#: app/camera_traps/templates/gap_analysis.html:112
 #: app/camera_traps/templates/identification.html:108
 #: app/camera_traps/templates/species_detailed.html:41
 #: app/camera_traps/templates/upload_stats.html:61
@@ -2178,7 +2188,7 @@ msgid "До розділів"
 msgstr "To sections"
 
 #: app/camera_traps/templates/ct_data_export.html:3
-#: app/camera_traps/templates/overview.html:156
+#: app/camera_traps/templates/overview.html:162
 msgid "Експорт даних"
 msgstr "Data export"
 
@@ -2588,10 +2598,13 @@ msgid "Всього фото"
 msgstr "Total photos"
 
 #: app/camera_traps/templates/dashboard.html:83
+#: app/camera_traps/templates/gap_analysis.html:227
 msgid "Локацій"
 msgstr "Locations"
 
 #: app/camera_traps/templates/dashboard.html:85
+#: app/camera_traps/templates/gap_analysis.html:242
+#: app/camera_traps/templates/gap_analysis.html:257
 msgid "Видів"
 msgstr "Species"
 
@@ -2810,7 +2823,7 @@ msgstr "No data"
 
 #: app/camera_traps/templates/expertise.html:3
 #: app/camera_traps/templates/expertise.html:49
-#: app/camera_traps/templates/overview.html:178
+#: app/camera_traps/templates/overview.html:184
 msgid "Експертність верифікаторів"
 msgstr "Verifier expertise"
 
@@ -3236,6 +3249,411 @@ msgstr "The photo was successfully removed from favorites."
 msgid "Помилка видалення з вибраного"
 msgstr "Error removing from favorites"
 
+#: app/camera_traps/templates/gap_analysis.html:3
+#: app/camera_traps/templates/gap_analysis.html:59
+msgid "Аналіз прогалин у даних"
+msgstr "Data gap analysis"
+
+#: app/camera_traps/templates/gap_analysis.html:62
+msgid ""
+"Де відсутність реєстрації виду щось означає, а де ми просто мало "
+"дивились? Сторінка окремо показує зусилля (камеро-доби), повноту "
+"виявлення видів і покриття сезонів. Зелений колір означає, що даних "
+"достатньо, червоний означає прогалину, а сірий позначає ділянку "
+"досліджуваної території, де камер не було взагалі."
+msgstr ""
+"Where does the absence of a species record mean something, and where have"
+" we simply not looked enough? The page shows effort (camera-days), "
+"completeness of species detection and seasonal coverage separately. Green"
+" means the data are sufficient, red marks a gap, and grey marks part of "
+"the study area where there were no cameras at all."
+
+#: app/camera_traps/templates/gap_analysis.html:97
+msgid "Група:"
+msgstr "Group:"
+
+#: app/camera_traps/templates/gap_analysis.html:99
+#: app/camera_traps/templates/identification.html:226
+msgid "Ссавці"
+msgstr "Mammals"
+
+#: app/camera_traps/templates/gap_analysis.html:100
+#: app/camera_traps/templates/identification.html:228
+msgid "Птахи"
+msgstr "Birds"
+
+#: app/camera_traps/templates/gap_analysis.html:101
+msgid "Усі дикі тварини"
+msgstr "All wild animals"
+
+#: app/camera_traps/templates/gap_analysis.html:105
+msgid "Одиниця вибірки:"
+msgstr "Sampling unit:"
+
+#: app/camera_traps/templates/gap_analysis.html:107
+msgid "Камеро-доба"
+msgstr "Camera-day"
+
+#: app/camera_traps/templates/gap_analysis.html:108
+msgid "Камеро-тиждень"
+msgstr "Camera-week"
+
+#: app/camera_traps/templates/gap_analysis.html:123
+msgid "Шар"
+msgstr "Layer"
+
+#: app/camera_traps/templates/gap_analysis.html:125
+#: app/camera_traps/templates/gap_analysis.html:248
+msgid "Зведений індекс"
+msgstr "Composite index"
+
+#: app/camera_traps/templates/gap_analysis.html:126
+msgid ""
+"Середнє геометричне зусиль, чутливості до пулу видів і покриття сезонів. "
+"Слабкий хоч один вимір робить клітинку червоною."
+msgstr ""
+"Geometric mean of effort, species-pool sensitivity and seasonal coverage."
+" A single weak dimension turns the cell red."
+
+#: app/camera_traps/templates/gap_analysis.html:127
+msgid "Зусилля (камеро-доби)"
+msgstr "Effort (camera-days)"
+
+#: app/camera_traps/templates/gap_analysis.html:128
+msgid ""
+"Логарифмічна шкала. Зелений означає приблизно камеру, що працює цілий "
+"рік, на кожен кілометр масштабу."
+msgstr ""
+"Logarithmic scale. Green means roughly one camera running all year per "
+"kilometre of grid scale."
+
+#: app/camera_traps/templates/gap_analysis.html:129
+msgid "Чутливість до пулу видів"
+msgstr "Species-pool sensitivity"
+
+#: app/camera_traps/templates/gap_analysis.html:130
+#, python-format
+msgid ""
+"Яку частку видів, зафіксованих у радіусі %(km)s км, ми б уже виявили тут "
+"за наявних зусиль, якби всі вони тут жили."
+msgstr ""
+"The share of species recorded within %(km)s km that the effort here would"
+" already have detected, had they all lived here."
+
+#: app/camera_traps/templates/gap_analysis.html:131
+msgid "Покриття вибірки (Chao & Jost)"
+msgstr "Sample coverage (Chao & Jost)"
+
+#: app/camera_traps/templates/gap_analysis.html:132
+msgid ""
+"Імовірність, що наступна камеро-доба не дасть нового виду. Зважене на "
+"поширені види, тож рідкісних майже не помічає."
+msgstr ""
+"Probability that the next camera-day adds no new species. Weighted "
+"towards common species, so it hardly notices rare ones."
+
+#: app/camera_traps/templates/gap_analysis.html:133
+msgid "Повнота: виявлено / Chao2"
+msgstr "Completeness: observed / Chao2"
+
+#: app/camera_traps/templates/gap_analysis.html:134
+msgid "Частка оціненого видового багатства клітинки, яку вже зафіксовано."
+msgstr ""
+"Share of the cell's estimated species richness that has already been "
+"recorded."
+
+#: app/camera_traps/templates/gap_analysis.html:135
+#: app/camera_traps/templates/gap_analysis.html:249
+msgid "Покриття сезонів"
+msgstr "Seasonal coverage"
+
+#: app/camera_traps/templates/gap_analysis.html:136
+msgid "Скільки з 12 календарних місяців мають щонайменше 7 камеро-діб."
+msgstr "How many of the 12 calendar months hold at least 7 camera-days."
+
+#: app/camera_traps/templates/gap_analysis.html:137
+msgid "Чи міг вид бути пропущений"
+msgstr "Could a species have been missed"
+
+#: app/camera_traps/templates/gap_analysis.html:138
+msgid ""
+"Імовірність, що вибраний вид було б зафіксовано в клітинці, якби він там "
+"жив."
+msgstr ""
+"Probability that the selected species would have been recorded in the "
+"cell had it lived there."
+
+#: app/camera_traps/templates/gap_analysis.html:142
+msgid "Ядерна щільність зусиль"
+msgstr "Kernel effort density"
+
+#: app/camera_traps/templates/gap_analysis.html:143
+msgid ""
+"Кожна камера розмазує свої камеро-доби гаусовим ядром. Ширину ядра варто "
+"читати як розмір індивідуальної ділянки тварини."
+msgstr ""
+"Each camera spreads its camera-days with a Gaussian kernel. Read the "
+"kernel width as the size of an animal's home range."
+
+#: app/camera_traps/templates/gap_analysis.html:147
+#: app/camera_traps/templates/gap_analysis.html:157
+msgid "км"
+msgstr "km"
+
+#: app/camera_traps/templates/gap_analysis.html:153
+msgid "Масштаб сітки"
+msgstr "Grid scale"
+
+#: app/camera_traps/templates/gap_analysis.html:163
+msgid "Клітинки без камер"
+msgstr "Cells without cameras"
+
+#: app/camera_traps/templates/gap_analysis.html:164
+msgid "Локації камер"
+msgstr "Camera locations"
+
+#: app/camera_traps/templates/gap_analysis.html:176
+msgid "Клітинка"
+msgstr "Cell"
+
+#: app/camera_traps/templates/gap_analysis.html:177
+msgid ""
+"Клацніть клітинку на карті, щоб побачити криву накопичення видів і "
+"подробиці."
+msgstr "Click a cell on the map to see its species accumulation curve and details."
+
+#: app/camera_traps/templates/gap_analysis.html:185
+msgid "Виявлюваність видів"
+msgstr "Species detectability"
+
+#: app/camera_traps/templates/gap_analysis.html:186
+msgid ""
+"Імовірність зафіксувати вид за одну одиницю вибірки там, де він точно є, "
+"і скільки камеро-діб треба, щоб пропустити присутній вид лише з "
+"імовірністю 5%. Найважче виявлювані види вгорі."
+msgstr ""
+"Probability of recording a species in one sampling unit where it is known"
+" to be present, and how many camera-days it takes to miss a present "
+"species with only 5% probability. Hardest to detect species first."
+
+#: app/camera_traps/templates/gap_analysis.html:190
+msgid "Біотопи: прогалини в середовищі"
+msgstr "Biotopes: gaps in environmental space"
+
+#: app/camera_traps/templates/gap_analysis.html:191
+msgid ""
+"Зусилля й повнота, зведені за біотопами локацій. Біотоп із малими "
+"зусиллями недосліджений, де б на карті він не був. Локація з кількома "
+"біотопами враховується в кожному з них."
+msgstr ""
+"Effort and completeness pooled by location biotope. A biotope with little"
+" effort is under-sampled wherever it lies on the map. A location with "
+"several biotopes counts in each of them."
+
+#: app/camera_traps/templates/gap_analysis.html:197
+msgid "Як це пораховано"
+msgstr "How this is calculated"
+
+#: app/camera_traps/templates/gap_analysis.html:199
+msgid ""
+"Камеро-доба зараховується, якщо день лежить у межах розгортання або між "
+"днями з серіями (прогалини до 15 днів заповнюються, бо камера стояла, "
+"просто ніхто не проходив). Дні, де всі серії ще не верифіковані, не "
+"рахуються: на них поки не може бути реєстрацій. Розгортання без жодної "
+"верифікованої серії не рахується теж."
+msgstr ""
+"A camera-day counts if the day falls within a deployment or between days "
+"with series (gaps of up to 15 days are filled, because the camera was "
+"there and nothing passed). Days whose series are all still unverified do "
+"not count, since they cannot hold records yet. A deployment without a "
+"single verified series does not count either."
+
+#: app/camera_traps/templates/gap_analysis.html:200
+msgid ""
+"Реєстрація означає консенсусний вид верифікованої серії. Свійські "
+"тварини, люди, транспорт і групи вищого рангу («Куницеві») не "
+"враховуються."
+msgstr ""
+"A record is the consensus species of a verified series. Domestic animals,"
+" people, vehicles and higher-rank groups (“Mustelidae”) are not counted."
+
+#: app/camera_traps/templates/gap_analysis.html:201
+msgid ""
+"Сітка EEA на проєкції ETRS89-LAEA (EPSG:3035), та сама, що в модулі SDM. "
+"Камери однієї клітинки об'єднуються в одну вибірку."
+msgstr ""
+"EEA grid on the ETRS89-LAEA projection (EPSG:3035), the same as in the "
+"SDM module. Cameras within one cell are pooled into one sample."
+
+#: app/camera_traps/templates/gap_analysis.html:202
+#, python-format
+msgid ""
+"Chao2 і покриття вибірки рахуються за частотами трапляння (Chao et al. "
+"2014, як iNEXT). Менше %(n)s одиниць вибірки в клітинці означає, що "
+"оцінка не робиться (штрихова межа)."
+msgstr ""
+"Chao2 and sample coverage are computed from incidence frequencies (Chao "
+"et al. 2014, as in iNEXT). With fewer than %(n)s sampling units in a cell"
+" no estimate is made (dashed outline)."
+
+#: app/camera_traps/templates/gap_analysis.html:203
+msgid ""
+"Імовірність виявлення виду дорівнює частці одиниць вибірки з реєстрацією "
+"на тих локаціях, де вид фіксувався хоч раз. Це оцінка зверху, бо вона "
+"спирається на місця, де вид точно є; для ранжування клітинок її досить, "
+"але модель зайнятості вона не замінює."
+msgstr ""
+"A species' detection probability is the share of sampling units with a "
+"record at the locations where it was recorded at least once. It is an "
+"upper estimate because it relies on places where the species is known to "
+"be; good enough to rank cells, but no substitute for an occupancy model."
+
+#: app/camera_traps/templates/gap_analysis.html:204
+#, python-format
+msgid ""
+"Пул видів клітинки складають види з радіуса %(km)s км, зафіксовані "
+"щонайменше в 3 одиницях вибірки."
+msgstr ""
+"A cell's species pool consists of species from within %(km)s km recorded "
+"in at least 3 sampling units."
+
+#: app/camera_traps/templates/gap_analysis.html:205
+msgid ""
+"Досліджувана територія: буфер 5 км навколо камер із замиканням 10 км. "
+"Діри між групами камер до 20 км стають сірими клітинками."
+msgstr ""
+"Study area: a 5 km buffer around cameras, closed by 10 km. Holes between "
+"camera clusters up to 20 km apart become grey cells."
+
+#: app/camera_traps/templates/gap_analysis.html:223
+msgid "Рахую…"
+msgstr "Calculating…"
+
+#: app/camera_traps/templates/gap_analysis.html:224
+#: app/camera_traps/templates/identification.html:379
+msgid "Не вдалося завантажити дані."
+msgstr "Could not load the data."
+
+#: app/camera_traps/templates/gap_analysis.html:225
+msgid "У вибраній області немає даних із зусиллями."
+msgstr "There is no effort data in the selected area."
+
+#: app/camera_traps/templates/gap_analysis.html:226
+msgid "Порожніх клітинок забагато, показано не всі."
+msgstr "Too many empty cells, not all are shown."
+
+#: app/camera_traps/templates/gap_analysis.html:228
+msgid "Камеро-діб"
+msgstr "Camera-days"
+
+#: app/camera_traps/templates/gap_analysis.html:229
+msgid "Видів зафіксовано"
+msgstr "Species recorded"
+
+#: app/camera_traps/templates/gap_analysis.html:230
+msgid "Chao2 (оцінка)"
+msgstr "Chao2 (estimate)"
+
+#: app/camera_traps/templates/gap_analysis.html:231
+msgid "Покриття вибірки"
+msgstr "Sample coverage"
+
+#: app/camera_traps/templates/gap_analysis.html:232
+msgid "Місяців покрито"
+msgstr "Months covered"
+
+#: app/camera_traps/templates/gap_analysis.html:233
+msgid "Роки"
+msgstr "Years"
+
+#: app/camera_traps/templates/gap_analysis.html:234
+msgid "Клітинок з даними"
+msgstr "Cells with data"
+
+#: app/camera_traps/templates/gap_analysis.html:235
+msgid "Немає камер"
+msgstr "No cameras"
+
+#: app/camera_traps/templates/gap_analysis.html:236
+msgid "Замало даних для оцінки"
+msgstr "Too little data to estimate"
+
+#: app/camera_traps/templates/gap_analysis.html:237
+msgid "Вид зафіксовано"
+msgstr "Species recorded here"
+
+#: app/camera_traps/templates/gap_analysis.html:239
+msgid "Спостережено"
+msgstr "Observed"
+
+#: app/camera_traps/templates/gap_analysis.html:240
+msgid "Екстраполяція"
+msgstr "Extrapolated"
+
+#: app/camera_traps/templates/gap_analysis.html:241
+msgid "Одиниць вибірки"
+msgstr "Sampling units"
+
+#: app/camera_traps/templates/gap_analysis.html:243
+msgid "Найімовірніше пропущені"
+msgstr "Most likely missed"
+
+#: app/camera_traps/templates/gap_analysis.html:244
+msgid "Зафіксовані види"
+msgstr "Recorded species"
+
+#: app/camera_traps/templates/gap_analysis.html:245
+#: app/camera_traps/templates/overview.html:144
+msgid "Локації"
+msgstr "Locations"
+
+#: app/camera_traps/templates/gap_analysis.html:246
+msgid "Ще камеро-діб до покриття 95%"
+msgstr "Camera-days still needed for 95% coverage"
+
+#: app/camera_traps/templates/gap_analysis.html:247
+msgid "Чутливість до пулу"
+msgstr "Pool sensitivity"
+
+#: app/camera_traps/templates/gap_analysis.html:250
+msgid "Повнота"
+msgstr "Completeness"
+
+#: app/camera_traps/templates/gap_analysis.html:251
+msgid "Зусилля"
+msgstr "Effort"
+
+#: app/camera_traps/templates/gap_analysis.html:252
+msgid "камеро-діб / км²"
+msgstr "camera-days / km²"
+
+#: app/camera_traps/templates/gap_analysis.html:253
+msgid "p за одиницю"
+msgstr "p per unit"
+
+#: app/camera_traps/templates/gap_analysis.html:254
+msgid "Камеро-діб для 95%"
+msgstr "Camera-days for 95%"
+
+#: app/camera_traps/templates/gap_analysis.html:256
+#: app/camera_traps/templates/manage_locations.html:48
+msgid "Без біотопу"
+msgstr "No habitat"
+
+#: app/camera_traps/templates/gap_analysis.html:258
+msgid "Імовірність виявлення"
+msgstr "Detection probability"
+
+#: app/camera_traps/templates/gap_analysis.html:315
+#: app/camera_traps/templates/species_detailed.html:125
+msgid "Карта (OSM)"
+msgstr "Map (OSM)"
+
+#: app/camera_traps/templates/gap_analysis.html:315
+#: app/camera_traps/templates/species_detailed.html:126
+msgid "Супутник (Esri)"
+msgstr "Satellite (ESRI)"
+
 #: app/camera_traps/templates/identification.html:4
 msgid "Ідентифікація тварин"
 msgstr "Animal Identification"
@@ -3380,17 +3798,9 @@ msgstr "Flag this series for review"
 msgid "Загальні опції"
 msgstr "General Options"
 
-#: app/camera_traps/templates/identification.html:226
-msgid "Ссавці"
-msgstr "Mammals"
-
 #: app/camera_traps/templates/identification.html:227
 msgid "Свійські тварини"
 msgstr "Domestic animals"
-
-#: app/camera_traps/templates/identification.html:228
-msgid "Птахи"
-msgstr "Birds"
 
 #: app/camera_traps/templates/identification.html:229
 msgid "Інші"
@@ -3406,10 +3816,6 @@ msgstr "Please select a species, or the \"Empty\" option."
 #: app/camera_traps/templates/service_log.html:350
 msgid "Помилка збереження:"
 msgstr "Save error:"
-
-#: app/camera_traps/templates/identification.html:379
-msgid "Не вдалося завантажити дані."
-msgstr "Failed to load data."
 
 #: app/camera_traps/templates/identification.html:382
 msgid "Залишилось вам:"
@@ -3753,7 +4159,7 @@ msgid "Клацніть локацію, щоб відфільтрувати де
 msgstr "Click a location to filter deployments."
 
 #: app/camera_traps/templates/manage_deployments.html:179
-#: app/camera_traps/templates/overview.html:143
+#: app/camera_traps/templates/overview.html:149
 msgid "Деплойменти"
 msgstr "Deployments"
 
@@ -3794,7 +4200,7 @@ msgid "Немає деплойментів."
 msgstr "No deployments."
 
 #: app/camera_traps/templates/manage_deployments.html:216
-#: app/camera_traps/templates/overview.html:101
+#: app/camera_traps/templates/overview.html:107
 msgid "Ідентифікація"
 msgstr "Identification"
 
@@ -4000,10 +4406,6 @@ msgstr "Service"
 #: app/camera_traps/templates/manage_locations.html:47
 msgid "Повна"
 msgstr "Complete"
-
-#: app/camera_traps/templates/manage_locations.html:48
-msgid "Без біотопу"
-msgstr "No habitat"
 
 #: app/camera_traps/templates/manage_locations.html:49
 #: app/camera_traps/templates/manage_locations.html:56
@@ -4326,106 +4728,110 @@ msgid "Поширення видів на мапі локацій."
 msgstr "Species distribution on the location map."
 
 #: app/camera_traps/templates/overview.html:55
+msgid "Прогалини в даних"
+msgstr "Data gaps"
+
+#: app/camera_traps/templates/overview.html:56
+msgid "Де камер було замало, щоб відсутність виду щось означала."
+msgstr "Where cameras were too few for a species' absence to mean anything."
+
+#: app/camera_traps/templates/overview.html:61
 msgid "Галерея"
 msgstr "Gallery"
 
-#: app/camera_traps/templates/overview.html:56
+#: app/camera_traps/templates/overview.html:62
 msgid "Перегляд відібраних фото з пасток."
 msgstr "Browse curated camera trap photos."
 
-#: app/camera_traps/templates/overview.html:62
+#: app/camera_traps/templates/overview.html:68
 msgid "Порівняння"
 msgstr "Comparison"
 
-#: app/camera_traps/templates/overview.html:63
+#: app/camera_traps/templates/overview.html:69
 msgid "Порівняння двох регіонів або установ за показниками."
 msgstr "Compare two regions or institutions side by side."
 
-#: app/camera_traps/templates/overview.html:72
+#: app/camera_traps/templates/overview.html:78
 msgid "Верифікації по установах"
 msgstr "Verifications by institution"
 
-#: app/camera_traps/templates/overview.html:73
+#: app/camera_traps/templates/overview.html:79
 msgid "Опрацьовані серії за установами та лічильники фото."
 msgstr "Processed series by institution and photo counters."
 
-#: app/camera_traps/templates/overview.html:85
+#: app/camera_traps/templates/overview.html:91
 msgid "Поведінка"
 msgstr "Behaviour"
 
-#: app/camera_traps/templates/overview.html:86
+#: app/camera_traps/templates/overview.html:92
 msgid "Аналіз поведінкових тегів окремого виду."
 msgstr "Behaviour tag analysis for a single species."
 
-#: app/camera_traps/templates/overview.html:95
+#: app/camera_traps/templates/overview.html:101
 msgid "Робота"
 msgstr "Workflow"
 
-#: app/camera_traps/templates/overview.html:102
+#: app/camera_traps/templates/overview.html:108
 msgid "Визначення видів на нових серіях фото."
 msgstr "Identify species on new photo series."
 
-#: app/camera_traps/templates/overview.html:109
+#: app/camera_traps/templates/overview.html:115
 #: app/camera_traps/templates/upload.html:143
 #: app/camera_traps/templates/upload_fast.html:369
 msgid "Завантаження"
 msgstr "Upload"
 
-#: app/camera_traps/templates/overview.html:110
+#: app/camera_traps/templates/overview.html:116
 msgid "Додати фото з пасток до бази даних."
 msgstr "Add new camera trap photos to the database."
 
-#: app/camera_traps/templates/overview.html:115
+#: app/camera_traps/templates/overview.html:121
 msgid "Імпорт класифікації"
 msgstr "Classification import"
 
-#: app/camera_traps/templates/overview.html:116
+#: app/camera_traps/templates/overview.html:122
 msgid "Накласти результати локального DeepFaune (CSV) на фото локації."
 msgstr "Overlay results of a local DeepFaune run (CSV) onto location photos."
 
-#: app/camera_traps/templates/overview.html:130
+#: app/camera_traps/templates/overview.html:136
 msgid "Завантаження відео"
 msgstr "Video upload"
 
-#: app/camera_traps/templates/overview.html:131
+#: app/camera_traps/templates/overview.html:137
 msgid "Відео ріжеться на кадри у браузері й лягає в базу як серія фото."
 msgstr ""
 "Clips are cut into frames in your browser and land in the database as a "
 "photo series."
 
-#: app/camera_traps/templates/overview.html:138
-msgid "Локації"
-msgstr "Locations"
-
-#: app/camera_traps/templates/overview.html:139
+#: app/camera_traps/templates/overview.html:145
 msgid "Керування точками встановлення пасток."
 msgstr "Manage camera trap deployment points."
 
-#: app/camera_traps/templates/overview.html:144
+#: app/camera_traps/templates/overview.html:150
 msgid "Редагування даних встановлень та контролю якості."
 msgstr "Edit deployment data and quality control."
 
-#: app/camera_traps/templates/overview.html:148
+#: app/camera_traps/templates/overview.html:154
 msgid "Якість даних"
 msgstr "Data quality"
 
-#: app/camera_traps/templates/overview.html:149
+#: app/camera_traps/templates/overview.html:155
 msgid "Карта та графіки контролю якості деплойментів."
 msgstr "Map and charts of deployment quality control."
 
-#: app/camera_traps/templates/overview.html:157
+#: app/camera_traps/templates/overview.html:163
 msgid "Завантажити відфільтровані дані у форматах CSV / Darwin Core."
 msgstr "Download filtered data as CSV / Darwin Core."
 
-#: app/camera_traps/templates/overview.html:168
+#: app/camera_traps/templates/overview.html:174
 msgid "Адміністрування"
 msgstr "Administration"
 
-#: app/camera_traps/templates/overview.html:173
+#: app/camera_traps/templates/overview.html:179
 msgid "Перерахунок аналітики, очищення фото та інші технічні дії."
 msgstr "Recalculate analytics, clean up photos and other maintenance actions."
 
-#: app/camera_traps/templates/overview.html:179
+#: app/camera_traps/templates/overview.html:185
 msgid "Збіг визначень з остаточним рішенням серії, за людьми або за видами."
 msgstr ""
 "Agreement of identifications with the final decision of a series, by "
@@ -4678,14 +5084,6 @@ msgstr "Animal species:"
 #: app/camera_traps/templates/species_detailed.html:61
 msgid "Середній DR"
 msgstr "Mean DR"
-
-#: app/camera_traps/templates/species_detailed.html:125
-msgid "Карта (OSM)"
-msgstr "Map (OSM)"
-
-#: app/camera_traps/templates/species_detailed.html:126
-msgid "Супутник (Esri)"
-msgstr "Satellite (ESRI)"
 
 #: app/camera_traps/templates/species_detailed.html:131
 msgid "DR (Детекцій на 100 днів)"

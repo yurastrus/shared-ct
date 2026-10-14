@@ -50,6 +50,12 @@
                 <span class="hub-card__desc">{{ _('Поширення видів на мапі локацій.') }}</span>
             </a>
 
+            <a class="hub-card" href="{{ url_for('camera_traps.gap_analysis_page', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🧩</span>
+                <span class="hub-card__title">{{ _('Прогалини в даних') }} <small>Beta</small></span>
+                <span class="hub-card__desc">{{ _('Де камер було замало, щоб відсутність виду щось означала.') }}</span>
+            </a>
+
             <a class="hub-card" href="{{ url_for('camera_traps.gallery', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🖼️</span>
                 <span class="hub-card__title">{{ _('Галерея') }}</span>

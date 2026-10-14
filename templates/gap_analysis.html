@@ -1,0 +1,570 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Аналіз прогалин у даних') }}{% endblock %}
+
+{% block ct_head_extra %}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <style>
+        .gap-lead { color: #495057; max-width: 70rem; margin-bottom: 1rem; }
+        .gap-badge { font-size: .7rem; vertical-align: middle; background: #ffc107; color: #212529;
+                     border-radius: 4px; padding: 2px 6px; margin-left: 6px; font-weight: 600; }
+        .gap-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; align-items: start; }
+        .gap-controls { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;
+                        padding: 1rem; position: sticky; top: 1rem; min-width: 0; }
+        .gap-controls h2 { font-size: 1rem; font-weight: 600; margin: 0 0 .5rem; }
+        .gap-controls fieldset { border: 0; padding: 0; margin: 0 0 1rem; }
+        .gap-controls label { font-weight: normal; display: flex; gap: 6px; align-items: baseline;
+                              cursor: pointer; margin-bottom: 3px; }
+        .gap-controls .hint { font-size: .78rem; color: #6c757d; margin: 2px 0 6px; display: none; }
+        .gap-controls label { flex-wrap: wrap; }
+        .gap-controls .hint { flex-basis: 100%; padding-left: 20px; }
+        .gap-controls input[type=radio]:checked ~ .hint { display: block; }
+        .gap-controls select { width: 100%; }
+        .gap-sub { margin: 4px 0 8px 22px; }
+        #gap-map { height: 640px; border-radius: 8px; border: 1px solid #dee2e6; }
+        .gap-status { min-height: 1.4rem; font-size: .9rem; color: #6c757d; margin: .4rem 0; }
+        .gap-legend { background: rgba(255,255,255,.95); padding: 8px 10px; border-radius: 6px;
+                      font-size: .78rem; line-height: 1.3; box-shadow: 0 1px 4px rgba(0,0,0,.25); max-width: 230px; }
+        .gap-legend .bar { height: 10px; border-radius: 3px; margin: 4px 0 2px;
+                           background: linear-gradient(to right, #d7191c, #fdae61, #ffffbf, #a6d96a, #1a9641); }
+        .gap-legend .ticks { display: flex; justify-content: space-between; }
+        .gap-legend .sw { display: inline-block; width: 14px; height: 10px; vertical-align: middle; margin-right: 4px;
+                          border: 1px solid #666; }
+        .gap-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .5rem; margin: .75rem 0; }
+        .gap-stat { background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: .5rem .75rem; }
+        .gap-stat .v { font-size: 1.25rem; font-weight: 600; }
+        .gap-stat .l { font-size: .78rem; color: #6c757d; }
+        .gap-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+        .gap-panel { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 1rem; min-width: 0; }
+        .gap-panel h3 { font-size: 1rem; font-weight: 600; margin-top: 0; }
+        .gap-table { width: 100%; font-size: .85rem; border-collapse: collapse; }
+        .gap-table th, .gap-table td { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: right; }
+        .gap-table th:first-child, .gap-table td:first-child { text-align: left; }
+        .gap-table-wrap { max-height: 360px; overflow: auto; }
+        .gap-methods { margin-top: 1rem; }
+        .gap-methods summary { cursor: pointer; font-weight: 600; }
+        .gap-methods p, .gap-methods li { font-size: .9rem; max-width: 70rem; }
+        .muted { color: #6c757d; }
+        @media (max-width: 900px) {
+            .gap-layout, .gap-panels { grid-template-columns: 1fr; }
+            .gap-controls { position: static; }
+            #gap-map { height: 460px; }
+        }
+    </style>
+{% endblock %}
+
+{% block ct_content %}
+<div class="page-container gap-analysis-page">
+    <div class="page-header">
+        <h1>{{ _('Аналіз прогалин у даних') }}<span class="gap-badge">Beta</span></h1>
+    </div>
+    <p class="gap-lead">
+        {{ _('Де відсутність реєстрації виду щось означає, а де ми просто мало дивились? Сторінка окремо показує зусилля (камеро-доби), повноту виявлення видів і покриття сезонів. Зелений колір означає, що даних достатньо, червоний означає прогалину, а сірий позначає ділянку досліджуваної території, де камер не було взагалі.') }}
+    </p>
+
+    <div class="filters-panel">
+        <div class="filter-group filter-group--grow">
+            <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
+            <select id="scope-select" class="form-control">
+                <option value="global:" {% if selected_scope == 'global:' %}selected{% endif %}>{{ _('Всі дані') }}</option>
+                {% if institutions %}
+                <optgroup label="{{ _('Установи') }}">
+                    {% for inst in institutions %}
+                    <option value="institution:{{ inst.id }}" {% if selected_scope == 'institution:' ~ inst.id %}selected{% endif %}>
+                        {{ inst.name_uk if g.lang_code != 'en' else (inst.name_en or inst.name_uk) }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if ecoregions %}
+                <optgroup label="{{ _('Екорегіони') }}">
+                    {% for eco_key, eco_name in ecoregions.items() %}
+                    <option value="ecoregion:{{ eco_key }}" {% if selected_scope == 'ecoregion:' ~ eco_key %}selected{% endif %}>{{ eco_name }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="start-date">{{ _('Період з:') }}</label>
+            <input type="date" id="start-date" class="form-control">
+        </div>
+        <div class="filter-group">
+            <label for="end-date">{{ _('до:') }}</label>
+            <input type="date" id="end-date" class="form-control">
+        </div>
+        <div class="filter-group">
+            <label for="taxon-select">{{ _('Група:') }}</label>
+            <select id="taxon-select" class="form-control">
+                <option value="mammals">{{ _('Ссавці') }}</option>
+                <option value="birds">{{ _('Птахи') }}</option>
+                <option value="all">{{ _('Усі дикі тварини') }}</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="unit-select">{{ _('Одиниця вибірки:') }}</label>
+            <select id="unit-select" class="form-control">
+                <option value="day">{{ _('Камеро-доба') }}</option>
+                <option value="week">{{ _('Камеро-тиждень') }}</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <button id="apply-btn" class="btn btn-primary">{{ _('Застосувати') }}</button>
+        </div>
+        {% if current_user.is_authenticated %}
+        {% include '_qc_filter_block.html' %}
+        {% endif %}
+    </div>
+
+    <div class="gap-stats" id="gap-stats"></div>
+
+    <div class="gap-layout">
+        <aside class="gap-controls">
+            <h2>{{ _('Шар') }}</h2>
+            <fieldset id="layer-set">
+                <label><input type="radio" name="layer" value="composite" checked> {{ _('Зведений індекс') }}
+                    <span class="hint">{{ _('Середнє геометричне зусиль, чутливості до пулу видів і покриття сезонів. Слабкий хоч один вимір робить клітинку червоною.') }}</span></label>
+                <label><input type="radio" name="layer" value="effort"> {{ _('Зусилля (камеро-доби)') }}
+                    <span class="hint">{{ _('Логарифмічна шкала. Зелений означає приблизно камеру, що працює цілий рік, на кожен кілометр масштабу.') }}</span></label>
+                <label><input type="radio" name="layer" value="pool"> {{ _('Чутливість до пулу видів') }}
+                    <span class="hint">{{ _('Яку частку видів, зафіксованих у радіусі %(km)s км, ми б уже виявили тут за наявних зусиль, якби всі вони тут жили.', km=pool_radius_km) }}</span></label>
+                <label><input type="radio" name="layer" value="coverage"> {{ _('Покриття вибірки (Chao & Jost)') }}
+                    <span class="hint">{{ _('Імовірність, що наступна камеро-доба не дасть нового виду. Зважене на поширені види, тож рідкісних майже не помічає.') }}</span></label>
+                <label><input type="radio" name="layer" value="completeness"> {{ _('Повнота: виявлено / Chao2') }}
+                    <span class="hint">{{ _('Частка оціненого видового багатства клітинки, яку вже зафіксовано.') }}</span></label>
+                <label><input type="radio" name="layer" value="temporal"> {{ _('Покриття сезонів') }}
+                    <span class="hint">{{ _('Скільки з 12 календарних місяців мають щонайменше 7 камеро-діб.') }}</span></label>
+                <label><input type="radio" name="layer" value="species"> {{ _('Чи міг вид бути пропущений') }}
+                    <span class="hint">{{ _('Імовірність, що вибраний вид було б зафіксовано в клітинці, якби він там жив.') }}</span></label>
+                <div class="gap-sub" id="species-sub" hidden>
+                    <select id="species-select" class="form-control form-control-sm"></select>
+                </div>
+                <label><input type="radio" name="layer" value="kernel"> {{ _('Ядерна щільність зусиль') }}
+                    <span class="hint">{{ _('Кожна камера розмазує свої камеро-доби гаусовим ядром. Ширину ядра варто читати як розмір індивідуальної ділянки тварини.') }}</span></label>
+                <div class="gap-sub" id="kernel-sub" hidden>
+                    <select id="bandwidth-select" class="form-control form-control-sm">
+                        {% for bw in kernel_bandwidths %}
+                        <option value="{{ bw }}" {% if bw == 2500 %}selected{% endif %}>σ = {{ '%g' % (bw / 1000) }} {{ _('км') }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </fieldset>
+
+            <h2>{{ _('Масштаб сітки') }}</h2>
+            <fieldset>
+                <select id="scale-select" class="form-control form-control-sm">
+                    {% for s in grid_scales %}
+                    <option value="{{ s }}" {% if s == 5000 %}selected{% endif %}>{{ s // 1000 }} × {{ s // 1000 }} {{ _('км') }} (EEA)</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+
+            <fieldset>
+                <label><input type="checkbox" id="show-empty" checked> {{ _('Клітинки без камер') }}</label>
+                <label><input type="checkbox" id="show-locations"> {{ _('Локації камер') }}</label>
+            </fieldset>
+        </aside>
+
+        <div>
+            <div id="gap-map"></div>
+            <div class="gap-status" id="gap-status" role="status"></div>
+        </div>
+    </div>
+
+    <div class="gap-panels">
+        <section class="gap-panel" id="cell-panel">
+            <h3>{{ _('Клітинка') }}</h3>
+            <p class="muted" id="cell-empty">{{ _('Клацніть клітинку на карті, щоб побачити криву накопичення видів і подробиці.') }}</p>
+            <div id="cell-body" hidden>
+                <div id="cell-summary"></div>
+                <canvas id="cell-chart" height="220"></canvas>
+                <div id="cell-lists"></div>
+            </div>
+        </section>
+        <section class="gap-panel">
+            <h3>{{ _('Виявлюваність видів') }}</h3>
+            <p class="muted small">{{ _('Імовірність зафіксувати вид за одну одиницю вибірки там, де він точно є, і скільки камеро-діб треба, щоб пропустити присутній вид лише з імовірністю 5%. Найважче виявлювані види вгорі.') }}</p>
+            <div class="gap-table-wrap"><table class="gap-table" id="pool-table"></table></div>
+        </section>
+        <section class="gap-panel" style="grid-column: 1 / -1;">
+            <h3>{{ _('Біотопи: прогалини в середовищі') }}</h3>
+            <p class="muted small">{{ _('Зусилля й повнота, зведені за біотопами локацій. Біотоп із малими зусиллями недосліджений, де б на карті він не був. Локація з кількома біотопами враховується в кожному з них.') }}</p>
+            <div class="gap-table-wrap"><table class="gap-table" id="biotope-table"></table></div>
+        </section>
+    </div>
+
+    <details class="gap-methods">
+        <summary>{{ _('Як це пораховано') }}</summary>
+        <ul>
+            <li>{{ _('Камеро-доба зараховується, якщо день лежить у межах розгортання або між днями з серіями (прогалини до 15 днів заповнюються, бо камера стояла, просто ніхто не проходив). Дні, де всі серії ще не верифіковані, не рахуються: на них поки не може бути реєстрацій. Розгортання без жодної верифікованої серії не рахується теж.') }}</li>
+            <li>{{ _('Реєстрація означає консенсусний вид верифікованої серії. Свійські тварини, люди, транспорт і групи вищого рангу («Куницеві») не враховуються.') }}</li>
+            <li>{{ _('Сітка EEA на проєкції ETRS89-LAEA (EPSG:3035), та сама, що в модулі SDM. Камери однієї клітинки об\'єднуються в одну вибірку.') }}</li>
+            <li>{{ _('Chao2 і покриття вибірки рахуються за частотами трапляння (Chao et al. 2014, як iNEXT). Менше %(n)s одиниць вибірки в клітинці означає, що оцінка не робиться (штрихова межа).', n=min_units) }}</li>
+            <li>{{ _('Імовірність виявлення виду дорівнює частці одиниць вибірки з реєстрацією на тих локаціях, де вид фіксувався хоч раз. Це оцінка зверху, бо вона спирається на місця, де вид точно є; для ранжування клітинок її досить, але модель зайнятості вона не замінює.') }}</li>
+            <li>{{ _('Пул видів клітинки складають види з радіуса %(km)s км, зафіксовані щонайменше в 3 одиницях вибірки.', km=pool_radius_km) }}</li>
+            <li>{{ _('Досліджувана територія: буфер 5 км навколо камер із замиканням 10 км. Діри між групами камер до 20 км стають сірими клітинками.') }}</li>
+        </ul>
+    </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const API = {
+        grid: {{ url_for('camera_traps.api_gap_grid', lang_code=g.lang_code)|tojson }},
+        kernel: {{ url_for('camera_traps.api_gap_kernel', lang_code=g.lang_code)|tojson }},
+        biotopes: {{ url_for('camera_traps.api_gap_biotopes', lang_code=g.lang_code)|tojson }},
+        cell: {{ url_for('camera_traps.api_gap_cell', lang_code=g.lang_code, code='__CODE__')|tojson }},
+    };
+    const T = {
+        loading: {{ _('Рахую…')|tojson }},
+        error: {{ _('Не вдалося завантажити дані.')|tojson }},
+        noData: {{ _('У вибраній області немає даних із зусиллями.')|tojson }},
+        truncated: {{ _('Порожніх клітинок забагато, показано не всі.')|tojson }},
+        locations: {{ _('Локацій')|tojson }},
+        cameraDays: {{ _('Камеро-діб')|tojson }},
+        species: {{ _('Видів зафіксовано')|tojson }},
+        chao2: {{ _('Chao2 (оцінка)')|tojson }},
+        coverage: {{ _('Покриття вибірки')|tojson }},
+        months: {{ _('Місяців покрито')|tojson }},
+        years: {{ _('Роки')|tojson }},
+        cells: {{ _('Клітинок з даними')|tojson }},
+        empty: {{ _('Немає камер')|tojson }},
+        notEstimable: {{ _('Замало даних для оцінки')|tojson }},
+        detected: {{ _('Вид зафіксовано')|tojson }},
+        pickSpecies: {{ _('-- Виберіть вид --')|tojson }},
+        observed: {{ _('Спостережено')|tojson }},
+        extrapolated: {{ _('Екстраполяція')|tojson }},
+        units: {{ _('Одиниць вибірки')|tojson }},
+        speciesCount: {{ _('Видів')|tojson }},
+        likelyMissed: {{ _('Найімовірніше пропущені')|tojson }},
+        recorded: {{ _('Зафіксовані види')|tojson }},
+        cams: {{ _('Локації')|tojson }},
+        extraCd: {{ _('Ще камеро-діб до покриття 95%')|tojson }},
+        pool: {{ _('Чутливість до пулу')|tojson }},
+        composite: {{ _('Зведений індекс')|tojson }},
+        temporal: {{ _('Покриття сезонів')|tojson }},
+        completeness: {{ _('Повнота')|tojson }},
+        effort: {{ _('Зусилля')|tojson }},
+        density: {{ _('камеро-діб / км²')|tojson }},
+        pPerUnit: {{ _('p за одиницю')|tojson }},
+        cdFor95: {{ _('Камеро-діб для 95%')|tojson }},
+        biotope: {{ _('Біотоп')|tojson }},
+        noBiotope: {{ _('Без біотопу')|tojson }},
+        speciesShort: {{ _('Видів')|tojson }},
+        confidence: {{ _('Імовірність виявлення')|tojson }},
+        none: '—',
+    };
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+        (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const pct = (v) => v == null ? T.none : Math.round(v * 100) + '%';
+    const num = (v) => v == null ? T.none : Number(v).toLocaleString();
+
+    const STOPS = [[0, [215, 25, 28]], [0.25, [253, 174, 97]], [0.5, [255, 255, 191]],
+                   [0.75, [166, 217, 106]], [1, [26, 150, 65]]];
+    function ramp(v) {
+        v = Math.max(0, Math.min(1, v));
+        for (let i = 1; i < STOPS.length; i++) {
+            if (v <= STOPS[i][0]) {
+                const [a, ca] = STOPS[i - 1], [b, cb] = STOPS[i];
+                const t = (v - a) / (b - a);
+                return 'rgb(' + ca.map((c, k) => Math.round(c + t * (cb[k] - c))).join(',') + ')';
+            }
+        }
+        return 'rgb(26,150,65)';
+    }
+
+    function params(extra) {
+        const p = new URLSearchParams();
+        p.set('scope', $('scope-select').value);
+        const s = $('start-date').value, e = $('end-date').value;
+        if (s && e) { p.set('start_date', s); p.set('end_date', e); }
+        p.set('taxon', $('taxon-select').value);
+        p.set('unit', $('unit-select').value);
+        p.set('scale', $('scale-select').value);
+        const qc = Array.from(document.querySelectorAll('.qc-filter-cb:checked')).map((c) => c.value);
+        if (qc.length) p.set('qc_exclude', qc.join(','));
+        const layer = currentLayer();
+        if (layer === 'species' && $('species-select').value) p.set('species_id', $('species-select').value);
+        Object.entries(extra || {}).forEach(([k, v]) => p.set(k, v));
+        return p;
+    }
+
+    function currentLayer() {
+        return document.querySelector('input[name=layer]:checked').value;
+    }
+
+    async function getJSON(url) {
+        const r = await fetch(url, {credentials: 'same-origin'});
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+    }
+
+    // ── Map ────────────────────────────────────────────────────────────────
+    const map = L.map('gap-map', {preferCanvas: true}).setView([49.0, 31.0], 6);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(map);
+    const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19,
+        attribution: 'Tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics'});
+    L.control.layers({[{{ _('Карта (OSM)')|tojson }}]: osm, [{{ _('Супутник (Esri)')|tojson }}]: esri}).addTo(map);
+    L.control.scale({imperial: false}).addTo(map);
+
+    const gridLayer = L.layerGroup().addTo(map);
+    const locLayer = L.layerGroup();
+    let grid = null, kernel = null, fittedFor = null;
+
+    const legend = L.control({position: 'bottomright'});
+    legend.onAdd = () => { const d = L.DomUtil.create('div', 'gap-legend'); d.id = 'gap-legend'; return d; };
+    legend.addTo(map);
+
+    // Value (0..1, or null when not estimable) the current layer colours a cell by.
+    function cellValue(c, layer) {
+        if (c.status === 'empty') return undefined;
+        switch (layer) {
+            case 'composite': return c.composite;
+            case 'effort': return c.effort_score;
+            case 'pool': return c.pool_sensitivity;
+            case 'coverage': return c.estimable ? c.coverage : null;
+            case 'completeness': return c.estimable ? c.completeness : null;
+            case 'temporal': return c.temporal_score;
+            case 'species': return c.focus_confidence;
+        }
+    }
+
+    function drawGrid() {
+        gridLayer.clearLayers();
+        const layer = currentLayer();
+        if (layer === 'kernel') { drawKernel(); return; }
+        if (!grid) return;
+        const showEmpty = $('show-empty').checked;
+        const noFocus = layer === 'species' && !grid.summary.focus;
+        if (noFocus) status(T.pickSpecies);
+        grid.cells.forEach((c) => {
+            const v = cellValue(c, layer);
+            let style;
+            if (noFocus) {
+                if (c.status === 'empty' && !showEmpty) return;
+                style = {color: '#666', weight: 0.6, fillOpacity: 0};
+            } else if (v === undefined) {
+                if (!showEmpty) return;
+                style = {color: '#888', weight: 0.5, fillColor: '#9e9e9e', fillOpacity: 0.35};
+            } else if (v === null) {
+                style = {color: '#7a0000', weight: 1.5, dashArray: '4 3', fillColor: ramp(0), fillOpacity: 0.45};
+            } else {
+                const detected = layer === 'species' && c.focus_detected;
+                style = {color: detected ? '#0b3d91' : '#555', weight: detected ? 2 : 0.6,
+                         fillColor: ramp(v), fillOpacity: 0.7};
+            }
+            const poly = L.polygon(c.ring.map(([lon, lat]) => [lat, lon]), style);
+            poly.bindTooltip(tooltipFor(c, layer), {sticky: true});
+            if (c.status === 'data') poly.on('click', () => openCell(c));
+            poly.addTo(gridLayer);
+        });
+        drawLegend(layer);
+    }
+
+    function tooltipFor(c, layer) {
+        if (c.status === 'empty') return `<b>${esc(c.code)}</b><br>${esc(T.empty)}`;
+        let html = `<b>${esc(c.code)}</b><br>${esc(T.cameraDays)}: ${num(c.camera_days)} · ${esc(T.locations)}: ${c.n_locations}`
+            + `<br>${esc(T.species)}: ${c.S_obs}` + (c.estimable ? ` · Chao2 ${c.chao2}` : ` · <i>${esc(T.notEstimable)}</i>`)
+            + `<br>${esc(T.pool)}: ${pct(c.pool_sensitivity)} · ${esc(T.months)}: ${c.months_covered}/12`
+            + `<br>${esc(T.composite)}: ${pct(c.composite)}`;
+        if (layer === 'species') {
+            html += `<br><b>${c.focus_detected ? esc(T.detected) : esc(T.confidence) + ': ' + pct(c.focus_confidence)}</b>`;
+        }
+        return html;
+    }
+
+    function drawLegend(layer) {
+        const el = $('gap-legend');
+        const titles = {composite: T.composite, effort: T.effort + ', ' + T.cameraDays.toLowerCase(),
+            pool: T.pool, coverage: T.coverage, completeness: T.completeness, temporal: T.temporal,
+            species: T.confidence, kernel: T.density};
+        let ticks = ['0%', '50%', '100%'];
+        if (layer === 'effort' && grid) {
+            const target = {1000: 365, 5000: 730, 10000: 1460}[grid.summary.scale_m] || 365;
+            const cd = (s) => Math.round(Math.pow(10, s * Math.log10(1 + target)) - 1);
+            ticks = ['0', String(cd(0.5)), '≥' + target];
+        } else if (layer === 'temporal') {
+            ticks = ['0', '6', '12'];
+        } else if (layer === 'kernel' && kernel) {
+            const v = (s) => (Math.pow(10, s * Math.log10(1 + kernel.max)) - 1).toFixed(s ? 1 : 0);
+            ticks = ['0', v(0.5), v(1)];
+        }
+        let html = `<b>${esc(titles[layer])}</b><div class="bar"></div><div class="ticks">${ticks.map((t) => `<span>${esc(t)}</span>`).join('')}</div>`;
+        if (layer !== 'kernel') {
+            html += `<div><span class="sw" style="background:#9e9e9e;opacity:.6"></span>${esc(T.empty)}</div>`;
+            if (['coverage', 'completeness', 'pool'].includes(layer)) {
+                html += `<div><span class="sw" style="border:1.5px dashed #7a0000;background:${ramp(0)}"></span>${esc(T.notEstimable)}</div>`;
+            }
+            if (layer === 'species') {
+                html += `<div><span class="sw" style="border:2px solid #0b3d91;background:${ramp(1)}"></span>${esc(T.detected)}</div>`;
+            }
+        }
+        el.innerHTML = html;
+    }
+
+    function drawKernel() {
+        if (!kernel) { loadKernel(); return; }
+        const top = Math.log10(1 + kernel.max) || 1;
+        kernel.pixels.forEach((p) => {
+            const s = Math.log10(1 + p.value) / top;
+            L.polygon(p.ring.map(([lon, lat]) => [lat, lon]),
+                {stroke: false, fillColor: ramp(s), fillOpacity: 0.65})
+                .bindTooltip(`${p.value.toFixed(2)} ${esc(T.density)}`, {sticky: true})
+                .addTo(gridLayer);
+        });
+        drawLegend('kernel');
+    }
+
+    function drawLocations() {
+        locLayer.clearLayers();
+        if (!grid) return;
+        grid.locations.forEach((l) => {
+            L.circleMarker([l.lat, l.lon], {radius: 3.5, color: '#222', weight: 1, fillColor: '#fff', fillOpacity: 1})
+                .bindTooltip(`<b>${esc(l.name)}</b><br>${esc(T.cameraDays)}: ${num(l.camera_days)}<br>${esc(T.speciesCount)}: ${l.S_obs}<br>${esc(l.first)} … ${esc(l.last)}`)
+                .addTo(locLayer);
+        });
+    }
+
+    function fitToData() {
+        const key = params().get('scope') + '|' + $('taxon-select').value;
+        if (fittedFor === key || !grid) return;
+        const pts = grid.locations.map((l) => [l.lat, l.lon]);
+        if (pts.length) { map.fitBounds(pts, {padding: [30, 30], maxZoom: 11}); fittedFor = key; }
+    }
+
+    // ── Summary, tables ────────────────────────────────────────────────────
+    function drawStats() {
+        const t = grid.summary.total;
+        const items = [
+            [T.locations, num(t.n_locations)], [T.cameraDays, num(t.camera_days)],
+            [T.species, t.S_obs], [T.chao2, t.chao2 == null ? T.none : t.chao2],
+            [T.coverage, pct(t.coverage)], [T.months, t.months_covered + '/12'],
+            [T.years, t.year_first ? `${t.year_first}–${t.year_last}` : T.none],
+            [T.cells, num(grid.summary.n_cells_with_data)],
+        ];
+        $('gap-stats').innerHTML = items.map(([l, v]) =>
+            `<div class="gap-stat"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
+    }
+
+    function drawPool() {
+        const rows = grid.summary.pool;
+        $('pool-table').innerHTML = `<tr><th>${esc(T.speciesCount)}</th><th>${esc(T.pPerUnit)}</th><th>${esc(T.cdFor95)}</th></tr>`
+            + rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.p_unit == null ? T.none : r.p_unit.toFixed(3)}</td><td>${num(r.camera_days_for_95)}</td></tr>`).join('');
+    }
+
+    function fillSpecies() {
+        const sel = $('species-select');
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">${esc(T.pickSpecies)}</option>`
+            + grid.summary.species_options.map((o) => `<option value="${o.id}">${esc(o.name)} (${o.detection_days})</option>`).join('');
+        if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+    }
+
+    async function loadBiotopes() {
+        try {
+            const body = await getJSON(API.biotopes + '?' + params());
+            $('biotope-table').innerHTML = `<tr><th>${esc(T.biotope)}</th><th>${esc(T.locations)}</th><th>${esc(T.cameraDays)}</th>`
+                + `<th>${esc(T.speciesShort)}</th><th>Chao2</th><th>${esc(T.pool)}</th><th>${esc(T.months)}</th></tr>`
+                + body.rows.map((r) => `<tr><td>${esc(r.name || T.noBiotope)}</td><td>${r.n_locations}</td><td>${num(r.camera_days)}</td>`
+                    + `<td>${r.S_obs}</td><td>${r.chao2 == null ? T.none : r.chao2}</td><td>${pct(r.pool_sensitivity)}</td><td>${r.months_covered}/12</td></tr>`).join('');
+        } catch (e) { $('biotope-table').innerHTML = `<tr><td>${esc(T.error)}</td></tr>`; }
+    }
+
+    // ── Cell detail ────────────────────────────────────────────────────────
+    let chart = null;
+    async function openCell(c) {
+        $('cell-empty').hidden = true;
+        $('cell-body').hidden = false;
+        $('cell-summary').innerHTML = `<b>${esc(c.code)}</b> · ${esc(T.loading)}`;
+        let d;
+        try { d = await getJSON(API.cell.replace('__CODE__', encodeURIComponent(c.code)) + '?' + params()); }
+        catch (e) { $('cell-summary').textContent = T.error; return; }
+        $('cell-summary').innerHTML = `<b>${esc(d.code)}</b><br>`
+            + `${esc(T.cameraDays)}: ${num(d.camera_days)} · ${esc(T.units)}: ${num(d.T)} · ${esc(T.species)}: ${d.S_obs}`
+            + (d.estimable ? ` · Chao2: ${d.chao2} · ${esc(T.coverage)}: ${pct(d.coverage)}` : ` · <i>${esc(T.notEstimable)}</i>`)
+            + `<br>${esc(T.pool)}: ${pct(c.pool_sensitivity)} · ${esc(T.months)}: ${c.months_covered}/12`
+            + (c.extra_camera_days_cov95 ? ` · ${esc(T.extraCd)}: ${num(c.extra_camera_days_cov95)}` : '');
+        const obs = d.curve.filter((p) => p.units <= d.T).map((p) => ({x: p.camera_days, y: p.S}));
+        const ext = d.curve.filter((p) => p.units >= d.T).map((p) => ({x: p.camera_days, y: p.S}));
+        const datasets = [
+            {label: T.observed, data: obs, borderColor: '#1a9641', pointRadius: 0, borderWidth: 2},
+            {label: T.extrapolated, data: ext, borderColor: '#1a9641', borderDash: [6, 4], pointRadius: 0, borderWidth: 2},
+        ];
+        if (d.estimable && d.chao2 != null) {
+            const xMax = d.curve.length ? d.curve[d.curve.length - 1].camera_days : 0;
+            datasets.push({label: 'Chao2', data: [{x: 0, y: d.chao2}, {x: xMax, y: d.chao2}],
+                           borderColor: '#d7191c', borderDash: [2, 3], pointRadius: 0, borderWidth: 1});
+        }
+        if (chart) chart.destroy();
+        chart = new Chart($('cell-chart'), {type: 'line', data: {datasets},
+            options: {animation: false, parsing: false, plugins: {legend: {position: 'bottom'}},
+                      scales: {x: {type: 'linear', title: {display: true, text: T.cameraDays}},
+                               y: {beginAtZero: true, title: {display: true, text: T.speciesCount}}}}});
+        const list = (title, items) => items.length ? `<p class="small" style="margin:.5rem 0 0"><b>${esc(title)}:</b> ${items.join(', ')}</p>` : '';
+        $('cell-lists').innerHTML =
+            list(T.recorded, d.species.map((s) => `${esc(s.name)} (${s.units})`))
+            + list(T.likelyMissed, (c.likely_missed || []).map((m) => `${esc(m.name)} (${pct(m.confidence)})`))
+            + list(T.cams, d.locations.map((l) => `${esc(l.name)} (${num(l.camera_days)})`));
+    }
+
+    // ── Loading ────────────────────────────────────────────────────────────
+    function status(msg) { $('gap-status').textContent = msg || ''; }
+
+    async function loadGrid() {
+        status(T.loading);
+        try {
+            grid = await getJSON(API.grid + '?' + params());
+        } catch (e) { status(T.error); return; }
+        status(grid.summary.n_cells_with_data ? (grid.summary.empty_truncated ? T.truncated : '') : T.noData);
+        fillSpecies();
+        drawStats();
+        drawPool();
+        drawGrid();
+        drawLocations();
+        fitToData();
+    }
+
+    async function loadKernel() {
+        status(T.loading);
+        try {
+            kernel = await getJSON(API.kernel + '?' + params({bandwidth: $('bandwidth-select').value}));
+            status('');
+            if (currentLayer() === 'kernel') drawGrid();
+        } catch (e) { status(T.error); }
+    }
+
+    function applyFilters() {
+        kernel = null;
+        $('cell-body').hidden = true; $('cell-empty').hidden = false;
+        loadGrid();
+        loadBiotopes();
+    }
+
+    document.querySelectorAll('input[name=layer]').forEach((r) => r.addEventListener('change', () => {
+        const layer = currentLayer();
+        $('species-sub').hidden = layer !== 'species';
+        $('kernel-sub').hidden = layer !== 'kernel';
+        if (layer === 'species' && grid && grid.summary.focus === null && $('species-select').value) loadGrid();
+        else drawGrid();
+    }));
+    $('species-select').addEventListener('change', loadGrid);
+    $('scale-select').addEventListener('change', loadGrid);
+    $('bandwidth-select').addEventListener('change', () => { kernel = null; drawGrid(); });
+    $('show-empty').addEventListener('change', drawGrid);
+    $('show-locations').addEventListener('change', (e) => {
+        if (e.target.checked) locLayer.addTo(map); else map.removeLayer(locLayer);
+    });
+    $('apply-btn').addEventListener('click', applyFilters);
+
+    applyFilters();
+})();
+</script>
+{% endblock %}
