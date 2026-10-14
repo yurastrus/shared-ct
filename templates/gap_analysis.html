@@ -5,7 +5,7 @@
 {% block ct_head_extra %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
     <style>
-        .gap-lead { color: #495057; max-width: 70rem; margin-bottom: 1rem; }
+        .gap-lead { color: #495057; max-width: 70rem; margin: 0 auto 1rem; text-align: center; }
         .gap-badge { font-size: .7rem; vertical-align: middle; background: #ffc107; color: #212529;
                      border-radius: 4px; padding: 2px 6px; margin-left: 6px; font-weight: 600; }
         .gap-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; align-items: start; }
@@ -315,6 +315,16 @@
     L.control.layers({[{{ _('Карта (OSM)')|tojson }}]: osm, [{{ _('Супутник (Esri)')|tojson }}]: esri}).addTo(map);
     L.control.scale({imperial: false}).addTo(map);
 
+    // Camera points live in their own pane above the grid, with their own
+    // renderer: with one shared canvas, whatever was drawn last ends up on top,
+    // so switching layers used to bury the points under the cells. SVG, not a
+    // second canvas: a canvas in a higher pane would swallow every click meant
+    // for the cells below, while the pane itself lets events through and only
+    // the points (leaflet-interactive) catch them.
+    map.createPane('locations');
+    map.getPane('locations').style.zIndex = 650;
+    map.getPane('locations').style.pointerEvents = 'none';
+    const locRenderer = L.svg({pane: 'locations'});
     const gridLayer = L.layerGroup().addTo(map);
     const locLayer = L.layerGroup();
     let grid = null, kernel = null, fittedFor = null;
@@ -427,7 +437,8 @@
         locLayer.clearLayers();
         if (!grid) return;
         grid.locations.forEach((l) => {
-            L.circleMarker([l.lat, l.lon], {radius: 3.5, color: '#222', weight: 1, fillColor: '#fff', fillOpacity: 1})
+            L.circleMarker([l.lat, l.lon], {pane: 'locations', renderer: locRenderer,
+                radius: 3.5, color: '#222', weight: 1, fillColor: '#fff', fillOpacity: 1})
                 .bindTooltip(`<b>${esc(l.name)}</b><br>${esc(T.cameraDays)}: ${num(l.camera_days)}<br>${esc(T.speciesCount)}: ${l.S_obs}<br>${esc(l.first)} … ${esc(l.last)}`)
                 .addTo(locLayer);
         });

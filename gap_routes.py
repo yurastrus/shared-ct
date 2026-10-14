@@ -27,12 +27,12 @@ from .routes import (DOMESTIC_SPECIES_IDS, build_ecoregions, get_accessible_inst
                      resolve_scope)
 from .utils import get_institution_filter
 
-# Testing phase: the PAGE (and its hub card) is admin-only. The JSON API only
-# requires a signed-in user, so nothing in it has to change on opening day; it
-# already applies the caller's institution access to every query. To open the
-# page: set this to False and drop the `is_admin` guard around the card in
-# templates/overview.html (the page then needs login, like the API).
-GAP_ANALYSIS_ADMIN_ONLY = True
+# Testing phase: the PAGE (and its hub card) is for managers and admins only.
+# The JSON API only requires a signed-in user, so nothing in it has to change on
+# opening day; it already applies the caller's institution access to every
+# query. To open the page to every signed-in user: set this to None and drop the
+# `can_manage` guard around the card in templates/overview.html.
+GAP_ANALYSIS_MIN_ROLE = 'manager'   # role_required hierarchy: admin passes too
 
 GAP_CACHE_TTL_SECONDS = 600
 GAP_CACHE_MAX_ENTRIES = 32
@@ -121,8 +121,8 @@ def gap_analysis_page(lang_code):
     """Gap analysis page: where the camera-trap data are thin, and in what sense."""
     # login_required first: role_required redirects anonymous users to a
     # non-existent endpoint, which the video routes avoid the same way.
-    if GAP_ANALYSIS_ADMIN_ONLY:
-        return login_required(role_required('admin')(_render_gap_page))(lang_code)
+    if GAP_ANALYSIS_MIN_ROLE:
+        return login_required(role_required(GAP_ANALYSIS_MIN_ROLE)(_render_gap_page))(lang_code)
     return login_required(_render_gap_page)(lang_code)
 
 
