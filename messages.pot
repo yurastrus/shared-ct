@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-14 12:21+0300\n"
+"POT-Creation-Date: 2026-10-15 11:42+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -84,7 +84,7 @@ msgstr ""
 msgid "Коментар"
 msgstr ""
 
-#: app/camera_traps/gap_routes.py:148 app/camera_traps/routes.py:7727
+#: app/camera_traps/gap_routes.py:147 app/camera_traps/routes.py:7727
 #: app/camera_traps/routes.py:7867
 msgid "Помилка завантаження сторінки."
 msgstr ""
@@ -952,14 +952,14 @@ msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:225
 #: app/camera_traps/templates/daily_activity.html:20
-#: app/camera_traps/templates/gap_analysis.html:89
+#: app/camera_traps/templates/gap_analysis.html:108
 #: app/camera_traps/templates/species_detailed.html:21
 msgid "Період з:"
 msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:230
 #: app/camera_traps/templates/daily_activity.html:24
-#: app/camera_traps/templates/gap_analysis.html:93
+#: app/camera_traps/templates/gap_analysis.html:112
 #: app/camera_traps/templates/species_detailed.html:25
 msgid "до:"
 msgstr ""
@@ -969,7 +969,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:29
 #: app/camera_traps/templates/dashboard.html:30
 #: app/camera_traps/templates/expertise.html:121
-#: app/camera_traps/templates/gap_analysis.html:67
+#: app/camera_traps/templates/gap_analysis.html:86
 #: app/camera_traps/templates/species_dashboard.html:49
 #: app/camera_traps/templates/upload_stats.html:39
 msgid "Установа / Екорегіон:"
@@ -980,7 +980,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:32
 #: app/camera_traps/templates/dashboard.html:32
 #: app/camera_traps/templates/expertise.html:123
-#: app/camera_traps/templates/gap_analysis.html:69
+#: app/camera_traps/templates/gap_analysis.html:88
 #: app/camera_traps/templates/species_dashboard.html:52
 #: app/camera_traps/templates/upload_stats.html:41
 msgid "Всі дані"
@@ -1002,7 +1002,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:37
 #: app/camera_traps/templates/dashboard.html:34
 #: app/camera_traps/templates/expertise.html:125
-#: app/camera_traps/templates/gap_analysis.html:71
+#: app/camera_traps/templates/gap_analysis.html:90
 #: app/camera_traps/templates/identification.html:17
 #: app/camera_traps/templates/manage_locations.html:128
 #: app/camera_traps/templates/species_dashboard.html:57
@@ -1018,7 +1018,7 @@ msgstr ""
 #: app/camera_traps/templates/daily_activity.html:46
 #: app/camera_traps/templates/dashboard.html:43
 #: app/camera_traps/templates/expertise.html:134
-#: app/camera_traps/templates/gap_analysis.html:80
+#: app/camera_traps/templates/gap_analysis.html:99
 #: app/camera_traps/templates/identification.html:26
 #: app/camera_traps/templates/species_dashboard.html:66
 #: app/camera_traps/templates/upload_stats.html:52
@@ -1101,7 +1101,7 @@ msgid "Гру"
 msgstr ""
 
 #: app/camera_traps/templates/activity_heatmap.html:328
-#: app/camera_traps/templates/gap_analysis.html:244
+#: app/camera_traps/templates/gap_analysis.html:282
 #: app/camera_traps/templates/species_detailed.html:82
 msgid "-- Виберіть вид --"
 msgstr ""
@@ -1753,7 +1753,7 @@ msgid "Всі доступні дані"
 msgstr ""
 
 #: app/camera_traps/templates/behavior_analysis.html:71
-#: app/camera_traps/templates/gap_analysis.html:261
+#: app/camera_traps/templates/gap_analysis.html:299
 msgid "Біотоп"
 msgstr ""
 
@@ -2059,7 +2059,7 @@ msgstr ""
 #: app/camera_traps/templates/contributors.html:65
 #: app/camera_traps/templates/dashboard.html:72
 #: app/camera_traps/templates/expertise.html:179
-#: app/camera_traps/templates/gap_analysis.html:112
+#: app/camera_traps/templates/gap_analysis.html:131
 #: app/camera_traps/templates/identification.html:108
 #: app/camera_traps/templates/species_detailed.html:41
 #: app/camera_traps/templates/upload_stats.html:61
@@ -2529,13 +2529,13 @@ msgid "Всього фото"
 msgstr ""
 
 #: app/camera_traps/templates/dashboard.html:83
-#: app/camera_traps/templates/gap_analysis.html:233
+#: app/camera_traps/templates/gap_analysis.html:271
 msgid "Локацій"
 msgstr ""
 
 #: app/camera_traps/templates/dashboard.html:85
-#: app/camera_traps/templates/gap_analysis.html:248
-#: app/camera_traps/templates/gap_analysis.html:263
+#: app/camera_traps/templates/gap_analysis.html:286
+#: app/camera_traps/templates/gap_analysis.html:301
 msgid "Видів"
 msgstr ""
 
@@ -3136,11 +3136,11 @@ msgid "Помилка видалення з вибраного"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:3
-#: app/camera_traps/templates/gap_analysis.html:59
+#: app/camera_traps/templates/gap_analysis.html:78
 msgid "Аналіз прогалин у даних"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:62
+#: app/camera_traps/templates/gap_analysis.html:81
 msgid ""
 "Де відсутність реєстрації виду щось означає, а де ми просто мало "
 "дивились? Сторінка окремо показує зусилля (камеро-доби), повноту "
@@ -3149,189 +3149,226 @@ msgid ""
 "досліджуваної території, де камер не було взагалі."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:97
+#: app/camera_traps/templates/gap_analysis.html:116
 msgid "Група:"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:99
+#: app/camera_traps/templates/gap_analysis.html:118
 #: app/camera_traps/templates/identification.html:226
 msgid "Ссавці"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:100
+#: app/camera_traps/templates/gap_analysis.html:119
 #: app/camera_traps/templates/identification.html:228
 msgid "Птахи"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:101
+#: app/camera_traps/templates/gap_analysis.html:120
 msgid "Усі дикі тварини"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:105
+#: app/camera_traps/templates/gap_analysis.html:124
 msgid "Одиниця вибірки:"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:107
+#: app/camera_traps/templates/gap_analysis.html:126
 msgid "Камеро-тиждень"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:108
+#: app/camera_traps/templates/gap_analysis.html:127
 msgid "Камеро-доба"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:123
+#: app/camera_traps/templates/gap_analysis.html:142
 msgid "Шар"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:125
-#: app/camera_traps/templates/gap_analysis.html:254
+#: app/camera_traps/templates/gap_analysis.html:144
+#: app/camera_traps/templates/gap_analysis.html:292
 msgid "Зведений індекс"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:126
+#: app/camera_traps/templates/gap_analysis.html:145
 msgid ""
 "Середнє геометричне зусиль, чутливості до пулу видів і покриття сезонів. "
 "Слабкий хоч один вимір робить клітинку червоною."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:127
+#: app/camera_traps/templates/gap_analysis.html:146
 msgid "Зусилля (камеро-доби)"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:128
+#: app/camera_traps/templates/gap_analysis.html:147
 msgid ""
 "Логарифмічна шкала. Зелений означає приблизно камеру, що працює цілий "
 "рік, на кожен кілометр масштабу."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:129
-#: app/camera_traps/templates/gap_analysis.html:265
+#: app/camera_traps/templates/gap_analysis.html:148
+#: app/camera_traps/templates/gap_analysis.html:303
 msgid "Верифіковано"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:130
+#: app/camera_traps/templates/gap_analysis.html:149
 msgid ""
 "Частка днів із серіями, які вже перевірено. Червоне тут означає не брак "
 "камер, а чергу на верифікацію."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:131
+#: app/camera_traps/templates/gap_analysis.html:150
 msgid "Чутливість до пулу видів"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:132
+#: app/camera_traps/templates/gap_analysis.html:151
 #, python-format
 msgid ""
 "Яку частку видів, зафіксованих у радіусі %(km)s км, ми б уже виявили тут "
 "за наявних зусиль, якби всі вони тут жили."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:133
+#: app/camera_traps/templates/gap_analysis.html:152
 msgid "Покриття вибірки (Chao & Jost)"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:134
+#: app/camera_traps/templates/gap_analysis.html:153
 msgid ""
 "Імовірність, що наступна одиниця вибірки не дасть нового виду. Зважене на"
 " поширені види, тож рідкісних майже не помічає."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:135
+#: app/camera_traps/templates/gap_analysis.html:154
 msgid "Повнота: виявлено / Chao2"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:136
+#: app/camera_traps/templates/gap_analysis.html:155
 msgid "Частка оціненого видового багатства клітинки, яку вже зафіксовано."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:137
-#: app/camera_traps/templates/gap_analysis.html:255
+#: app/camera_traps/templates/gap_analysis.html:156
+#: app/camera_traps/templates/gap_analysis.html:293
 msgid "Покриття сезонів"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:138
+#: app/camera_traps/templates/gap_analysis.html:157
 msgid "Скільки з 12 календарних місяців мають щонайменше 7 камеро-діб."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:139
+#: app/camera_traps/templates/gap_analysis.html:158
 msgid "Чи міг вид бути пропущений"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:140
+#: app/camera_traps/templates/gap_analysis.html:159
 msgid ""
 "Імовірність, що вибраний вид було б зафіксовано в клітинці, якби він там "
 "жив."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:144
+#: app/camera_traps/templates/gap_analysis.html:163
 msgid "Ядерна щільність зусиль"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:145
+#: app/camera_traps/templates/gap_analysis.html:164
 msgid ""
 "Кожна камера розмазує свої камеро-доби гаусовим ядром. У дужках площа "
 "індивідуальної ділянки, якій відповідає ширина ядра (95% нормального "
 "розподілу)."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:149
-#: app/camera_traps/templates/gap_analysis.html:159
+#: app/camera_traps/templates/gap_analysis.html:168
+#: app/camera_traps/templates/gap_analysis.html:178
+#: app/camera_traps/templates/gap_analysis.html:314
 msgid "км"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:149
+#: app/camera_traps/templates/gap_analysis.html:168
 msgid "км²"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:155
+#: app/camera_traps/templates/gap_analysis.html:174
 msgid "Масштаб сітки"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:165
+#: app/camera_traps/templates/gap_analysis.html:184
 msgid "Клітинки без камер"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:166
+#: app/camera_traps/templates/gap_analysis.html:185
 msgid "Локації камер"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:178
+#: app/camera_traps/templates/gap_analysis.html:188
+msgid "Планування"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:191
+msgid "Додати точку"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:192
+msgid "Лінійка"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:193
+msgid "Стерти виміри"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:196
+msgid "Заплановані точки"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:199
+msgid "Експорт KML"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:201
+#: app/camera_traps/templates/upload.html:127
+#: app/camera_traps/templates/upload_fast.html:212
+msgid "Очистити"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:203
+msgid ""
+"Точки зберігаються лише в цьому браузері і нікуди не надсилаються. KML "
+"читають Google Earth, OsmAnd, Locus; для навігаторів Garmin беріть GPX."
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:215
 msgid "Клітинка"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:179
+#: app/camera_traps/templates/gap_analysis.html:216
 msgid ""
 "Клацніть клітинку на карті, щоб побачити криву накопичення видів і "
 "подробиці."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:187
+#: app/camera_traps/templates/gap_analysis.html:224
 msgid "Виявлюваність видів"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:188
+#: app/camera_traps/templates/gap_analysis.html:225
 msgid ""
 "Імовірність зафіксувати вид за одну одиницю вибірки там, де він точно є, "
 "і скільки камеро-діб треба, щоб пропустити присутній вид лише з "
 "імовірністю 5%. Найважче виявлювані види вгорі."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:192
+#: app/camera_traps/templates/gap_analysis.html:229
 msgid "Біотопи: прогалини в середовищі"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:193
+#: app/camera_traps/templates/gap_analysis.html:230
 msgid ""
 "Зусилля й повнота, зведені за біотопами локацій. Біотоп із малими "
 "зусиллями недосліджений, де б на карті він не був. Локація з кількома "
 "біотопами враховується в кожному з них."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:199
+#: app/camera_traps/templates/gap_analysis.html:236
 msgid "Як це пораховано"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:201
+#: app/camera_traps/templates/gap_analysis.html:238
 msgid ""
 "Камеро-доба зараховується, якщо день лежить у межах розгортання або між "
 "днями з серіями (прогалини до 15 днів заповнюються, бо камера стояла, "
@@ -3340,20 +3377,20 @@ msgid ""
 "верифікованої серії не рахується теж."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:202
+#: app/camera_traps/templates/gap_analysis.html:239
 msgid ""
 "Реєстрація означає консенсусний вид верифікованої серії. Свійські "
 "тварини, люди, транспорт і групи вищого рангу («Куницеві») не "
 "враховуються."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:203
+#: app/camera_traps/templates/gap_analysis.html:240
 msgid ""
 "Сітка EEA на проєкції ETRS89-LAEA (EPSG:3035), та сама, що в модулі SDM. "
 "Камери однієї клітинки об'єднуються в одну вибірку."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:204
+#: app/camera_traps/templates/gap_analysis.html:241
 #, python-format
 msgid ""
 "Chao2 і покриття вибірки рахуються за частотами трапляння (Chao et al. "
@@ -3361,7 +3398,7 @@ msgid ""
 "оцінка не робиться (штрихова межа)."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:205
+#: app/camera_traps/templates/gap_analysis.html:242
 msgid ""
 "Імовірність виявлення виду дорівнює кількості одиниць вибірки з "
 "реєстрацією, поділеній на повні одиниці зусиль (камеро-доби / 7 для "
@@ -3371,20 +3408,20 @@ msgid ""
 "вона не замінює."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:206
+#: app/camera_traps/templates/gap_analysis.html:243
 #, python-format
 msgid ""
 "Пул видів клітинки складають види з радіуса %(km)s км, зафіксовані "
 "щонайменше в 3 одиницях вибірки."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:207
+#: app/camera_traps/templates/gap_analysis.html:244
 msgid ""
 "Досліджувана територія: буфер 5 км навколо камер із замиканням 10 км. "
 "Діри між групами камер до 20 км стають сірими клітинками."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:208
+#: app/camera_traps/templates/gap_analysis.html:245
 msgid ""
 "За замовчуванням одиниця вибірки дорівнює камеро-тижню. Реєстрації одного"
 " виду на одній камері в сусідні дні сильно залежні (імовірність "
@@ -3393,20 +3430,20 @@ msgid ""
 "камеро-добою обидві оцінки надто оптимістичні."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:209
+#: app/camera_traps/templates/gap_analysis.html:246
 msgid ""
 "Фіолетові клітинки мають камери, але жодного перевіреного дня. Це черга "
 "на верифікацію, а не прогалина в польових роботах."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:210
+#: app/camera_traps/templates/gap_analysis.html:247
 msgid ""
 "Пул видів не враховує біотопу: видра чи бобер потраплять у «найімовірніше"
 " пропущені» і там, де води немає. Читати цей список треба з картою оселищ"
 " у голові."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:211
+#: app/camera_traps/templates/gap_analysis.html:248
 msgid ""
 "Крапкова межа на шарах покриття й повноти означає, що є види, зафіксовані"
 " один раз, але жодного, зафіксованого двічі. Оцінка тоді спирається на "
@@ -3414,151 +3451,199 @@ msgid ""
 "пропущено», тож довіряти їй не можна."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:229
+#: app/camera_traps/templates/gap_analysis.html:267
 msgid "Рахую…"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:230
+#: app/camera_traps/templates/gap_analysis.html:268
 #: app/camera_traps/templates/identification.html:379
 msgid "Не вдалося завантажити дані."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:231
+#: app/camera_traps/templates/gap_analysis.html:269
 msgid "У вибраній області немає даних із зусиллями."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:232
+#: app/camera_traps/templates/gap_analysis.html:270
 msgid "Порожніх клітинок забагато, показано не всі."
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:234
+#: app/camera_traps/templates/gap_analysis.html:272
 msgid "Камеро-діб"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:235
+#: app/camera_traps/templates/gap_analysis.html:273
 msgid "Видів зафіксовано"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:236
+#: app/camera_traps/templates/gap_analysis.html:274
 msgid "Chao2 (оцінка)"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:237
+#: app/camera_traps/templates/gap_analysis.html:275
 msgid "Покриття вибірки"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:238
+#: app/camera_traps/templates/gap_analysis.html:276
 msgid "Місяців покрито"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:239
+#: app/camera_traps/templates/gap_analysis.html:277
 msgid "Роки"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:240
+#: app/camera_traps/templates/gap_analysis.html:278
 msgid "Клітинок з даними"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:241
+#: app/camera_traps/templates/gap_analysis.html:279
 msgid "Немає камер"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:242
+#: app/camera_traps/templates/gap_analysis.html:280
 msgid "Замало даних для оцінки"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:243
+#: app/camera_traps/templates/gap_analysis.html:281
 msgid "Вид зафіксовано"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:245
+#: app/camera_traps/templates/gap_analysis.html:283
 msgid "Спостережено"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:246
+#: app/camera_traps/templates/gap_analysis.html:284
 msgid "Екстраполяція"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:247
+#: app/camera_traps/templates/gap_analysis.html:285
 msgid "Одиниць вибірки"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:249
+#: app/camera_traps/templates/gap_analysis.html:287
 msgid "Найімовірніше пропущені"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:250
+#: app/camera_traps/templates/gap_analysis.html:288
 msgid "Зафіксовані види"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:251
+#: app/camera_traps/templates/gap_analysis.html:289
 #: app/camera_traps/templates/overview.html:148
 msgid "Локації"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:252
+#: app/camera_traps/templates/gap_analysis.html:290
 msgid "Ще камеро-діб до покриття 95%"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:253
+#: app/camera_traps/templates/gap_analysis.html:291
 msgid "Чутливість до пулу"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:256
+#: app/camera_traps/templates/gap_analysis.html:294
 msgid "Повнота"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:257
+#: app/camera_traps/templates/gap_analysis.html:295
 msgid "Зусилля"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:258
+#: app/camera_traps/templates/gap_analysis.html:296
 msgid "камеро-діб / км²"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:259
+#: app/camera_traps/templates/gap_analysis.html:297
 msgid "p за одиницю"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:260
+#: app/camera_traps/templates/gap_analysis.html:298
 msgid "Камеро-діб для 95%"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:262
+#: app/camera_traps/templates/gap_analysis.html:300
 #: app/camera_traps/templates/manage_locations.html:48
 msgid "Без біотопу"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:264
+#: app/camera_traps/templates/gap_analysis.html:302
 msgid "Імовірність виявлення"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:266
+#: app/camera_traps/templates/gap_analysis.html:304
 msgid "Неверифікованих днів"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:267
+#: app/camera_traps/templates/gap_analysis.html:305
 msgid "Камери є, перевірених днів нема"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:268
+#: app/camera_traps/templates/gap_analysis.html:306
 msgid "Нестійка оцінка: синглтони без дублетонів"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:269
+#: app/camera_traps/templates/gap_analysis.html:307
 msgid "Немає пулу видів для порівняння"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:270
+#: app/camera_traps/templates/gap_analysis.html:308
 msgid "ділянка ≈"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:327
+#: app/camera_traps/templates/gap_analysis.html:314
+msgid "м"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:315
+msgid "Точка "
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:316
+msgid "Назва точки"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:317
+msgid "Ще немає. Увімкніть «Додати точку» і клацніть на карті."
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:318
+msgid "Наблизити до точки"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:319
+msgid "Видалити точку"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:320
+msgid "Видалити всі заплановані точки?"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:321
+msgid "Заплановані точки БіоМон"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:322
+msgid "буфер"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:323
+msgid "Клацніть на карті, щоб додати точку. Точки можна перетягувати."
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:324
+msgid "Клацайте на карті, щоб виміряти відстань. Подвійний клік або Esc завершує."
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:325
+msgid "Відстань:"
+msgstr ""
+
+#: app/camera_traps/templates/gap_analysis.html:396
 #: app/camera_traps/templates/species_detailed.html:125
 msgid "Карта (OSM)"
 msgstr ""
 
-#: app/camera_traps/templates/gap_analysis.html:327
+#: app/camera_traps/templates/gap_analysis.html:396
 #: app/camera_traps/templates/species_detailed.html:126
 msgid "Супутник (Esri)"
 msgstr ""
@@ -5068,11 +5153,6 @@ msgstr ""
 #: app/camera_traps/templates/upload_fast.html:775
 #: app/camera_traps/templates/upload_fast.html:1119
 msgid "файлів"
-msgstr ""
-
-#: app/camera_traps/templates/upload.html:127
-#: app/camera_traps/templates/upload_fast.html:212
-msgid "Очистити"
 msgstr ""
 
 #: app/camera_traps/templates/upload.html:135
