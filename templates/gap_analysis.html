@@ -45,6 +45,25 @@
         .gap-methods summary { cursor: pointer; font-weight: 600; }
         .gap-methods p, .gap-methods li { font-size: .9rem; max-width: 70rem; }
         .muted { color: #6c757d; }
+        .gap-tool-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .gap-tool-buttons .btn.active { background: #343a40; border-color: #343a40; color: #fff; }
+        .gap-tool-hint { font-size: .78rem; color: #6c757d; min-height: 1rem; margin: 6px 0; }
+        .gap-tool-sub { font-size: .85rem; font-weight: 600; margin: 8px 0 4px; }
+        .gap-planned { list-style: none; padding: 0; margin: 0 0 6px; max-height: 220px; overflow: auto; }
+        .gap-planned li { display: grid; grid-template-columns: 1fr auto; gap: 2px 4px; align-items: center;
+                          padding: 4px 0; border-bottom: 1px solid #eee; font-size: .78rem; }
+        .gap-planned li input { grid-column: 1 / 2; }
+        .gap-planned .gap-del { grid-column: 2; grid-row: 1; border: 0; background: none; color: #d7191c;
+                                font-size: 1.1rem; line-height: 1; cursor: pointer; }
+        .gap-planned .gap-link { grid-column: 1 / -1; border: 0; background: none; padding: 0; text-align: left;
+                                 color: #0b5ed7; cursor: pointer; font-size: .75rem; }
+        .gap-planned-export { display: flex; gap: 6px; flex-wrap: wrap; }
+        .gap-tool-note { font-size: .72rem; color: #6c757d; margin: 6px 0 0; }
+        .gap-planned-icon { background: #c2185b; border: 2px solid #fff; border-radius: 50%;
+                            box-shadow: 0 0 0 1px #c2185b, 0 1px 3px rgba(0,0,0,.4); }
+        .gap-crosshair, .gap-crosshair .leaflet-interactive { cursor: crosshair !important; }
+        .leaflet-tooltip.gap-ruler-label { font-weight: 600; background: #111; color: #fff; border: 0; }
+        .leaflet-tooltip.gap-ruler-label::before { display: none; }
         @media (max-width: 900px) {
             .gap-layout, .gap-panels { grid-template-columns: 1fr; }
             .gap-controls { position: static; }
@@ -165,6 +184,24 @@
                 <label><input type="checkbox" id="show-empty" checked> {{ _('Клітинки без камер') }}</label>
                 <label><input type="checkbox" id="show-locations"> {{ _('Локації камер') }}</label>
             </fieldset>
+
+            <h2>{{ _('Планування') }}</h2>
+            <fieldset class="gap-tools">
+                <div class="gap-tool-buttons">
+                    <button type="button" id="tool-add-point" class="btn btn-sm btn-outline-secondary" aria-pressed="false">📍 {{ _('Додати точку') }}</button>
+                    <button type="button" id="tool-ruler" class="btn btn-sm btn-outline-secondary" aria-pressed="false">📏 {{ _('Лінійка') }}</button>
+                    <button type="button" id="tool-ruler-clear" class="btn btn-sm btn-link">{{ _('Стерти виміри') }}</button>
+                </div>
+                <p class="gap-tool-hint" id="tool-hint" role="status"></p>
+                <p class="gap-tool-sub">{{ _('Заплановані точки') }} (<span id="planned-count">0</span>)</p>
+                <ul class="gap-planned" id="planned-list"></ul>
+                <div class="gap-planned-export" id="planned-export" hidden>
+                    <button type="button" id="planned-kml" class="btn btn-sm btn-primary">{{ _('Експорт KML') }}</button>
+                    <button type="button" id="planned-gpx" class="btn btn-sm btn-outline-primary">GPX</button>
+                    <button type="button" id="planned-clear" class="btn btn-sm btn-link">{{ _('Очистити') }}</button>
+                </div>
+                <p class="gap-tool-note">{{ _('Точки зберігаються лише в цьому браузері і нікуди не надсилаються. KML читають Google Earth, OsmAnd, Locus; для навігаторів Garmin беріть GPX.') }}</p>
+            </fieldset>
         </aside>
 
         <div>
@@ -217,6 +254,7 @@
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/gap_map_tools.js', lang_code=g.lang_code) }}?v=1"></script>
 <script>
 (function () {
     const API = {
@@ -270,6 +308,37 @@
         homeRange: {{ _('ділянка ≈')|tojson }},
         none: '—',
     };
+
+
+    const TOOLS_T = {
+        m: {{ _('м')|tojson }}, km: {{ _('км')|tojson }},
+        pointPrefix: {{ _('Точка ')|tojson }},
+        pointName: {{ _('Назва точки')|tojson }},
+        noPoints: {{ _('Ще немає. Увімкніть «Додати точку» і клацніть на карті.')|tojson }},
+        zoomTo: {{ _('Наблизити до точки')|tojson }},
+        deletePoint: {{ _('Видалити точку')|tojson }},
+        confirmClear: {{ _('Видалити всі заплановані точки?')|tojson }},
+        documentName: {{ _('Заплановані точки БіоМон')|tojson }},
+        bufferLabel: {{ _('буфер')|tojson }},
+        addHint: {{ _('Клацніть на карті, щоб додати точку. Точки можна перетягувати.')|tojson }},
+        rulerStart: {{ _('Клацайте на карті, щоб виміряти відстань. Подвійний клік або Esc завершує.')|tojson }},
+        rulerHint: {{ _('Відстань:')|tojson }},
+    };
+
+    // Grid cell under a point, for the description of exported points.
+    function cellAt(ll) {
+        if (!grid) return null;
+        const x = ll.lng, y = ll.lat;
+        return grid.cells.find((c) => {
+            let inside = false;
+            const r = c.ring;
+            for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+                const [xi, yi] = r[i], [xj, yj] = r[j];
+                if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+            }
+            return inside;
+        }) || null;
+    }
 
     // ── Helpers ────────────────────────────────────────────────────────────
     const $ = (id) => document.getElementById(id);
@@ -341,6 +410,17 @@
     const locLayer = L.layerGroup();
     let grid = null, kernel = null, fittedFor = null;
 
+    const tools = GapMapTools.attach(map, {
+        storageKey: 'biomon-ct-gap-planned', filePrefix: 'biomon-ct', T: TOOLS_T,
+        describe: (ll) => {
+            const c = cellAt(ll);
+            if (!c) return '';
+            if (c.status !== 'data') return `${c.code}: ${T.empty}`;
+            return `${c.code}: ${T.composite} ${pct(c.composite)}, ${T.cameraDays} ${c.camera_days}, `
+                + `${T.species} ${c.S_obs}, ${T.pool} ${pct(c.pool_sensitivity)}`;
+        },
+    });
+
     const legend = L.control({position: 'bottomright'});
     legend.onAdd = () => { const d = L.DomUtil.create('div', 'gap-legend'); d.id = 'gap-legend'; return d; };
     legend.addTo(map);
@@ -391,7 +471,7 @@
             }
             const poly = L.polygon(c.ring.map(([lon, lat]) => [lat, lon]), style);
             poly.bindTooltip(tooltipFor(c, layer), {sticky: true});
-            if (c.status !== 'empty') poly.on('click', () => openCell(c));
+            if (c.status !== 'empty') poly.on('click', () => { if (!tools.busy()) openCell(c); });
             poly.addTo(gridLayer);
         });
         drawLegend(layer);
