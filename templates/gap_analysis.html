@@ -45,20 +45,28 @@
         .gap-methods summary { cursor: pointer; font-weight: 600; }
         .gap-methods p, .gap-methods li { font-size: .9rem; max-width: 70rem; }
         .muted { color: #6c757d; }
-        .gap-tool-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-        .gap-tool-buttons .btn.active { background: #343a40; border-color: #343a40; color: #fff; }
-        .gap-tool-hint { font-size: .78rem; color: #6c757d; min-height: 1rem; margin: 6px 0; }
-        .gap-tool-sub { font-size: .85rem; font-weight: 600; margin: 8px 0 4px; }
-        .gap-planned { list-style: none; padding: 0; margin: 0 0 6px; max-height: 220px; overflow: auto; }
-        .gap-planned li { display: grid; grid-template-columns: 1fr auto; gap: 2px 4px; align-items: center;
-                          padding: 4px 0; border-bottom: 1px solid #eee; font-size: .78rem; }
-        .gap-planned li input { grid-column: 1 / 2; }
-        .gap-planned .gap-del { grid-column: 2; grid-row: 1; border: 0; background: none; color: #d7191c;
-                                font-size: 1.1rem; line-height: 1; cursor: pointer; }
-        .gap-planned .gap-link { grid-column: 1 / -1; border: 0; background: none; padding: 0; text-align: left;
-                                 color: #0b5ed7; cursor: pointer; font-size: .75rem; }
-        .gap-planned-export { display: flex; gap: 6px; flex-wrap: wrap; }
-        .gap-tool-note { font-size: .72rem; color: #6c757d; margin: 6px 0 0; }
+        .gap-map-toolbar { display: flex; background: #fff; }
+        .gap-map-toolbar button { width: 32px; height: 30px; border: 0; border-right: 1px solid #ccc;
+                                  background: #fff; font-size: 16px; line-height: 30px; padding: 0; cursor: pointer; }
+        .gap-map-toolbar button:last-child { border-right: 0; }
+        .gap-map-toolbar button:hover { background: #f4f4f4; }
+        .gap-map-toolbar button.active { background: #343a40; }
+        .gap-tool-hint { font-size: .8rem; color: #6c757d; min-height: 1.1rem; }
+        .gap-planned { list-style: none; padding: 0; margin: 0 0 6px; max-height: 200px; overflow: auto; }
+        .gap-planned li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center;
+                          padding: 2px 0; font-size: .72rem; }
+        .gap-planned li input { font-size: .8rem; padding: 1px 4px; height: auto; min-width: 0; }
+        .gap-planned .gap-del { border: 0; background: none; color: #d7191c; font-size: 1rem; line-height: 1;
+                                cursor: pointer; padding: 0 2px; }
+        .gap-planned .gap-link { border: 0; background: none; padding: 0; color: #0b5ed7; cursor: pointer;
+                                 font-size: .7rem; white-space: nowrap; }
+        .gap-planned-export { display: flex; gap: 6px; align-items: center; }
+        .gap-chip { border: 1px solid #0b5ed7; background: #fff; color: #0b5ed7; border-radius: 4px;
+                    font-size: .78rem; padding: 2px 10px; cursor: pointer; }
+        .gap-chip:hover { background: #0b5ed7; color: #fff; }
+        .gap-chip--icon { border-color: #ccc; padding: 2px 6px; }
+        .gap-chip--icon:hover { background: #fde8e8; color: inherit; }
+        .gap-tool-note { font-size: .72rem; color: #6c757d; margin: 4px 0 0; }
         .gap-planned-icon { background: #c2185b; border: 2px solid #fff; border-radius: 50%;
                             box-shadow: 0 0 0 1px #c2185b, 0 1px 3px rgba(0,0,0,.4); }
         .gap-crosshair, .gap-crosshair .leaflet-interactive { cursor: crosshair !important; }
@@ -185,28 +193,27 @@
                 <label><input type="checkbox" id="show-locations"> {{ _('Локації камер') }}</label>
             </fieldset>
 
-            <h2>{{ _('Планування') }}</h2>
+            <h2>{{ _('Заплановані точки') }} (<span id="planned-count">0</span>)</h2>
             <fieldset class="gap-tools">
-                <div class="gap-tool-buttons">
-                    <button type="button" id="tool-add-point" class="btn btn-sm btn-outline-secondary" aria-pressed="false">📍 {{ _('Додати точку') }}</button>
-                    <button type="button" id="tool-ruler" class="btn btn-sm btn-outline-secondary" aria-pressed="false">📏 {{ _('Лінійка') }}</button>
-                    <button type="button" id="tool-ruler-clear" class="btn btn-sm btn-link">{{ _('Стерти виміри') }}</button>
-                </div>
-                <p class="gap-tool-hint" id="tool-hint" role="status"></p>
-                <p class="gap-tool-sub">{{ _('Заплановані точки') }} (<span id="planned-count">0</span>)</p>
                 <ul class="gap-planned" id="planned-list"></ul>
                 <div class="gap-planned-export" id="planned-export" hidden>
-                    <button type="button" id="planned-kml" class="btn btn-sm btn-primary">{{ _('Експорт KML') }}</button>
-                    <button type="button" id="planned-gpx" class="btn btn-sm btn-outline-primary">GPX</button>
-                    <button type="button" id="planned-clear" class="btn btn-sm btn-link">{{ _('Очистити') }}</button>
+                    <button type="button" id="planned-kml" class="gap-chip" title="{{ _('Експорт KML') }}">KML</button>
+                    <button type="button" id="planned-gpx" class="gap-chip" title="{{ _('Для навігаторів Garmin') }}">GPX</button>
+                    <button type="button" id="planned-clear" class="gap-chip gap-chip--icon" title="{{ _('Видалити всі заплановані точки?') }}" aria-label="{{ _('Очистити') }}">🗑</button>
                 </div>
-                <p class="gap-tool-note">{{ _('Точки зберігаються лише в цьому браузері і нікуди не надсилаються. KML читають Google Earth, OsmAnd, Locus; для навігаторів Garmin беріть GPX.') }}</p>
+                <p class="gap-tool-note">{{ _('Зберігаються лише в цьому браузері.') }}</p>
             </fieldset>
         </aside>
 
         <div>
             <div id="gap-map"></div>
             <div class="gap-status" id="gap-status" role="status"></div>
+            <div id="gap-map-toolbar" class="gap-map-toolbar leaflet-bar" hidden>
+                <button type="button" id="tool-add-point" title="{{ _('Додати точку') }}" aria-label="{{ _('Додати точку') }}" aria-pressed="false">📍</button>
+                <button type="button" id="tool-ruler" title="{{ _('Лінійка') }}" aria-label="{{ _('Лінійка') }}" aria-pressed="false">📏</button>
+                <button type="button" id="tool-ruler-clear" title="{{ _('Стерти виміри') }}" aria-label="{{ _('Стерти виміри') }}">🧽</button>
+            </div>
+            <div class="gap-tool-hint" id="tool-hint" role="status"></div>
         </div>
     </div>
 
@@ -314,14 +321,14 @@
         m: {{ _('м')|tojson }}, km: {{ _('км')|tojson }},
         pointPrefix: {{ _('Точка ')|tojson }},
         pointName: {{ _('Назва точки')|tojson }},
-        noPoints: {{ _('Ще немає. Увімкніть «Додати точку» і клацніть на карті.')|tojson }},
+        noPoints: {{ _('Ще немає: увімкніть 📍 і клацніть на карті.')|tojson }},
         zoomTo: {{ _('Наблизити до точки')|tojson }},
         deletePoint: {{ _('Видалити точку')|tojson }},
         confirmClear: {{ _('Видалити всі заплановані точки?')|tojson }},
         documentName: {{ _('Заплановані точки БіоМон')|tojson }},
         bufferLabel: {{ _('буфер')|tojson }},
-        addHint: {{ _('Клацніть на карті, щоб додати точку. Точки можна перетягувати.')|tojson }},
-        rulerStart: {{ _('Клацайте на карті, щоб виміряти відстань. Подвійний клік або Esc завершує.')|tojson }},
+        addHint: {{ _('Клік на карті додає точку, точки можна тягнути.')|tojson }},
+        rulerStart: {{ _('Клацайте вершини; подвійний клік або Esc завершує.')|tojson }},
         rulerHint: {{ _('Відстань:')|tojson }},
     };
 

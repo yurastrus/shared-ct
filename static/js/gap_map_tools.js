@@ -107,6 +107,18 @@
         map.getPane('planned').style.zIndex = 660;
         map.getPane('planned').style.pointerEvents = 'none';
         const ringRenderer = L.svg({pane: 'planned'});
+        // Tool buttons ride on the map (top left, under the zoom buttons).
+        const bar = $('gap-map-toolbar');
+        if (bar) {
+            const ctl = L.control({position: 'topleft'});
+            ctl.onAdd = () => {
+                L.DomEvent.disableClickPropagation(bar);
+                L.DomEvent.disableScrollPropagation(bar);
+                bar.hidden = false;
+                return bar;
+            };
+            ctl.addTo(map);
+        }
         const plannedLayer = L.layerGroup().addTo(map);
         const rulerLayer = L.layerGroup().addTo(map);
 
@@ -154,11 +166,11 @@
             if (!listEl) return;
             $('planned-count').textContent = points.length;
             $('planned-export').hidden = !points.length;
-            if (!points.length) { listEl.innerHTML = `<li class="muted">${esc(T.noPoints)}</li>`; return; }
+            if (!points.length) { listEl.innerHTML = `<li class="gap-tool-note">${esc(T.noPoints)}</li>`; return; }
             listEl.innerHTML = points.map((p, i) => `
                 <li data-i="${i}">
                     <input type="text" class="form-control form-control-sm" value="${esc(p.name)}" aria-label="${esc(T.pointName)}">
-                    <button type="button" class="gap-link" data-act="zoom" title="${esc(T.zoomTo)}">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</button>
+                    <button type="button" class="gap-link" data-act="zoom" title="${esc(T.zoomTo)}">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</button>
                     <button type="button" class="gap-del" data-act="del" title="${esc(T.deletePoint)}" aria-label="${esc(T.deletePoint)}">×</button>
                 </li>`).join('');
         }
