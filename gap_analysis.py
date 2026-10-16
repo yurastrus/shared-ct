@@ -451,8 +451,49 @@ def empty_cells(area, occupied, res_m, limit=MAX_EMPTY_CELLS):
     return out, False
 
 
+def gbif_fields(gbif, cell_counts, camera_species, has_cameras, lang='uk', limit=8):
+    """GBIF side of one cell: records, species, and which of them the cameras missed.
+
+    ``cell_counts`` is {taxon_key: records} of the cell (GbifData.by_cell),
+    ``camera_species`` the camera species ids recorded in the cell.
+    ``knowledge`` is 'both', 'camera', 'gbif' or 'none': the knowledge-gap layer.
+    """
+    cell_counts = cell_counts or {}
+    missed = sorted(((n, t) for t, n in cell_counts.items()
+                     if gbif.taxa.get(t, {}).get('ct_species_id') not in camera_species),
+                    reverse=True)
+    if has_cameras:
+        knowledge = 'both' if cell_counts else 'camera'
+    else:
+        knowledge = 'gbif' if cell_counts else 'none'
+    return {'gbif_records': sum(cell_counts.values()), 'gbif_species': len(cell_counts),
+            'gbif_missed': [{'name': gbif.name(t, lang), 'records': n} for n, t in missed[:limit]],
+            'gbif_missed_count': len(missed), 'knowledge': knowledge}
+
+
+def gbif_summary(gbif, shown_counts, data, lang='uk'):
+    """Window, totals and the species GBIF knows in the shown cells that no camera recorded."""
+    on_cameras = {sid for per in data.detections.values() for sid in per}
+    records = {}
+    cells = {}
+    for counts in shown_counts:
+        for t, n in counts.items():
+            records[t] = records.get(t, 0) + n
+            cells[t] = cells.get(t, 0) + 1
+    unseen = sorted((t for t in records if gbif.taxa.get(t, {}).get('ct_species_id') not in on_cameras),
+                    key=lambda t: -records[t])
+    return {'available': True,
+            'updated_at': gbif.updated_at.isoformat() if gbif.updated_at else None,
+            'year_from': gbif.window[0] if gbif.window else None,
+            'year_to': gbif.window[1] if gbif.window else None,
+            'records': sum(records.values()), 'species': len(records),
+            'not_on_cameras': [{'name': gbif.name(t, lang),
+                                'scientific': gbif.taxa.get(t, {}).get('scientific_name'),
+                                'records': records[t], 'cells': cells[t]} for t in unseen]}
+
+
 def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
-               include_empty=True):
+               include_empty=True, gbif=None):
     """Grid layer: one feature per occupied cell, plus empty cells of the study area.
 
     Returns a dict with ``cells`` (list of feature dicts), ``incidence`` (cell
@@ -465,6 +506,8 @@ def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
             continue
         by_cell[gm.cell_origin(loc['x'], loc['y'], res_m)].append(lid)
 
+    gbif_cells = gbif.by_cell(res_m) if gbif is not None else None
+    shown_gbif = []
     p_by_species = species_detection_probabilities(data, unit)
     focus_p = p_by_species.get(focus_species_id) if focus_species_id else None
     pool = species_detection_probabilities(data, unit, MIN_POOL_UNITS)
@@ -487,6 +530,10 @@ def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
             likely_missed=likely_missed(data, cell_pool, incidence, metrics['exposure_units'], lang),
             pool_size=len(cell_pool),
         )
+        if gbif_cells is not None:
+            counts = gbif_cells.get((x0, y0), {})
+            shown_gbif.append(counts)
+            metrics.update(gbif_fields(gbif, counts, set(incidence), True, lang))
         if focus_species_id:
             detected = focus_species_id in incidence
             metrics['focus_detected'] = detected
@@ -499,9 +546,14 @@ def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
         area = study_area(data)
         empties, truncated = empty_cells(area, set(by_cell), res_m)
         for x0, y0 in empties:
-            cells.append({'code': gm.eea_cell_code(x0, y0, res_m), 'status': 'empty',
-                          'ring': gm.cell_polygon_wgs84(x0, y0, res_m),
-                          'camera_days': 0, 'composite': 0, 'effort_score': 0})
+            cell = {'code': gm.eea_cell_code(x0, y0, res_m), 'status': 'empty',
+                    'ring': gm.cell_polygon_wgs84(x0, y0, res_m),
+                    'camera_days': 0, 'composite': 0, 'effort_score': 0}
+            if gbif_cells is not None:
+                counts = gbif_cells.get((x0, y0), {})
+                shown_gbif.append(counts)
+                cell.update(gbif_fields(gbif, counts, set(), False, lang))
+            cells.append(cell)
 
     all_lids = [lid for lids in by_cell.values() for lid in lids]
     n_unverified = sum(1 for c in cells if c['status'] == 'unverified')
@@ -527,6 +579,8 @@ def build_grid(data, res_m, unit=DEFAULT_UNIT, focus_species_id=None, lang='uk',
         # a cell needs before its silence means anything.
         'pool': [_detectability(sid, p) for sid, p in sorted(pool.items(), key=lambda kv: kv[1])],
         'species_options': species_options(data, lang),
+        'gbif': (gbif_summary(gbif, shown_gbif, data, lang) if gbif is not None
+                 else {'available': False}),
     }
     return {'cells': cells, 'incidence': incidence_by_code, 'summary': summary}
 

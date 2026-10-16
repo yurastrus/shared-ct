@@ -20,7 +20,8 @@ from . import camera_traps_bp
 from . import access as ct_access
 from . import gap_analysis as ga
 from . import gap_metrics as gm
-from .database import get_ct_session, close_ct_session
+from . import gbif_cache as gc
+from .database import get_ct_engine, get_ct_session, close_ct_session
 from .decorators import role_required
 from .domain import _
 from .routes import (DOMESTIC_SPECIES_IDS, build_ecoregions, get_accessible_institutions,
@@ -108,11 +109,26 @@ def _gap_data(ct_session, p):
     return key, _cache_get(key, build)
 
 
+# GBIF is fetched for mammals only (see gbif_cache.CAMERA_DETECTABLE_TAXA).
+GBIF_TAXA = ('mammals', 'all')
+
+
+def _gbif(p):
+    """Cached GBIF data in the current year window, or None (other taxon, no cache yet)."""
+    if p['taxon'] not in GBIF_TAXA:
+        return None
+    window = gc.gbif_year_window()
+    return _cache_get(('gbif', window), lambda: gc.load_gbif(get_ct_engine(), window))
+
+
 def _gap_grid(ct_session, p):
     data_key, data = _gap_data(ct_session, p)
-    key = ('grid', data_key, p['scale'], p['unit'], p['species_id'], g.lang_code)
+    gbif = _gbif(p)
+    gbif_stamp = (gbif.updated_at, gbif.window) if gbif is not None else None
+    key = ('grid', data_key, p['scale'], p['unit'], p['species_id'], g.lang_code, gbif_stamp)
     return data, _cache_get(key, lambda: ga.build_grid(
-        data, p['scale'], unit=p['unit'], focus_species_id=p['species_id'], lang=g.lang_code))
+        data, p['scale'], unit=p['unit'], focus_species_id=p['species_id'], lang=g.lang_code,
+        gbif=gbif))
 
 
 @camera_traps_bp.route('/analysis/gap-analysis')
@@ -141,6 +157,9 @@ def _render_gap_page(lang_code):
             kernel_bandwidths=[(bw, round(gm.home_range_km2(bw))) for bw in GAP_KERNEL_BANDWIDTHS_M],
             min_units=gm.MIN_UNITS_FOR_ESTIMATE,
             pool_radius_km=ga.POOL_RADIUS_M // 1000,
+            is_admin=is_admin,
+            gbif_unknown_scale_km=gc.UNKNOWN_UNCERTAINTY_MIN_SCALE_M // 1000,
+            gbif_years_back=gc.GBIF_YEARS_BACK,
         )
     except Exception as e:
         current_app.logger.error(f"Error loading gap analysis page: {e}", exc_info=True)
@@ -208,3 +227,30 @@ def api_gap_biotopes(lang_code):
                           lambda: ga.biotope_summary(data, p['unit'], g.lang_code))
         return jsonify({'rows': rows})
     return _json_endpoint('biotopes', produce)
+
+
+@camera_traps_bp.route('/api/gap-analysis/gbif/status')
+@login_required
+def api_gap_gbif_status(lang_code):
+    """State of the GBIF cache refresh (for the admin button's polling)."""
+    try:
+        return jsonify(gc.get_status(get_ct_engine()))
+    except Exception as e:
+        current_app.logger.error(f"Error in gap analysis GBIF status: {e}", exc_info=True)
+        return jsonify({'status': 'unavailable'}), 200
+
+
+@camera_traps_bp.route('/api/gap-analysis/gbif/refresh', methods=['POST'])
+@login_required
+def api_gap_gbif_refresh(lang_code):
+    """Start a background GBIF cache refresh (admin only). 202 started, 409 already running."""
+    if not current_user.has_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        started = gc.start_async_refresh(get_ct_engine())
+    except Exception as e:
+        current_app.logger.error(f"Error starting GBIF refresh: {e}", exc_info=True)
+        return jsonify({'error': 'Server error'}), 500
+    with _gap_cache_lock:
+        _gap_cache.clear()      # next requests read the new cache once it is written
+    return (jsonify({'status': 'running'}), 202) if started else (jsonify({'status': 'running', 'already': True}), 409)

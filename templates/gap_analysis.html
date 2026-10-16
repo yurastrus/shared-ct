@@ -168,6 +168,10 @@
                 <div class="gap-sub" id="species-sub" hidden>
                     <select id="species-select" class="form-control form-control-sm"></select>
                 </div>
+                <label><input type="radio" name="layer" value="gbif"> {{ _('GBIF: видів у клітинці') }}
+                    <span class="hint">{{ _('Ссавці, яких може зафіксувати фотопастка, за записами GBIF. Незалежне джерело присутності; власні дані фотопасток, опубліковані в GBIF, виключено.') }}</span></label>
+                <label><input type="radio" name="layer" value="knowledge"> {{ _('Прогалина знань') }}
+                    <span class="hint">{{ _('Червоне: немає ні камер, ні записів GBIF. Про ссавців тут не відомо нічого.') }}</span></label>
                 <label><input type="radio" name="layer" value="kernel"> {{ _('Ядерна щільність зусиль') }}
                     <span class="hint">{{ _('Кожна камера розмазує свої камеро-доби гаусовим ядром. У дужках площа індивідуальної ділянки, якій відповідає ширина ядра (95% нормального розподілу).') }}</span></label>
                 <div class="gap-sub" id="kernel-sub" hidden>
@@ -232,6 +236,17 @@
             <p class="muted small">{{ _('Імовірність зафіксувати вид за одну одиницю вибірки там, де він точно є, і скільки камеро-діб треба, щоб пропустити присутній вид лише з імовірністю 5%. Найважче виявлювані види вгорі.') }}</p>
             <div class="gap-table-wrap"><table class="gap-table" id="pool-table"></table></div>
         </section>
+        <section class="gap-panel" style="grid-column: 1 / -1;" id="gbif-panel">
+            <h3>{{ _('Ссавці з GBIF, яких камери не фіксували') }}</h3>
+            <p class="muted small" id="gbif-meta"></p>
+            <div class="gap-table-wrap"><table class="gap-table" id="gbif-table"></table></div>
+            {% if is_admin %}
+            <p class="small" style="margin:.5rem 0 0">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="gbif-refresh">{{ _('Оновити дані GBIF') }}</button>
+                <span class="muted" id="gbif-refresh-status"></span>
+            </p>
+            {% endif %}
+        </section>
         <section class="gap-panel" style="grid-column: 1 / -1;">
             <h3>{{ _('Біотопи: прогалини в середовищі') }}</h3>
             <p class="muted small">{{ _('Зусилля й повнота, зведені за біотопами локацій. Біотоп із малими зусиллями недосліджений, де б на карті він не був. Локація з кількома біотопами враховується в кожному з них.') }}</p>
@@ -251,6 +266,7 @@
             <li>{{ _('Досліджувана територія: буфер 5 км навколо камер із замиканням 10 км. Діри між групами камер до 20 км стають сірими клітинками.') }}</li>
             <li>{{ _('За замовчуванням одиниця вибірки дорівнює камеро-тижню. Реєстрації одного виду на одній камері в сусідні дні сильно залежні (імовірність реєстрації завтра після реєстрації сьогодні втричі вища за середню), а Chao2 і ймовірність пропуску припускають незалежні одиниці. Із камеро-добою обидві оцінки надто оптимістичні.') }}</li>
             <li>{{ _('Фіолетові клітинки мають камери, але жодного перевіреного дня. Це черга на верифікацію, а не прогалина в польових роботах.') }}</li>
+            <li>{{ _('GBIF: записи ссавців, яких може зафіксувати фотопастка (хижі, копитні, зайцеподібні, їжаки, бобри, вивірки), за останні %(n)s років у межах досліджуваної території. Власний фотопастковий датасет Розточчя в GBIF виключено, щоб камери не підтверджували самі себе. Запис потрапляє в клітинку, лише якщо точність його координат не гірша за розмір клітинки; записи без зазначеної точності враховуються від %(km)s км. Відсутність у GBIF не означає відсутності виду: це випадкові спостереження з нерівномірними зусиллями.', km=gbif_unknown_scale_km, n=gbif_years_back) }}</li>
             <li>{{ _('Пул видів не враховує біотопу: видра чи бобер потраплять у «найімовірніше пропущені» і там, де води немає. Читати цей список треба з картою оселищ у голові.') }}</li>
             <li>{{ _('Крапкова межа на шарах покриття й повноти означає, що є види, зафіксовані один раз, але жодного, зафіксованого двічі. Оцінка тоді спирається на поодинокі випадки, а з одним таким видом взагалі показує «нічого не пропущено», тож довіряти їй не можна.') }}</li>
         </ul>
@@ -313,6 +329,23 @@
         unstable: {{ _('Нестійка оцінка: синглтони без дублетонів')|tojson }},
         noPool: {{ _('Немає пулу видів для порівняння')|tojson }},
         homeRange: {{ _('ділянка ≈')|tojson }},
+        gbifLayer: {{ _('GBIF: видів у клітинці')|tojson }},
+        gbifRecords: {{ _('Записів GBIF')|tojson }},
+        gbifSpecies: {{ _('видів')|tojson }},
+        gbifMissed: {{ _('Є в GBIF, камерою не зафіксовані')|tojson }},
+        knowledge: {{ _('Прогалина знань')|tojson }},
+        kBoth: {{ _('Камери і GBIF')|tojson }},
+        kCamera: {{ _('Лише камери')|tojson }},
+        kGbif: {{ _('Лише GBIF')|tojson }},
+        kNone: {{ _('Нічого не відомо')|tojson }},
+        gbifNone: {{ _('Дані GBIF ще не завантажені.')|tojson }},
+        gbifMammalsOnly: {{ _('GBIF підключено лише для ссавців.')|tojson }},
+        gbifMeta: {{ _('Записи GBIF за %(y0)s–%(y1)s у межах досліджуваної території: %(r)s записів, %(s)s видів. Оновлено %(d)s.')|tojson }},
+        gbifEmpty: {{ _('Усі види з GBIF уже зафіксовані камерами.')|tojson }},
+        gbifCells: {{ _('Клітинок')|tojson }},
+        gbifRunning: {{ _('Оновлюю, це займає кілька хвилин…')|tojson }},
+        gbifDone: {{ _('Готово:')|tojson }},
+        gbifFailed: {{ _('Помилка:')|tojson }},
         none: '—',
     };
 
@@ -352,6 +385,11 @@
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
         (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const pct = (v) => v == null ? T.none : Math.round(v * 100) + '%';
+    const fmt = (tpl, vals) => tpl.replace(/%\((\w+)\)s/g, (m, k) => (k in vals ? vals[k] : m));
+    const KNOWLEDGE = {both: ['#1a9641', 'kBoth'], camera: ['#a6d96a', 'kCamera'],
+                       gbif: ['#fdae61', 'kGbif'], none: ['#d7191c', 'kNone']};
+    const gbifOn = () => grid && grid.summary.gbif && grid.summary.gbif.available;
+    let gbifMax = 1;
     const num = (v) => v == null ? T.none : Number(v).toLocaleString();
 
     const STOPS = [[0, [215, 25, 28]], [0.25, [253, 174, 97]], [0.5, [255, 255, 191]],
@@ -424,7 +462,8 @@
             if (!c) return '';
             if (c.status !== 'data') return `${c.code}: ${T.empty}`;
             return `${c.code}: ${T.composite} ${pct(c.composite)}, ${T.cameraDays} ${c.camera_days}, `
-                + `${T.species} ${c.S_obs}, ${T.pool} ${pct(c.pool_sensitivity)}`;
+                + `${T.species} ${c.S_obs}, ${T.pool} ${pct(c.pool_sensitivity)}`
+                + (c.gbif_records !== undefined ? `, GBIF ${c.gbif_species}` : '');
         },
     });
 
@@ -434,6 +473,10 @@
 
     // Value (0..1, or null when not estimable) the current layer colours a cell by.
     function cellValue(c, layer) {
+        if (layer === 'gbif') {
+            if (c.gbif_species === undefined) return undefined;
+            return Math.log(1 + c.gbif_species) / Math.log(1 + gbifMax);
+        }
         if (c.status !== 'data') return layer === 'verified' && c.status === 'unverified' ? 0 : undefined;
         switch (layer) {
             case 'verified': return c.verified_share;
@@ -458,7 +501,11 @@
         grid.cells.forEach((c) => {
             const v = cellValue(c, layer);
             let style;
-            if (noFocus) {
+            if (layer === 'knowledge') {
+                if (!c.knowledge) return;
+                if (c.knowledge === 'none' && !showEmpty) return;
+                style = {color: '#555', weight: 0.5, fillColor: KNOWLEDGE[c.knowledge][0], fillOpacity: 0.7};
+            } else if (noFocus) {
                 if (c.status === 'empty' && !showEmpty) return;
                 style = {color: '#666', weight: 0.6, fillOpacity: 0};
             } else if (c.status === 'unverified' && layer !== 'verified') {
@@ -484,8 +531,15 @@
         drawLegend(layer);
     }
 
+    function gbifLine(c) {
+        if (c.gbif_records === undefined) return '';
+        return `<br>${esc(T.gbifRecords)}: ${num(c.gbif_records)} (${c.gbif_species} ${esc(T.gbifSpecies)})`
+            + (c.gbif_missed_count && c.status !== 'empty'
+               ? `<br><i>${esc(T.gbifMissed)}: ${c.gbif_missed.map((m) => esc(m.name)).join(', ')}</i>` : '');
+    }
+
     function tooltipFor(c, layer) {
-        if (c.status === 'empty') return `<b>${esc(c.code)}</b><br>${esc(T.empty)}`;
+        if (c.status === 'empty') return `<b>${esc(c.code)}</b><br>${esc(T.empty)}` + gbifLine(c);
         if (c.status === 'unverified') return `<b>${esc(c.code)}</b><br>${esc(T.unverifiedCell)}`
             + `<br>${esc(T.locations)}: ${c.n_locations} · ${esc(T.pendingDays)}: ${num(c.pending_days)}`;
         let html = `<b>${esc(c.code)}</b><br>${esc(T.cameraDays)}: ${num(c.camera_days)} · ${esc(T.locations)}: ${c.n_locations}`
@@ -493,7 +547,8 @@
             + `<br>${esc(T.pool)}: ${pct(c.pool_sensitivity)} · ${esc(T.months)}: ${c.months_covered}/12`
             + `<br>${esc(T.composite)}: ${pct(c.composite)}`
             + (c.pending_days ? `<br>${esc(T.verified)}: ${pct(c.verified_share)} (${esc(T.pendingDays)}: ${num(c.pending_days)})` : '')
-            + (c.unstable ? `<br><i>${esc(T.unstable)}</i>` : '');
+            + (c.unstable ? `<br><i>${esc(T.unstable)}</i>` : '')
+            + gbifLine(c);
         if (layer === 'species') {
             html += `<br><b>${c.focus_detected ? esc(T.detected) : esc(T.confidence) + ': ' + pct(c.focus_confidence)}</b>`;
         }
@@ -504,12 +559,19 @@
         const el = $('gap-legend');
         const titles = {verified: T.verified, composite: T.composite, effort: T.effort + ', ' + T.cameraDays.toLowerCase(),
             pool: T.pool, coverage: T.coverage, completeness: T.completeness, temporal: T.temporal,
-            species: T.confidence, kernel: T.density};
+            species: T.confidence, kernel: T.density, gbif: T.gbifLayer, knowledge: T.knowledge};
+        if (layer === 'knowledge') {
+            el.innerHTML = `<b>${esc(T.knowledge)}</b>` + Object.values(KNOWLEDGE).map(([col, key]) =>
+                `<div><span class="sw" style="background:${col};opacity:.8"></span>${esc(T[key])}</div>`).join('');
+            return;
+        }
         let ticks = ['0%', '50%', '100%'];
         if (layer === 'effort' && grid) {
             const target = {1000: 365, 5000: 730, 10000: 1460}[grid.summary.scale_m] || 365;
             const cd = (s) => Math.round(Math.pow(10, s * Math.log10(1 + target)) - 1);
             ticks = ['0', String(cd(0.5)), '≥' + target];
+        } else if (layer === 'gbif') {
+            ticks = ['0', String(Math.round(Math.sqrt(gbifMax))), String(gbifMax)];
         } else if (layer === 'temporal') {
             ticks = ['0', '6', '12'];
         } else if (layer === 'kernel' && kernel) {
@@ -607,6 +669,50 @@
         } catch (e) { $('biotope-table').innerHTML = `<tr><td>${esc(T.error)}</td></tr>`; }
     }
 
+    function drawGbif() {
+        const gb = grid.summary.gbif;
+        const tableEl = $('gbif-table'), metaEl = $('gbif-meta');
+        if (!['mammals', 'all'].includes($('taxon-select').value)) {
+            metaEl.textContent = T.gbifMammalsOnly; tableEl.innerHTML = ''; return;
+        }
+        if (!gb || !gb.available) { metaEl.textContent = T.gbifNone; tableEl.innerHTML = ''; return; }
+        gbifMax = Math.max(1, ...grid.cells.map((c) => c.gbif_species || 0));
+        metaEl.textContent = fmt(T.gbifMeta, {y0: gb.year_from, y1: gb.year_to, r: num(gb.records),
+            s: gb.species, d: gb.updated_at ? gb.updated_at.slice(0, 10) : T.none});
+        tableEl.innerHTML = gb.not_on_cameras.length
+            ? `<tr><th>${esc(T.speciesCount)}</th><th>${esc(T.gbifRecords)}</th><th>${esc(T.gbifCells)}</th></tr>`
+              + gb.not_on_cameras.map((r) => `<tr><td>${esc(r.name)} <span class="muted">${esc(r.scientific || '')}</span></td>`
+                  + `<td>${num(r.records)}</td><td>${num(r.cells)}</td></tr>`).join('')
+            : `<tr><td>${esc(T.gbifEmpty)}</td></tr>`;
+    }
+
+    const refreshBtn = $('gbif-refresh');
+    if (refreshBtn) {
+        const STATUS = {{ url_for('camera_traps.api_gap_gbif_status', lang_code=g.lang_code)|tojson }};
+        const REFRESH = {{ url_for('camera_traps.api_gap_gbif_refresh', lang_code=g.lang_code)|tojson }};
+        const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content;
+        const out = $('gbif-refresh-status');
+        let timer = null;
+        async function poll() {
+            try {
+                const st = await getJSON(STATUS);
+                if (st.status === 'running') { out.textContent = T.gbifRunning; refreshBtn.disabled = true; return; }
+                clearInterval(timer); timer = null; refreshBtn.disabled = false;
+                if (st.status === 'completed') { out.textContent = `${T.gbifDone} ${st.message || ''}`; loadGrid(); }
+                else if (st.status === 'failed') out.textContent = `${T.gbifFailed} ${st.message || ''}`;
+            } catch (e) { clearInterval(timer); timer = null; refreshBtn.disabled = false; }
+        }
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.disabled = true;
+            out.textContent = T.gbifRunning;
+            try {
+                await fetch(REFRESH, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': csrf}});
+            } catch (e) { /* the status poll reports the outcome */ }
+            if (!timer) timer = setInterval(poll, 5000);
+        });
+        getJSON(STATUS).then((st) => { if (st.status === 'running') { out.textContent = T.gbifRunning; refreshBtn.disabled = true; timer = setInterval(poll, 5000); } }).catch(() => {});
+    }
+
     // ── Cell detail ────────────────────────────────────────────────────────
     let chart = null;
     async function openCell(c) {
@@ -643,6 +749,7 @@
         $('cell-lists').innerHTML =
             list(T.recorded, d.species.map((s) => `${esc(s.name)} (${s.units})`))
             + list(T.likelyMissed, (c.likely_missed || []).map((m) => `${esc(m.name)} (${pct(m.confidence)})`))
+            + list(T.gbifMissed, (c.gbif_missed || []).map((m) => `${esc(m.name)} (${m.records})`))
             + list(T.cams, d.locations.map((l) => `${esc(l.name)} (${num(l.camera_days)}${l.pending_days ? ' + ' + num(l.pending_days) + '?' : ''})`));
     }
 
@@ -658,6 +765,7 @@
         fillSpecies();
         drawStats();
         drawPool();
+        drawGbif();
         drawGrid();
         drawLocations();
         fitToData();

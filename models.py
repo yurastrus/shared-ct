@@ -529,6 +529,46 @@ class CalculationLog(CTBase):
     def __repr__(self):
         return f'<Log: {self.source_name}, Count: {self.last_count}, Status: {self.status}>'
 
+class GbifTaxon(CTBase):
+    """A mammal species with GBIF records in the study area (gap analysis page).
+
+    Filled by gbif_cache.refresh_gbif_cache; ``ct_species_id`` links the GBIF
+    species to the camera species of the same scientific name, when there is one.
+    Created by scripts/init_gbif_cache.py (ct_db uses create_all, not Alembic).
+    """
+    __tablename__ = 'gbif_taxa'
+
+    taxon_key = Column(Integer, primary_key=True, autoincrement=False)  # GBIF backbone speciesKey
+    scientific_name = Column(String(255), nullable=False)
+    name_uk = Column(String(255))
+    name_en = Column(String(255))
+    order_name = Column(String(100))
+    family_name = Column(String(100))
+    ct_species_id = Column(Integer)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GbifCellCount(CTBase):
+    """GBIF records per species, 1 km EEA cell, year and coordinate-uncertainty bucket.
+
+    ``e_km``/``n_km`` are the lower-left corner of the 1 km cell in km of
+    EPSG:3035 (the cell code is ``1kmE{e_km}N{n_km}``); coarser grids are sums.
+    ``uncertainty_m`` is a bucket from gbif_cache.UNCERTAINTY_BUCKETS_M, NULL when
+    the record states none.
+    """
+    __tablename__ = 'gbif_cell_counts'
+
+    id = Column(Integer, primary_key=True)
+    taxon_key = Column(Integer, nullable=False, index=True)
+    e_km = Column(Integer, nullable=False)
+    n_km = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    uncertainty_m = Column(Integer)
+    n_records = Column(Integer, nullable=False)
+
+    __table_args__ = (Index('idx_gbif_cell_counts_year', 'year'),)
+
+
 class BatteryType(CTBase):
     """Lookup table: battery types."""
     __tablename__ = 'battery_types'
