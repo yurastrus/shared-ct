@@ -104,7 +104,7 @@
                         {% for ident in photo.identifications %}
                             <div class="identification-item">
                                 <div class="identification-details">
-                                    <strong>{% if ident.user %}{{ ident.user.username }}{% else %}{{ _('Користувач видалений') }} (ID: {{ ident.user_id }}){% endif %}:</strong>
+                                    <strong>{{ ident.verifier_label }}:</strong>
                                     <span class="identification-species">
                                         {% if ident.species_id and ident.species_id > 0 %}
                                             {{ ident.species.common_name_ua or ident.species.scientific_name }}

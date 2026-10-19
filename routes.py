@@ -3339,18 +3339,22 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
         # Retrieve the final, correct photo object from the sorted list
         photo = photos_sorted[current_photo_index]
 
-        # Step 4: Safely load user names
-        if photo.identifications:
-            user_ids = [ident.user_id for ident in photo.identifications]
-            
-            # Query the main database
-            from app.models import User # Ensure this import exists at the top of the file
-            users = User.query.filter(User.id.in_(user_ids)).all()
-            user_map = {user.id: user for user in users} # Store full User objects
-
-            # Attach the user object as a new attribute on each identification
-            for ident in photo.identifications:
-                ident.user = user_map.get(ident.user_id)
+        # Step 4: Anonymise verifiers. Labels are numbered by first identification
+        # across the whole observation, so "Verifier 1" is the same person on every
+        # photo of the series, but the name is never sent to the template.
+        first_ident = {}
+        for p in photos_sorted:
+            for ident in p.identifications:
+                prev = first_ident.get(ident.user_id)
+                if prev is None or ident.id < prev:
+                    first_ident[ident.user_id] = ident.id
+        label_by_user = {
+            uid: _('Верифікатор %(n)d', n=n)
+            for n, (uid, _first) in enumerate(
+                sorted(first_ident.items(), key=lambda kv: kv[1]), start=1)
+        }
+        for ident in photo.identifications:
+            ident.verifier_label = label_by_user[ident.user_id]
 
         # Step 5: Prepare navigation data for the series
         series_photos = []
