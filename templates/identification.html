@@ -183,6 +183,7 @@
                     <div class="action-buttons-container">
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
+                                <button type="button" id="back-btn" class="btn btn-secondary" disabled title="{{ _('Повернутися до попередньої серії, щоб виправити відповідь') }}">&lt;</button>
                                 <button type="submit" class="btn btn-primary">{{ _('Надіслати') }}</button>
                                 <button type="button" id="skip-btn" class="btn btn-secondary">{{ _('Пропустити') }}</button>
                                 <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩</button>
@@ -820,7 +821,41 @@ $(document).ready(function() {
         // Зберігаємо у змінній поза функцією, щоб стан зберігався між викликами.
         let _pendingStartObsId = startObsId;
 
+        // «Назад»: id щойно надісланих серій (найновіша в кінці), максимум
+        // MAX_BACK_STEPS. Лише в пам'яті сторінки, після перезавантаження порожньо.
+        const MAX_BACK_STEPS = 3;
+        const submittedHistory = [];
+        // true, поки на екрані серія, відкрита кнопкою «Назад»: надсилання
+        // тоді замінює власні ідентифікації, а не додає нові.
+        let editingSubmitted = false;
+        let _loadingBack = false;
+        const backBtn = $('#back-btn');
+
+        function updateBackBtn() {
+            backBtn.prop('disabled', submittedHistory.length === 0);
+        }
+
+        function rememberSubmitted(obsId) {
+            submittedHistory.push(obsId);
+            while (submittedHistory.length > MAX_BACK_STEPS) submittedHistory.shift();
+            updateBackBtn();
+        }
+
+        // Повертає у форму те, що користувач відповів раніше (після form.reset()).
+        function prefillFromMine(mine) {
+            $(`input[name="{{ form.species.name }}"][value="${mine.species_id}"]`).prop('checked', true);
+            $('#{{ form.quantity.id }}').val(mine.quantity);
+            $('#{{ form.comment.id }}').val(mine.comment || '');
+            $('#comment-counter').text((mine.comment || '').length);
+            $('input[name="{{ form.behaviors.name }}"]').each(function () {
+                $(this).prop('checked', (mine.behavior_ids || []).indexOf(parseInt($(this).val())) !== -1);
+            });
+        }
+
         function loadNextObservation() {
+        const goingBack = _loadingBack;
+        _loadingBack = false;
+        if (!goingBack) editingSubmitted = false;
         // Preserve scroll position: swapping the photo briefly collapses the page
         // height, which clamps the scroll to the top — so after a verdict button
         // the user was thrown up and had to scroll back down every time.
@@ -895,6 +930,10 @@ $(document).ready(function() {
                 // AI prediction: pre-fill species + show badge.
                 applyAIPrediction(data.ai_prediction);
 
+                // Крок «Назад»: власна попередня відповідь має перекрити підказку AI.
+                editingSubmitted = goingBack && !!data.my_identification;
+                if (editingSubmitted) prefillFromMine(data.my_identification);
+
                 // 2. Restore checkbox state after form reset.
                 updateReviewModeUI();
 
@@ -964,6 +1003,14 @@ $(document).ready(function() {
 
     skipBtn.on('click', loadNextObservation);
 
+    backBtn.on('click', function() {
+        if (submittedHistory.length === 0) return;
+        _pendingStartObsId = submittedHistory.pop();
+        _loadingBack = true;
+        updateBackBtn();
+        loadNextObservation();
+    });
+
     // "Flag for re-review" (Idea 6): mark the current series
     // and move to the next one (fire-and-move-on).
     $('#flag-btn').on('click', function() {
@@ -1010,8 +1057,11 @@ $(document).ready(function() {
             current_photo_index: currentPhotoIndex, // current photo index.
             behaviors: selectedBehaviors,
             comment: $('#{{ form.comment.id }}').val(),  // #47
+            replace: editingSubmitted,
             csrf_token: $('input[name="csrf_token"]').val()
         };
+        const submittedObsId = parseInt(identificationData.observation_id);
+        const wasEditing = editingSubmitted;
 
         fetch("{{ url_for('camera_traps.submit_identification', lang_code=g.lang_code) }}", {
             method: 'POST',
@@ -1028,7 +1078,9 @@ $(document).ready(function() {
             return response.json().then(err => Promise.reject(err));
         })
         .then(data => {
-            if (!reviewMode && remainingIdentificationsCount > 0) {
+            // Виправлена серія вже була пораховена; нова потрапляє в історію «Назад».
+            if (!wasEditing) rememberSubmitted(submittedObsId);
+            if (!wasEditing && !reviewMode && remainingIdentificationsCount > 0) {
                 remainingIdentificationsCount--; // Decrement the counter.
                 // If the series we just identified already carried someone
                 // else's vote, it also leaves the "(N) already identified" subset.

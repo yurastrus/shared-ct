@@ -15,7 +15,7 @@ from . import camera_traps_bp
 from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
 from .utils import (process_photo_batch, check_consensus_for_observation,
-                    calculate_total_effort, get_institution_filter,
+                    reopen_observation, calculate_total_effort, get_institution_filter,
                     can_view_photo_file, can_access_location)
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
@@ -4149,6 +4149,9 @@ def submit_identification(lang_code):
             behavior_ids = data.get('behaviors', [])
             # #47: optional comment field; back-end guard — truncate to 200 chars
             comment = (data.get('comment') or '').strip()[:200] or None
+            # The verifier stepped back to a series they already submitted and
+            # is correcting it: their own identifications are replaced, not skipped.
+            replace = bool(data.get('replace', False))
         except (ValueError, TypeError, KeyError):
             return jsonify({'success': False, 'error': _('Неправильний формат даних.')}), 400
 
@@ -4166,20 +4169,38 @@ def submit_identification(lang_code):
 
         is_moderator = current_user.has_role('manager')
 
+        photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+
+        if replace:
+            # Only the caller's own rows are touched. If their old vote had
+            # closed the series, reopen it so consensus is recomputed from the
+            # corrected votes instead of keeping a verdict they just withdrew.
+            own = ct_session.query(Identification).filter(
+                Identification.user_id == current_user.id,
+                Identification.photo_id.in_([p.id for p in photos_sorted])
+            ).all()
+            for old in own:
+                old.photo.identification_count = max(
+                    0, (old.photo.identification_count or 0) - 1)
+                ct_session.delete(old)
+            if own:
+                ct_session.flush()
+                reopen_observation(observation_id, db_session=ct_session)
+
         moderator_override = is_moderator and observation.status == 'completed'
 
         selected_behaviors = ct_session.query(BehaviorType).filter(BehaviorType.id.in_(behavior_ids)).all() if behavior_ids else []
-        
-        photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
         # Validate the index
         if current_photo_index >= len(photos_sorted):
             current_photo_index = 0  # Fallback to first photo
                 
         for i, photo in enumerate(photos_sorted):
-            # Set is_favorite only for the current photo
+            # Set is_favorite only for the current photo. A correction never
+            # clears a favourite: the flag is shared, and the form on a
+            # re-opened series does not know which photo was starred before.
             if is_favorite and i == current_photo_index:
                 photo.is_favorite = True
-            elif not is_favorite and i == current_photo_index:
+            elif not is_favorite and not replace and i == current_photo_index:
                 photo.is_favorite = False
 
             existing_id = ct_session.query(Identification).filter_by(user_id=current_user.id, photo_id=photo.id).first()
@@ -4380,6 +4401,19 @@ def next_observation_for_identification(lang_code):
                 'rights_holder': photo_rights_holder(ct_session, observation.location_id),
                 'photos': photos_data
             }
+            # The caller's own earlier answer, so the form can be pre-filled when
+            # they step back to correct it.
+            mine = (ct_session.query(Identification)
+                    .filter(Identification.user_id == current_user.id,
+                            Identification.photo_id.in_([p.id for p in photos_sorted]))
+                    .order_by(Identification.id).first())
+            if mine is not None:
+                response_data['my_identification'] = {
+                    'species_id': mine.species_id,
+                    'quantity': mine.quantity,
+                    'comment': mine.comment or '',
+                    'behavior_ids': [b.id for b in mine.behaviors],
+                }
             try:
                 from .ai_runner import is_ai_available, get_observation_ai_prediction
                 if is_ai_available():

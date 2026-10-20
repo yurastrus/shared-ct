@@ -828,6 +828,31 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
         current_app.logger.error(f"Error in check_consensus_for_observation {observation_id}: {e}")
         raise
 
+def reopen_observation(observation_id, db_session):
+    """Undo mark_observation_complete: series and photos back to 'pending'.
+
+    Used when a verifier replaces their own vote on a series that their earlier
+    vote had helped to close. The AI correctness flag was derived from the old
+    winner, so it is cleared; consensus sets it again if the series re-closes.
+    """
+    observation = db_session.query(Observation).get(observation_id)
+    if not observation or observation.status != 'completed':
+        return
+    observation.status = 'pending'
+    for photo in observation.photos:
+        photo.status = 'pending'
+    try:
+        from .models import AIPrediction
+        for pred in db_session.query(AIPrediction).filter(
+                AIPrediction.observation_id == observation_id).all():
+            pred.was_correct = None
+    except Exception as ai_exc:
+        # Installations without the AI schema have no ai_predictions table.
+        current_app.logger.warning(
+            f"was_correct reset skipped for obs {observation_id}: {ai_exc}")
+    db_session.flush()
+
+
 def mark_observation_complete(observation_id, db_session, winner_species_id=None):
     """Mark an observation as complete.
 

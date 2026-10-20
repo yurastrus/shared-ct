@@ -1694,6 +1694,11 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .action-buttons-container .btn { font-size: 0.85rem; padding: 6px 8px; flex: 1; min-width: 0; white-space: nowrap; }
 /* Flag button: compact like the sun/moon toggles — submit + skip take the rest */
 #flag-btn { flex: 0 0 auto; width: 34px; padding-left: 0; padding-right: 0; }
+/* Step-back button: same compact width as the flag, grey and quiet so it does not
+   compete with "Надіслати". */
+#back-btn { flex: 0 0 auto; width: 34px; padding-left: 0; padding-right: 0; opacity: .7; }
+#back-btn:hover:not(:disabled) { opacity: 1; }
+#back-btn:disabled { opacity: .35; cursor: default; }
 
 /* Compact theme + review toggle */
 .theme-and-review-toggle {
@@ -2199,6 +2204,7 @@ body.dark-theme .message-container.error {
     .main-buttons             { flex-direction: row; gap: 8px; }
     .main-buttons > .btn      { flex: 1 1 0; }
     .main-buttons #flag-btn   { flex: 0 0 auto; width: auto; }
+    .main-buttons #back-btn   { flex: 0 0 auto; width: 34px; }
     .buttons-and-theme        { flex-direction: column; align-items: stretch; gap: 8px; }
     .gallery-layout .theme-toggle { align-self: center; }
     .filter-row               { flex-direction: column; align-items: stretch; }
