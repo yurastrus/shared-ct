@@ -1333,10 +1333,12 @@ def build_expertise_rows(stats, label_for, min_n=1):
 
 @camera_traps_bp.route('/expertise')
 @login_required
-@role_required('admin')
+@role_required('manager')
 def expertise(lang_code):
     """Verifier expertise: how often a call matched the final decision of the
-    series. Admin only — the page names individuals and their error rate.
+    series. Manager and admin — the page names individuals and their error
+    rate. A manager sees only the votes on their own institutions' locations;
+    an admin sees everything.
 
     Two views of the same tally, switched by `mode`:
       users   — rows are verifiers, optionally narrowed to one species;
@@ -1348,7 +1350,7 @@ def expertise(lang_code):
     """
     ct_session = get_ct_session()
     try:
-        is_admin = True  # guaranteed by @role_required('admin')
+        is_admin = current_user.has_role('admin')
         user_inst_ids = ct_access.allowed_institution_ids(current_user)
 
         mode = request.args.get('mode', 'users')
