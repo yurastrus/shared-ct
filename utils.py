@@ -630,6 +630,27 @@ def process_single_photo(file, location_id, user_id, batch_id, save_original=Tru
     finally:
         close_ct_session()
 
+
+# Order of photos inside a series. EXIF time has whole-second resolution and
+# burst cameras shoot 2-3 frames in the same second, so captured_at alone
+# leaves ties — and the DB returns tied rows in heap order, which the parallel
+# /upload-fast pool makes random. The camera's file counter (IMG_0152,
+# I_00271a/b/c) holds the real order within a second. Plain string comparison
+# matches PostgreSQL `COLLATE "C"` (code-point order), so the viewers and the
+# grouping SQL (SERIES_PHOTO_ORDER_SQL) agree with each other and with
+# sequence_number.
+SERIES_PHOTO_ORDER_SQL = 'captured_at, original_filename COLLATE "C", id'
+
+
+def series_photo_key(photo):
+    return (photo.captured_at, photo.original_filename or '', photo.id or 0)
+
+
+def sort_series_photos(photos):
+    """Photos of one series in shooting order (see SERIES_PHOTO_ORDER_SQL)."""
+    return sorted(photos, key=series_photo_key)
+
+
 def group_batch_into_series(batch_id):
     """
     Group all photos from the batch into observation series.
@@ -652,10 +673,10 @@ def group_batch_into_series(batch_id):
         ct_session.flush()
 
         # Fetch all photos from the batch ordered by time
-        photos = ct_session.query(Photo).filter(
+        photos = sort_series_photos(ct_session.query(Photo).filter(
             Photo.upload_batch_id == batch_id,
             Photo.status == 'uploaded'
-        ).order_by(Photo.captured_at).all()
+        ).all())
 
         if not photos:
             raise ValueError(f"No uploaded photos found in batch {batch_id}")

@@ -263,7 +263,7 @@ class Observation(CTBase):
     photos_chronological = relationship(
         'Photo',
         back_populates='observation',
-        order_by='Photo.captured_at',
+        order_by='(Photo.captured_at, Photo.original_filename, Photo.id)',
         viewonly=True
     )
 

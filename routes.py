@@ -16,7 +16,7 @@ from .forms import UploadForm, IdentificationForm
 from .background_tasks import cleanup_old_photos
 from .utils import (process_photo_batch, check_consensus_for_observation,
                     reopen_observation, calculate_total_effort, get_institution_filter,
-                    can_view_photo_file, can_access_location)
+                    can_view_photo_file, can_access_location, sort_series_photos)
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors, location_biotopes
@@ -240,7 +240,7 @@ def admin_flagged_list(lang_code):
             first_photo = (
                 ct_session.query(Photo)
                 .filter(Photo.observation_id == obs.id)
-                .order_by(Photo.captured_at)
+                .order_by(Photo.captured_at, Photo.original_filename, Photo.id)
                 .first()
             )
             items.append({
@@ -3320,7 +3320,7 @@ def view_photo(lang_code, photo_id=None, observation_id=None, photo_index=None):
             return redirect(url_for('camera_traps.dashboard', lang_code=g.lang_code))
 
         # Step 2: Retrieve and sort the photo list
-        photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+        photos_sorted = sort_series_photos(observation.photos)
         
         if not photos_sorted:
              flash(_('У цьому спостереженні немає фотографій.'), 'warning')
@@ -4171,7 +4171,7 @@ def submit_identification(lang_code):
 
         is_moderator = current_user.has_role('manager')
 
-        photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+        photos_sorted = sort_series_photos(observation.photos)
 
         if replace:
             # Only the caller's own rows are touched. If their old vote had
@@ -4384,7 +4384,7 @@ def next_observation_for_identification(lang_code):
             # Check access (admin sees everything; others only their own institutions/public)
             if not _can_access_observation(ct_session, observation):
                 return jsonify({'message': _('Немає доступу до цієї серії.')}), 403
-            photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+            photos_sorted = sort_series_photos(observation.photos)
             photos_data = []
             for i, photo in enumerate(photos_sorted):
                 photos_data.append({
@@ -4548,7 +4548,7 @@ def next_observation_for_identification(lang_code):
                 message = _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.')
             return jsonify({'message': message}), 404
         
-        photos_sorted = sorted(list(observation.photos), key=lambda p: p.captured_at)
+        photos_sorted = sort_series_photos(observation.photos)
         photos_data = []
         for i, photo in enumerate(photos_sorted):
             photos_data.append({

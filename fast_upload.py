@@ -156,21 +156,28 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                 CREATE TEMP TABLE tmp_batch_groups
                 ON COMMIT DROP
                 AS
+                -- shot_ord: shooting order. Ties within one EXIF second are
+                -- broken by the camera's file counter, as in the viewers
+                -- (utils.SERIES_PHOTO_ORDER_SQL); photo id alone is upload
+                -- order, which the parallel pool makes random.
                 WITH ordered AS (
                     SELECT
                         p.id          AS photo_id,
                         p.captured_at AS captured_at,
-                        LAG(p.captured_at) OVER (
-                            ORDER BY p.captured_at, p.id
-                        ) AS prev_t
+                        ROW_NUMBER() OVER w AS shot_ord,
+                        LAG(p.captured_at) OVER w AS prev_t
                       FROM photos p
                      WHERE p.upload_batch_id = :b
                        AND p.status = 'uploaded'
+                    WINDOW w AS (ORDER BY p.captured_at,
+                                          p.original_filename COLLATE "C",
+                                          p.id)
                 ),
                 marked AS (
                     SELECT
                         photo_id,
                         captured_at,
+                        shot_ord,
                         CASE
                             WHEN prev_t IS NULL
                               OR captured_at - prev_t
@@ -184,8 +191,9 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                     SELECT
                         photo_id,
                         captured_at,
+                        shot_ord,
                         SUM(new_series_flag) OVER (
-                            ORDER BY captured_at, photo_id
+                            ORDER BY shot_ord
                             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                         ) AS series_idx
                       FROM marked
@@ -199,7 +207,7 @@ def group_batch_into_series_sql(batch_id: str) -> int:
                     series_idx,
                     ROW_NUMBER() OVER (
                         PARTITION BY series_idx
-                        ORDER BY captured_at, photo_id
+                        ORDER BY shot_ord
                     ) AS seq_in_series
                   FROM numbered
             """),
