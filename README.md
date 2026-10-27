@@ -51,6 +51,16 @@ admin
     └── analyst     → ct_verifier, viewer
 ```
 
+### Manager rights are per institution (since 2026-10-27)
+
+The `manager` role only opens the manager pages. *Where* someone manages is a
+per-institution flag in the host (`can_manage_ct` in biomon's
+`user_institutions`). Every manager action asks `access.manage_institution_ids`
+(or `routes._user_can_manage_location` for one location), never
+`allowed_institution_ids`, which means "can see". A host without the method
+(e.g. `/var/www/myproject`) falls back to the old meaning: a manager manages
+everything they can see.
+
 ## Database models
 
 ### Core tables

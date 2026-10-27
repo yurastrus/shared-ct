@@ -78,3 +78,67 @@ def has_module_access(user):
     institution-affiliated person from an outside volunteer.
     """
     return bool(allowed_institution_ids(user))
+
+
+# ── Manager rights, per institution (since 2026-10-27) ──────────────────────
+# The ``manager`` role used to make a person manager of every institution they
+# could see. The host now keeps a separate per-institution "manages" flag; the
+# role is only the gate. Every manager action (upload, editing locations,
+# deployments, service log, moderation…) must be scoped by these helpers, not by
+# the visibility ones above.
+
+
+def manage_institution_ids(user):
+    """Institution ids ``user`` manages in this module.
+
+    Hosts without the per-institution split fall back to the old meaning: a
+    holder of the ``manager`` role manages everything they can see. Admins are
+    not special-cased here; callers keep their own ``has_role('admin')`` branch.
+    """
+    if not _is_authenticated(user):
+        return []
+    getter = getattr(user, 'manage_institution_ids', None)
+    if callable(getter):
+        return list(getter(MODULE))
+    has_role = getattr(user, 'has_role', None)
+    if callable(has_role) and has_role('manager'):
+        return allowed_institution_ids(user)
+    return []
+
+
+def manage_institutions(user):
+    """Institution objects ``user`` manages in this module."""
+    if not _is_authenticated(user):
+        return []
+    getter = getattr(user, 'manage_institutions', None)
+    if callable(getter):
+        return list(getter(MODULE))
+    has_role = getattr(user, 'has_role', None)
+    if callable(has_role) and has_role('manager'):
+        return allowed_institutions(user)
+    return []
+
+
+def is_admin(user):
+    return bool(_is_authenticated(user) and user.has_role('admin'))
+
+
+def manages_any(user):
+    """True for an admin, or a manager of at least one institution here.
+
+    For showing manager controls (cards, buttons). Routes still check the
+    concrete institution of the object they touch.
+    """
+    return is_admin(user) or bool(manage_institution_ids(user))
+
+
+def can_manage_institutions(user, institution_ids):
+    """True if ``user`` manages at least one of ``institution_ids``.
+
+    "At least one" because a location may belong to several institutions, and
+    managing any of them was always enough to edit it.
+    """
+    if is_admin(user):
+        return True
+    managed = set(manage_institution_ids(user))
+    return bool(managed.intersection(int(i) for i in institution_ids or ()))

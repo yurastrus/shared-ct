@@ -48,8 +48,10 @@ def overview(lang_code):
     # Cards are rendered based on the user's role
     if current_user.is_authenticated:
         can_identify = current_user.has_role('ct_verifier')
-        can_upload   = current_user.has_role('manager')
-        can_manage   = current_user.has_role('manager') or current_user.has_role('admin')
+        # Manager cards only for someone who manages at least one institution
+        # here; a manager role without any managed institution has nothing to do.
+        can_upload   = ct_access.manages_any(current_user)
+        can_manage   = can_upload
         can_export   = current_user.has_role('analyst')
         is_admin     = current_user.has_role('admin')
     else:
@@ -1351,13 +1353,17 @@ def expertise(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        # A manager reads the verifiers' record on the institutions they manage,
+        # not on every one they can see.
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         mode = request.args.get('mode', 'users')
         if mode not in EXPERTISE_MODES:
             mode = 'users'
 
-        accessible_institutions = get_accessible_institutions(is_admin)
+        accessible_institutions = (get_accessible_institutions(is_admin) if is_admin else
+                                   sorted(ct_access.manage_institutions(current_user),
+                                          key=lambda i: i.name_uk or ''))
         ecoregions = build_ecoregions(accessible_institutions, g.lang_code)
         selected_scope, selected_inst_ids = resolve_scope(
             request.args.get('scope', ''), accessible_institutions,
@@ -2252,7 +2258,7 @@ def identify(lang_code):
     ct_session = get_ct_session()
     try:
         form = IdentificationForm()
-        can_review = current_user.has_role('manager')
+        can_review = ct_access.manages_any(current_user)
         is_admin = current_user.has_role('admin')
 
         # Institutions and ecoregions for the scope filter
@@ -2403,7 +2409,7 @@ def upload(lang_code):
     try:
         form = UploadForm()
         
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         # --- START OF NEW SECURE LOGIC ---
@@ -2428,7 +2434,7 @@ def upload(lang_code):
         if is_admin:
             institutions_list = Institution.query.order_by(Institution.name_uk).all()
         else:
-            institutions_list = ct_access.allowed_institutions(current_user)
+            institutions_list = ct_access.manage_institutions(current_user)
 
         # This block is preserved as-is; it is used for JavaScript-side filtering
         all_loc_inst_records = ct_session.query(location_institutions).all()
@@ -2495,6 +2501,39 @@ def originals_allowed():
     return free >= MIN_ORIGINALS_FREE_BYTES, free
 
 
+def _batch_access_error(batch_id, location_id=None):
+    """Return ``None`` if the current user may write to this upload batch,
+    else a ``(json, status)`` error. The batch must exist, belong to the given
+    location (when the caller names one) and sit on a location the user manages.
+    """
+    from .models import UploadBatch
+    ct_session = get_ct_session()
+    try:
+        batch = ct_session.query(UploadBatch).get(batch_id) if batch_id else None
+        if batch is None:
+            return jsonify({'error': _('Batch не знайдено')}), 404
+        if location_id is not None and int(location_id) != batch.location_id:
+            return jsonify({'error': _('Локація не відповідає batch')}), 400
+        if not _user_can_manage_location(ct_session, batch.location_id):
+            return jsonify({'error': _('Ви не керуєте цією локацією.')}), 403
+        return None
+    finally:
+        close_ct_session()
+
+
+def _location_manage_error(location_id):
+    """``None`` if the current user manages ``location_id``, else a 403 reply."""
+    ct_session = get_ct_session()
+    try:
+        if _user_can_manage_location(ct_session, int(location_id)):
+            return None
+    finally:
+        close_ct_session()
+    current_app.logger.warning(
+        f"[ct-manage] refused user={current_user.id} location_id={location_id!r} (not managed)")
+    return jsonify({'success': False, 'error': _('Ви не керуєте цією локацією.')}), 403
+
+
 @camera_traps_bp.route('/api/create-batch', methods=['POST'])
 @login_required
 @role_required('manager')
@@ -2509,6 +2548,10 @@ def create_batch(lang_code):
             current_app.logger.warning(
                 f"[ct-upload] create-batch rejected (no location_id) user={current_user.id}")
             return jsonify({'error': _('Location ID is required')}), 400
+
+        refused = _location_manage_error(location_id)
+        if refused:
+            return refused
 
         # Optional clock correction for the whole batch (/upload-fast). Validated
         # here so a malformed value is refused before any photo is written.
@@ -2599,7 +2642,11 @@ def process_single_upload(lang_code):
             current_app.logger.warning(
                 f"[ct-upload] process-single rejected (empty filename) user={current_user.id} batch={batch_id!r}")
             return jsonify({'error': _('Файл не передано')}), 400
-            
+
+        refused = _batch_access_error(batch_id, location_id)
+        if refused:
+            return refused
+
         from .utils import process_single_photo
         photo_id = process_single_photo(
             uploaded_file,
@@ -2645,7 +2692,11 @@ def finalize_batch(lang_code):
         
         if not batch_id:
             return jsonify({'error': _('Необхідний ID для batch')}), 400
-            
+
+        refused = _batch_access_error(batch_id)
+        if refused:
+            return refused
+
         from .utils import group_batch_into_series
         grouped_photos = group_batch_into_series(batch_id)
         
@@ -2672,6 +2723,9 @@ def finalize_batch(lang_code):
 def get_batch_status_api(lang_code, batch_id):
     """Return the batch status."""
     try:
+        refused = _batch_access_error(batch_id)
+        if refused:
+            return refused
         from .utils import get_batch_status
         status = get_batch_status(batch_id)
         
@@ -2705,7 +2759,7 @@ def upload_fast(lang_code):
     ct_session = get_ct_session()
     try:
         form = UploadForm()
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
         is_admin = current_user.has_role('admin')
 
         if is_admin:
@@ -2727,7 +2781,7 @@ def upload_fast(lang_code):
         if is_admin:
             institutions_list = Institution.query.order_by(Institution.name_uk).all()
         else:
-            institutions_list = ct_access.allowed_institutions(current_user)
+            institutions_list = ct_access.manage_institutions(current_user)
 
         all_loc_inst_records = ct_session.query(location_institutions).all()
         loc_to_inst = {}
@@ -2813,6 +2867,10 @@ def finalize_batch_async(lang_code):
         if not batch_id:
             return jsonify({'error': _('Необхідний ID для batch')}), 400
 
+        refused = _batch_access_error(batch_id)
+        if refused:
+            return refused
+
         ct_session = get_ct_session()
         try:
             from .models import UploadBatch
@@ -2854,6 +2912,9 @@ def batch_uploaded_files(lang_code, batch_id):
     """List of (original_filename, captured_at) for files already uploaded in this batch.
     Used by upload_fast.html for resumable uploads: on session restore the JS
     skips files that are already on the server."""
+    refused = _batch_access_error(batch_id)
+    if refused:
+        return refused
     ct_session = get_ct_session()
     try:
         rows = ct_session.query(Photo.original_filename, Photo.captured_at)\
@@ -3114,7 +3175,7 @@ def video_process_frame(lang_code):
 def _accessible_locations(ct_session):
     """Return locations accessible to the current user, plus JS-filter data
     keyed by institution. Shared logic with upload/upload_fast."""
-    user_inst_ids = ct_access.allowed_institution_ids(current_user)
+    user_inst_ids = ct_access.manage_institution_ids(current_user)
     is_admin = current_user.has_role('admin')
     if is_admin:
         locations = ct_session.query(Location).order_by(Location.name).all()
@@ -3124,7 +3185,7 @@ def _accessible_locations(ct_session):
             .join(location_institutions, Location.id == location_institutions.c.location_id)\
             .filter(location_institutions.c.institution_id.in_(user_inst_ids))\
             .order_by(Location.name).distinct().all()
-        institutions_list = ct_access.allowed_institutions(current_user)
+        institutions_list = ct_access.manage_institutions(current_user)
     else:
         locations, institutions_list = [], []
 
@@ -3191,6 +3252,9 @@ def import_classification_preview(lang_code):
     location_id = request.form.get('location_id', type=int)
     if not location_id or location_id <= 0:
         return jsonify({'error': _('Оберіть локацію')}), 400
+    refused = _location_manage_error(location_id)
+    if refused:
+        return refused
     rows, errors = _read_uploaded_csv()
     if rows is None:
         return jsonify({'error': errors[0]}), 400
@@ -3216,6 +3280,9 @@ def import_classification_run(lang_code):
     level_id = request.form.get('level_id', type=int)
     if not location_id or location_id <= 0:
         return jsonify({'error': _('Оберіть локацію')}), 400
+    refused = _location_manage_error(location_id)
+    if refused:
+        return refused
     if not level_id:
         return jsonify({'error': _('Оберіть рівень моделі')}), 400
     rows, errors = _read_uploaded_csv()
@@ -3249,6 +3316,9 @@ def import_verification_preview(lang_code):
     location_id = request.form.get('location_id', type=int)
     if not location_id or location_id <= 0:
         return jsonify({'error': _('Оберіть локацію')}), 400
+    refused = _location_manage_error(location_id)
+    if refused:
+        return refused
     rows, errors = _read_uploaded_csv()
     if rows is None:
         return jsonify({'error': errors[0]}), 400
@@ -3276,6 +3346,9 @@ def import_verification_run(lang_code):
     verifier_id = request.form.get('verifier_id', type=int)
     if not location_id or location_id <= 0:
         return jsonify({'error': _('Оберіть локацію')}), 400
+    refused = _location_manage_error(location_id)
+    if refused:
+        return refused
     if not verifier_id:
         return jsonify({'error': _('Оберіть верифікатора')}), 400
     verifier = User.query.get(verifier_id)
@@ -4169,7 +4242,10 @@ def submit_identification(lang_code):
             return jsonify({'success': False,
                             'error': _('Немає доступу до цієї серії.')}), 403
 
-        is_moderator = current_user.has_role('manager')
+        # A moderator's vote closes a series; that power belongs to the managers
+        # of the series' own institution, not to every manager who can see it.
+        is_moderator = (current_user.has_role('manager') and
+                        _user_can_manage_location(ct_session, observation.location_id))
 
         photos_sorted = sort_series_photos(observation.photos)
 
@@ -4373,7 +4449,7 @@ def next_observation_for_identification(lang_code):
         start_obs_id = request.args.get('start_obs_id', type=int)  # open a specific series first
 
         # Check access rights for review mode
-        if review_mode and not current_user.has_role('manager'):
+        if review_mode and not ct_access.manages_any(current_user):
             return jsonify({'error': _('Недостатньо прав для режиму перегляду')}), 403
 
         # If start_obs_id is passed, return that specific series (e.g. from the flagged page).
@@ -4489,8 +4565,10 @@ def next_observation_for_identification(lang_code):
             )
 
             if not is_admin:
-                query = query.join(Location, Observation.location_id == Location.id)\
-                    .filter(location_filter)
+                # Review is moderation: only series of institutions the user
+                # manages, not everything they can see.
+                query = query.filter(
+                    Observation.location_id.in_(_managed_location_ids_select()))
 
             if scope_location_subq is not None:
                 query = query.filter(Observation.location_id.in_(scope_location_subq))
@@ -4643,7 +4721,7 @@ def next_observation_for_identification(lang_code):
 
 @camera_traps_bp.route('/api/create-location', methods=['POST'])
 @login_required
-@role_required('ct_verifier')
+@role_required('manager')
 def create_location(lang_code):
     ct_session = get_ct_session()
     try:
@@ -4668,6 +4746,21 @@ def create_location(lang_code):
                 f"name={name!r} lat={lat!r} lon={lon!r}")
             return jsonify({'success': False,
                             'message': _('Координати мають бути числами (напр. 49.85 / 23.65).')}), 400
+
+        # Called from the upload pages: the new place must belong to an
+        # institution the user manages (an admin may pick any, or none).
+        if not current_user.has_role('admin'):
+            try:
+                inst_ok = institution_id and ct_access.can_manage_institutions(
+                    current_user, [int(institution_id)])
+            except (TypeError, ValueError):
+                inst_ok = False
+            if not inst_ok:
+                current_app.logger.warning(
+                    f"[ct-upload] create-location refused user={current_user.id} "
+                    f"institution_id={institution_id!r} (not managed)")
+                return jsonify({'success': False,
+                                'message': _('Оберіть установу, якою ви керуєте.')}), 403
 
         existing = ct_session.query(Location).filter(
             func.round(Location.latitude, 5) == round(lat_f, 5),
@@ -5033,7 +5126,7 @@ def gallery(lang_code):
         # Build SQL filter (locations table uses alias 'locations')
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
 
-        can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
+        can_manage_favorites = current_user.is_authenticated and ct_access.manages_any(current_user)
 
         # Observations that own at least one accessible favourite photo.
         obs_rows = ct_session.query(Photo.observation_id)\
@@ -5089,7 +5182,7 @@ def get_gallery_photos(lang_code):
         user_inst_ids = ct_access.allowed_institution_ids(current_user)
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         inst_condition, inst_params = get_institution_filter(user_inst_ids, is_admin, table_alias='locations')
-        can_manage_favorites = current_user.is_authenticated and current_user.has_role('manager')
+        can_manage_favorites = current_user.is_authenticated and ct_access.manages_any(current_user)
 
         # All accessible favourite photos; species filtering is applied below
         # against the series consensus, not any single identification.
@@ -5203,6 +5296,14 @@ def remove_from_favorites(lang_code):
         if not photo:
             return jsonify({'success': False, 'error': 'Photo not found'}), 404
 
+        # Only a manager of the photo's own institution curates its favourites.
+        photo_location_id = (photo.observation.location_id if photo.observation
+                             else photo.upload_batch.location_id if photo.upload_batch
+                             else None)
+        if not _user_can_manage_location(ct_session, photo_location_id):
+            return jsonify({'success': False,
+                            'error': _('Ви не керуєте цією локацією.')}), 403
+
         photo.is_favorite = False
         ct_session.commit()
         
@@ -5240,7 +5341,7 @@ def ct_location_coverage(lang_code, location_id):
 
         # Access: admin sees everything; otherwise the location must belong to the user's institution
         if not current_user.has_role('admin'):
-            user_inst_ids = ct_access.allowed_institution_ids(current_user)
+            user_inst_ids = ct_access.manage_institution_ids(current_user)
             allowed = False
             if user_inst_ids:
                 allowed = ct_session.execute(
@@ -5314,7 +5415,7 @@ def manage_locations(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         # Filter locations by institution, same logic as in upload
         if is_admin:
@@ -5355,7 +5456,7 @@ def manage_locations(lang_code):
                 Institution.id.in_(used_inst_ids)
             ).order_by(Institution.name_uk).all()
         elif used_inst_ids:
-            filter_institutions = [i for i in ct_access.allowed_institutions(current_user) if i.id in used_inst_ids]
+            filter_institutions = [i for i in ct_access.manage_institutions(current_user) if i.id in used_inst_ids]
         else:
             filter_institutions = []
 
@@ -5381,7 +5482,7 @@ def manage_locations(lang_code):
         if is_admin:
             user_institutions = Institution.query.order_by(Institution.name_uk).all()
         else:
-            user_institutions = ct_access.allowed_institutions(current_user)
+            user_institutions = ct_access.manage_institutions(current_user)
 
         return render_template('manage_locations.html',
                                locations=locations_data,
@@ -5540,11 +5641,35 @@ def _apply_deployment_fields(dep, data):
             setattr(dep, f, _dt.strptime(v, '%H:%M').time() if v else None)
 
 
+def _managed_location_ids_select():
+    """SELECT of location ids linked to an institution the current user manages."""
+    return select(location_institutions.c.location_id).where(
+        location_institutions.c.institution_id.in_(
+            ct_access.manage_institution_ids(current_user)))
+
+
+def _user_can_manage_location(ct_session, location_id):
+    """Admin → always; otherwise the user must manage one of the location's
+    institutions. Seeing the location is not enough since 2026-10-27."""
+    if current_user.has_role('admin'):
+        return True
+    managed = ct_access.manage_institution_ids(current_user)
+    if not managed or location_id is None:
+        return False
+    return ct_session.execute(
+        select(location_institutions.c.location_id).where(
+            (location_institutions.c.location_id == location_id) &
+            (location_institutions.c.institution_id.in_(managed))
+        ).limit(1)
+    ).fetchone() is not None
+
+
 def _user_can_access_location(ct_session, location_id):
-    """admin/quality_control → always; manager → only if the location belongs to their institution."""
+    """admin/quality_control → always; manager → only if they manage one of the
+    location's institutions (seeing it is not enough since 2026-10-27)."""
     if current_user.has_role('admin') or current_user.has_role('quality_control'):
         return True
-    user_inst_ids = ct_access.allowed_institution_ids(current_user)
+    user_inst_ids = ct_access.manage_institution_ids(current_user)
     if not user_inst_ids:
         return False
     access = ct_session.execute(
@@ -5565,7 +5690,7 @@ def manage_deployments(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         if is_full_access:
             locations_objects = ct_session.query(Location).order_by(Location.name).all()
@@ -5600,7 +5725,7 @@ def manage_deployments(lang_code):
             filter_institutions = Institution.query.filter(
                 Institution.id.in_(used_inst_ids)).order_by(Institution.name_uk).all()
         elif used_inst_ids:
-            filter_institutions = [i for i in ct_access.allowed_institutions(current_user) if i.id in used_inst_ids]
+            filter_institutions = [i for i in ct_access.manage_institutions(current_user) if i.id in used_inst_ids]
         else:
             filter_institutions = []
 
@@ -5837,7 +5962,7 @@ def export_deployments(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         institution_id = request.args.get('institution_id', type=int)
         year = request.args.get('year', type=int)
@@ -6004,7 +6129,7 @@ def data_quality(lang_code):
     try:
         is_admin = current_user.has_role('admin')
         is_full_access = is_admin or current_user.has_role('quality_control')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
         # _resolve_export_location_ids takes is_admin — pass True for quality_control so
         # it gets ALL locations (full access).
         loc_ids = _resolve_export_location_ids(ct_session, is_full_access, user_inst_ids, None)
@@ -6131,7 +6256,7 @@ def update_location(lang_code, location_id):
 
         # Check access to the location by institution
         if not is_admin:
-            user_inst_ids = ct_access.allowed_institution_ids(current_user)
+            user_inst_ids = ct_access.manage_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -6198,7 +6323,7 @@ def api_create_location_admin(lang_code):
     ct_session = get_ct_session()
     try:
         is_admin = current_user.has_role('admin')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         data = request.json
         name = (data.get('name') or '').strip()
@@ -6773,7 +6898,7 @@ def api_get_locations_with_status(lang_code):
         status_severity = {'ok': 0, 'warning': 1, 'critical': 2}
 
         is_admin = current_user.has_role('admin')
-        user_inst_ids = ct_access.allowed_institution_ids(current_user)
+        user_inst_ids = ct_access.manage_institution_ids(current_user)
 
         if is_admin:
             locations = ct_session.query(Location).all()
@@ -6868,7 +6993,7 @@ def api_get_service_history(lang_code, location_id):
     try:
         # Access check: admin sees all; manager sees only their own institutions.
         if not current_user.has_role('admin'):
-            user_inst_ids = ct_access.allowed_institution_ids(current_user)
+            user_inst_ids = ct_access.manage_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -6934,7 +7059,7 @@ def api_create_service_visit(lang_code):
 
         # Location-by-institution access check.
         if not current_user.has_role('admin'):
-            user_inst_ids = ct_access.allowed_institution_ids(current_user)
+            user_inst_ids = ct_access.manage_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
@@ -7017,7 +7142,7 @@ def api_update_service_visit(lang_code, visit_id):
             if visit.user_id != current_user.id:
                 return jsonify({'success': False, 'error': _('Недостатньо прав для редагування цього запису.')}), 403
             # Check access to the location by institution
-            user_inst_ids = ct_access.allowed_institution_ids(current_user)
+            user_inst_ids = ct_access.manage_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'success': False, 'error': _('Немає доступу.')}), 403
             access = ct_session.execute(
