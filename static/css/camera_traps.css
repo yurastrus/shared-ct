@@ -2382,3 +2382,8 @@ body.dark-theme .message-container.error {
     .sp-field .sp-new, .sp-field small { grid-column: 1; }
 }
 .sp-field [hidden], .sp-table tr[hidden] { display: none !important; }
+/* Row tracking: zebra set by species_admin.js on visible rows only, so the
+   stripes stay regular while the list is filtered. */
+.sp-table tbody td { border-bottom: 1px solid #e3e6ea; }
+.sp-table tbody tr.sp-odd td { background: #f5f7fa; }
+.sp-table tbody tr:hover td { background: #e8f0fe; }

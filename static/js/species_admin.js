@@ -17,12 +17,14 @@
                      (!cls || tr.dataset.class === cls);
             tr.hidden = !ok;
             if (ok) shown++;
+            tr.classList.toggle('sp-odd', ok && shown % 2 === 0);
         });
         var counter = document.getElementById('sp-count');
         if (counter) counter.textContent = shown;
     }
     if (filter) filter.addEventListener('input', applyFilter);
     if (classFilter) classFilter.addEventListener('change', applyFilter);
+    if (rows.length) applyFilter();
 
     // ── edit page: "add new" toggles a text input ──
     var form = document.getElementById('sp-form');
