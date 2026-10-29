@@ -1,0 +1,78 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Довідник видів — фотопастки') }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>🦌 {{ _('Довідник видів') }}</h1>
+        <p>{{ _('Таблиця видів модуля фотопасток. Редагування доступне лише адміністраторам.') }}</p>
+        <p>
+            <a class="btn btn-sm btn-primary"
+               href="{{ url_for('camera_traps.species_admin_edit', lang_code=g.lang_code) }}">
+                ＋ {{ _('Додати вид') }}
+            </a>
+        </p>
+    </div>
+
+    {% set classes = rows | map(attribute='class') | select | unique | sort %}
+    <div class="sp-toolbar">
+        <input type="search" id="sp-filter" class="form-control form-control-sm"
+               placeholder="{{ _('Пошук за назвою, родиною…') }}">
+        <select id="sp-class-filter" class="form-control form-control-sm">
+            <option value="">{{ _('Усі класи') }}</option>
+            {% for c in classes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+        <span class="text-muted">{{ _('Показано') }}: <strong id="sp-count">{{ rows|length }}</strong></span>
+    </div>
+
+    <div class="sp-table-wrap">
+    <table class="table table-sm sp-table">
+        <thead>
+            <tr>
+                <th>{{ _('Латинська назва') }}</th>
+                <th>{{ _('Українська назва') }}</th>
+                <th>{{ _('Англійська назва') }}</th>
+                <th>{{ _('Категорія') }}</th>
+                <th>{{ _('Клас') }}</th>
+                <th>{{ _('Ряд') }}</th>
+                <th>{{ _('Родина') }}</th>
+                <th>{{ _('Статус присутності') }}</th>
+                <th>{{ _('Червона книга') }}</th>
+                <th>{{ _('Активний') }}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+            <tr id="sp-{{ r.id }}" data-class="{{ r['class'] or '' }}"
+                data-search="{{ [r.scientific_name, r.common_name_ua, r.common_name_en, r.order_rank, r.family, r.genus] | select | join(' ') | lower }}"
+                {% if not r.is_active %}class="sp-inactive"{% endif %}>
+                <td><em>{{ r.scientific_name }}</em></td>
+                <td>{{ r.common_name_ua or '' }}</td>
+                <td>{{ r.common_name_en or '' }}</td>
+                <td>{{ r.category or '' }}</td>
+                <td>{{ r['class'] or '' }}</td>
+                <td>{{ r.order_rank or '' }}</td>
+                <td>{{ r.family or '' }}</td>
+                <td>{{ r.establishment_means or '' }}</td>
+                <td>{% if r.redbook2021 %}<span class="sp-redbook">{{ redbook_labels.get(r.redbook2021, r.redbook2021) }}</span>{% endif %}</td>
+                <td>{{ '✓' if r.is_active else '—' }}</td>
+                <td><a class="btn btn-sm btn-secondary"
+                       href="{{ url_for('camera_traps.species_admin_edit', lang_code=g.lang_code, species_id=r.id) }}">{{ _('Редагувати') }}</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/species_admin.js', lang_code=g.lang_code) }}?v=1"></script>
+{% endblock %}

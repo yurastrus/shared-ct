@@ -46,6 +46,9 @@ class Species(CTBase):
     family = Column(String(100))
     genus = Column(String(100))
     establishment_means = Column(String(100))
+    # Red Data Book of Ukraine 2021 category code (species_admin.REDBOOK_CODES),
+    # NULL = not listed. Created by scripts/init_redbook2021.py.
+    redbook2021 = Column(String(30))
 
     # Relationships
     identifications = relationship('Identification', back_populates='species')

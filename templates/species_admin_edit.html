@@ -1,0 +1,80 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Редагування виду') if species.id else _('Новий вид') }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>🦌 {% if species.id %}{{ _('Редагування виду') }}: <em>{{ species.scientific_name }}</em>{% else %}{{ _('Новий вид') }}{% endif %}</h1>
+        <p><a href="{{ url_for('camera_traps.species_admin_list', lang_code=g.lang_code) }}">← {{ _('До довідника видів') }}</a></p>
+    </div>
+
+    {% if errors %}
+    <div class="alert alert-danger">
+        <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" id="sp-form" class="sp-form"
+          data-new-option="{{ new_option }}"
+          data-ranks='["kingdom","phylum","class","order_rank","family","genus"]'>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+        {% for col, label, kind, max_len, required in fields %}
+        {% set val = species[col] %}
+        <div class="sp-field">
+            <label for="f-{{ col }}">{{ label }}{% if required %} *{% endif %}</label>
+
+            {% if kind == 'text' %}
+                <input type="text" id="f-{{ col }}" name="{{ col }}" class="form-control form-control-sm"
+                       value="{{ val or '' }}" maxlength="{{ max_len }}" {% if required %}required{% endif %}>
+                {% if col == 'scientific_name' and species.id and val in locked_names %}
+                <small class="text-muted">{{ _('Службовий запис: латинську назву змінювати не можна, за нею його шукає AI.') }}</small>
+                {% endif %}
+
+            {% elif kind == 'choice' %}
+                <select id="f-{{ col }}" name="{{ col }}" class="form-control form-control-sm sp-choice"
+                        {% if required %}required{% endif %}>
+                    <option value="">{{ '' if required else _('— не вказано —') }}</option>
+                    {% for opt in choices[col] %}
+                    <option value="{{ opt }}" {% if opt == val %}selected{% endif %}>{{ opt }}</option>
+                    {% endfor %}
+                    {% if val and val not in choices[col] %}
+                    <option value="{{ val }}" selected>{{ val }}</option>
+                    {% endif %}
+                    <option value="{{ new_option }}">＋ {{ _('Додати нове…') }}</option>
+                </select>
+                <input type="text" name="{{ col }}__new" class="form-control form-control-sm sp-new"
+                       maxlength="{{ max_len }}" placeholder="{{ _('Нове значення') }}" hidden>
+
+            {% elif kind == 'redbook' %}
+                <select id="f-{{ col }}" name="{{ col }}" class="form-control form-control-sm">
+                    <option value="">{{ _('— не занесений —') }}</option>
+                    {% for code in redbook_codes %}
+                    <option value="{{ code }}" {% if code == val %}selected{% endif %}>{{ redbook_labels[code] }}</option>
+                    {% endfor %}
+                </select>
+
+            {% elif kind == 'bool' %}
+                <input type="checkbox" id="f-{{ col }}" name="{{ col }}" value="1" {% if val %}checked{% endif %}>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="sp-actions">
+            <button type="submit" class="btn btn-primary">{{ _('Зберегти') }}</button>
+            <a class="btn btn-secondary" href="{{ url_for('camera_traps.species_admin_list', lang_code=g.lang_code) }}">{{ _('Скасувати') }}</a>
+        </div>
+    </form>
+
+    <script type="application/json" id="sp-taxonomy">{{ taxonomy | tojson }}</script>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/species_admin.js', lang_code=g.lang_code) }}?v=1"></script>
+{% endblock %}

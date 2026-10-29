@@ -2365,3 +2365,20 @@ body.dark-theme .message-container.error {
 @media (max-width: 600px) {
     .flagged-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Species editor (admin, species_admin.py) ── */
+.sp-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+.sp-toolbar .form-control { max-width: 280px; }
+.sp-table-wrap { overflow-x: auto; }
+.sp-table td, .sp-table th { white-space: nowrap; vertical-align: middle; }
+.sp-table tr.sp-inactive { opacity: .55; }
+.sp-redbook { color: #b02a37; font-weight: 600; }
+.sp-form { max-width: 640px; }
+.sp-field { display: grid; grid-template-columns: 220px 1fr; gap: .25rem .75rem; align-items: center; margin-bottom: .6rem; }
+.sp-field .sp-new, .sp-field small { grid-column: 2; }
+.sp-actions { margin-top: 1rem; display: flex; gap: .5rem; }
+@media (max-width: 600px) {
+    .sp-field { grid-template-columns: 1fr; }
+    .sp-field .sp-new, .sp-field small { grid-column: 1; }
+}
+.sp-field [hidden], .sp-table tr[hidden] { display: none !important; }

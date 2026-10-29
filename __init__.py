@@ -24,4 +24,5 @@ def _inject_ct_translations():
 
 from . import routes
 from . import gap_routes
+from . import species_admin  # noqa: E402,F401  (admin species editor)
 from .database import init_ct_database

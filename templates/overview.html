@@ -190,6 +190,11 @@
                 <span class="hub-card__title">{{ _('Адмін-панель') }}</span>
                 <span class="hub-card__desc">{{ _('Перерахунок аналітики, очищення фото та інші технічні дії.') }}</span>
             </a>
+            <a class="hub-card hub-card--danger" href="{{ url_for('camera_traps.species_admin_list', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🦌</span>
+                <span class="hub-card__title">{{ _('Довідник видів') }}</span>
+                <span class="hub-card__desc">{{ _('Перегляд і редагування таблиці видів: назви, систематика, статус у Червоній книзі.') }}</span>
+            </a>
         </div>
     </section>
     {% endif %}

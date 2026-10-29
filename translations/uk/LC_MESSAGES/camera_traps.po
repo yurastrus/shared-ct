@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-27 21:23+0200\n"
+"POT-Creation-Date: 2026-10-29 11:53+0200\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: uk\n"
@@ -765,6 +765,131 @@ msgstr ""
 
 #: app/camera_traps/routes.py:7214
 msgid "Під час перерахунку сталася помилка."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:29
+msgid "зниклий"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:30
+msgid "зниклий в природі"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:31
+msgid "зникаючий"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:32
+msgid "вразливий"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:33
+msgid "рідкісний"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:34
+msgid "неоцінений"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:35
+#, fuzzy
+msgid "недостатньо відомий"
+msgstr "стан невідомий"
+
+#: app/camera_traps/species_admin.py:43
+#: app/camera_traps/templates/species_admin_list.html:36
+msgid "Латинська назва"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:44
+#: app/camera_traps/templates/species_admin_list.html:37
+msgid "Українська назва"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:45
+#: app/camera_traps/templates/species_admin_list.html:38
+msgid "Англійська назва"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:46
+#: app/camera_traps/templates/species_admin_list.html:39
+msgid "Категорія"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:47
+msgid "Царство"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:48
+msgid "Тип"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:49
+#: app/camera_traps/templates/species_admin_list.html:40
+msgid "Клас"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:50
+#: app/camera_traps/templates/species_admin_list.html:41
+msgid "Ряд"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:51
+#: app/camera_traps/templates/species_admin_list.html:42
+msgid "Родина"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:52
+msgid "Рід"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:53
+#: app/camera_traps/templates/species_admin_list.html:43
+msgid "Статус присутності"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:54
+msgid "Червона книга України (2021)"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:55
+#: app/camera_traps/templates/species_admin_list.html:45
+msgid "Активний"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:116
+#, python-format
+msgid "Невідома категорія Червоної книги: %(v)s"
+msgstr ""
+
+#: app/camera_traps/species_admin.py:119
+#, python-format
+msgid "Поле «%(f)s» обов'язкове."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:121
+#, python-format
+msgid "Поле «%(f)s» довше за %(n)s символів."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:132
+msgid "Вид з такою латинською назвою вже є."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:136
+msgid "Вид не знайдено."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:138
+#, python-format
+msgid ""
+"Латинську назву службового запису «%(n)s» змінювати не можна: за нею його"
+" шукає AI."
+msgstr ""
+
+#: app/camera_traps/species_admin.py:181
+#, python-format
+msgid "Збережено: %(n)s"
 msgstr ""
 
 #: app/camera_traps/templates/_qc_filter_block.html:10
@@ -2756,6 +2881,7 @@ msgid "Редагувати деплоймент"
 msgstr ""
 
 #: app/camera_traps/templates/data_quality.html:245
+#: app/camera_traps/templates/species_admin_list.html:29
 msgid "Показано"
 msgstr ""
 
@@ -4398,12 +4524,14 @@ msgstr ""
 #: app/camera_traps/templates/manage_locations.html:137
 #: app/camera_traps/templates/manage_locations.html:616
 #: app/camera_traps/templates/manage_locations.html:880
+#: app/camera_traps/templates/species_admin_edit.html:68
 msgid "Зберегти"
 msgstr ""
 
 #: app/camera_traps/templates/manage_deployments.html:318
 #: app/camera_traps/templates/manage_locations.html:138
 #: app/camera_traps/templates/manage_locations.html:240
+#: app/camera_traps/templates/species_admin_edit.html:69
 #: app/camera_traps/templates/upload.html:95
 #: app/camera_traps/templates/upload_fast.html:184
 msgid "Скасувати"
@@ -4938,6 +5066,17 @@ msgstr ""
 msgid "Перерахунок аналітики, очищення фото та інші технічні дії."
 msgstr ""
 
+#: app/camera_traps/templates/overview.html:195
+#: app/camera_traps/templates/species_admin_list.html:11
+msgid "Довідник видів"
+msgstr ""
+
+#: app/camera_traps/templates/overview.html:196
+msgid ""
+"Перегляд і редагування таблиці видів: назви, систематика, статус у "
+"Червоній книзі."
+msgstr ""
+
 #: app/camera_traps/templates/photo_viewer.html:3
 msgid "Перегляд фото #"
 msgstr ""
@@ -5085,6 +5224,72 @@ msgstr ""
 
 #: app/camera_traps/templates/service_log.html:392
 msgid "Критична помилка запиту."
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:3
+#: app/camera_traps/templates/species_admin_edit.html:11
+msgid "Редагування виду"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:3
+#: app/camera_traps/templates/species_admin_edit.html:11
+#, fuzzy
+msgid "Новий вид"
+msgstr "стан невідомий"
+
+#: app/camera_traps/templates/species_admin_edit.html:12
+msgid "До довідника видів"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:35
+msgid "Службовий запис: латинську назву змінювати не можна, за нею його шукає AI."
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:41
+msgid "— не вказано —"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:48
+msgid "Додати нове…"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:51
+msgid "Нове значення"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_edit.html:55
+msgid "— не занесений —"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:3
+msgid "Довідник видів — фотопастки"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:12
+msgid ""
+"Таблиця видів модуля фотопасток. Редагування доступне лише "
+"адміністраторам."
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:16
+#, fuzzy
+msgid "Додати вид"
+msgstr "стан невідомий"
+
+#: app/camera_traps/templates/species_admin_list.html:24
+msgid "Пошук за назвою, родиною…"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:26
+msgid "Усі класи"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:44
+msgid "Червона книга"
+msgstr ""
+
+#: app/camera_traps/templates/species_admin_list.html:65
+msgid "Редагувати"
 msgstr ""
 
 #: app/camera_traps/templates/species_dashboard.html:3
