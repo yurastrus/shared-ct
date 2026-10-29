@@ -2387,3 +2387,5 @@ body.dark-theme .message-container.error {
 .sp-table tbody td { border-bottom: 1px solid #e3e6ea; }
 .sp-table tbody tr.sp-odd td { background: #f5f7fa; }
 .sp-table tbody tr:hover td { background: #e8f0fe; }
+/* Red Book species: the three name columns share the status colour. */
+.sp-table tr[data-redlisted="1"] td:nth-child(-n+3) { color: #b02a37; font-weight: 600; }
