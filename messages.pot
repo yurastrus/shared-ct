@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-29 11:53+0200\n"
+"POT-Creation-Date: 2026-10-29 15:45+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -99,8 +99,8 @@ msgid "Серію позначено на повторний розгляд."
 msgstr ""
 
 #: app/camera_traps/routes.py:197
-#: app/camera_traps/templates/identification.html:1032
-#: app/camera_traps/templates/identification.html:1033
+#: app/camera_traps/templates/identification.html:1085
+#: app/camera_traps/templates/identification.html:1086
 msgid "Помилка позначення серії."
 msgstr ""
 
@@ -403,12 +403,12 @@ msgid "Недостатньо прав для режиму перегляду"
 msgstr ""
 
 #: app/camera_traps/routes.py:4624
-#: app/camera_traps/templates/identification.html:382
+#: app/camera_traps/templates/identification.html:391
 msgid "Немає серій для перегляду, які б відповідали критеріям."
 msgstr ""
 
 #: app/camera_traps/routes.py:4626
-#: app/camera_traps/templates/identification.html:381
+#: app/camera_traps/templates/identification.html:390
 msgid "Вітаємо! Ви ідентифікували всі доступні серії фотографій."
 msgstr ""
 
@@ -517,7 +517,7 @@ msgstr ""
 
 #: app/camera_traps/routes.py:5151
 #: app/camera_traps/templates/identification.html:104
-#: app/camera_traps/templates/identification.html:461
+#: app/camera_traps/templates/identification.html:470
 msgid "-- Всі види --"
 msgstr ""
 
@@ -795,22 +795,22 @@ msgid "недостатньо відомий"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:43
-#: app/camera_traps/templates/species_admin_list.html:36
+#: app/camera_traps/templates/species_admin_list.html:37
 msgid "Латинська назва"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:44
-#: app/camera_traps/templates/species_admin_list.html:37
+#: app/camera_traps/templates/species_admin_list.html:38
 msgid "Українська назва"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:45
-#: app/camera_traps/templates/species_admin_list.html:38
+#: app/camera_traps/templates/species_admin_list.html:39
 msgid "Англійська назва"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:46
-#: app/camera_traps/templates/species_admin_list.html:39
+#: app/camera_traps/templates/species_admin_list.html:40
 msgid "Категорія"
 msgstr ""
 
@@ -823,17 +823,17 @@ msgid "Тип"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:49
-#: app/camera_traps/templates/species_admin_list.html:40
+#: app/camera_traps/templates/species_admin_list.html:41
 msgid "Клас"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:50
-#: app/camera_traps/templates/species_admin_list.html:41
+#: app/camera_traps/templates/species_admin_list.html:42
 msgid "Ряд"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:51
-#: app/camera_traps/templates/species_admin_list.html:42
+#: app/camera_traps/templates/species_admin_list.html:43
 msgid "Родина"
 msgstr ""
 
@@ -842,7 +842,7 @@ msgid "Рід"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:53
-#: app/camera_traps/templates/species_admin_list.html:43
+#: app/camera_traps/templates/species_admin_list.html:44
 msgid "Статус присутності"
 msgstr ""
 
@@ -851,7 +851,7 @@ msgid "Червона книга України (2021)"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:55
-#: app/camera_traps/templates/species_admin_list.html:45
+#: app/camera_traps/templates/species_admin_list.html:46
 msgid "Активний"
 msgstr ""
 
@@ -885,7 +885,7 @@ msgid ""
 " шукає AI."
 msgstr ""
 
-#: app/camera_traps/species_admin.py:181
+#: app/camera_traps/species_admin.py:182
 #, python-format
 msgid "Збережено: %(n)s"
 msgstr ""
@@ -1351,7 +1351,7 @@ msgid "Останні запити"
 msgstr ""
 
 #: app/camera_traps/templates/admin.html:102
-#: app/camera_traps/templates/identification.html:376
+#: app/camera_traps/templates/identification.html:385
 #: app/camera_traps/templates/upload_video.html:170
 msgid "Час"
 msgstr ""
@@ -1653,7 +1653,7 @@ msgid "За локаціями"
 msgstr ""
 
 #: app/camera_traps/templates/admin.html:384
-#: app/camera_traps/templates/identification.html:375
+#: app/camera_traps/templates/identification.html:384
 #: app/camera_traps/templates/upload.html:30
 #: app/camera_traps/templates/upload_fast.html:138
 #: app/camera_traps/templates/upload_video.html:85
@@ -1663,7 +1663,7 @@ msgstr ""
 
 #: app/camera_traps/templates/admin.html:385
 #: app/camera_traps/templates/gallery.html:222
-#: app/camera_traps/templates/identification.html:377
+#: app/camera_traps/templates/identification.html:386
 #: app/camera_traps/templates/photo_viewer.html:70
 msgid "Фото"
 msgstr ""
@@ -3224,19 +3224,19 @@ msgid "Час:"
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:229
-#: app/camera_traps/templates/identification.html:385
+#: app/camera_traps/templates/identification.html:394
 #: app/camera_traps/templates/photo_viewer.html:47
 msgid "© Фото належать"
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:229
-#: app/camera_traps/templates/identification.html:386
+#: app/camera_traps/templates/identification.html:395
 #: app/camera_traps/templates/photo_viewer.html:47
 msgid "Копіювання і поширення заборонене."
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:230
-#: app/camera_traps/templates/identification.html:387
+#: app/camera_traps/templates/identification.html:396
 #: app/camera_traps/templates/photo_viewer.html:49
 msgid ""
 "© Фото належать установі, яка веде спостереження. Копіювання і поширення "
@@ -3299,12 +3299,12 @@ msgid "Група:"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:126
-#: app/camera_traps/templates/identification.html:227
+#: app/camera_traps/templates/identification.html:236
 msgid "Ссавці"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:127
-#: app/camera_traps/templates/identification.html:229
+#: app/camera_traps/templates/identification.html:238
 msgid "Птахи"
 msgstr ""
 
@@ -3648,7 +3648,7 @@ msgid "Рахую…"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:291
-#: app/camera_traps/templates/identification.html:380
+#: app/camera_traps/templates/identification.html:389
 msgid "Не вдалося завантажити дані."
 msgstr ""
 
@@ -3925,22 +3925,22 @@ msgstr ""
 
 #: app/camera_traps/templates/identification.html:40
 #: app/camera_traps/templates/identification.html:42
-#: app/camera_traps/templates/identification.html:526
+#: app/camera_traps/templates/identification.html:535
 msgid "Будь-який"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:41
-#: app/camera_traps/templates/identification.html:534
+#: app/camera_traps/templates/identification.html:543
 msgid "AI ще не виконував класифікацію — список порожній."
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:45
-#: app/camera_traps/templates/identification.html:530
+#: app/camera_traps/templates/identification.html:539
 msgid "Не пусто (будь-яке визначення)"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:46
-#: app/camera_traps/templates/identification.html:531
+#: app/camera_traps/templates/identification.html:540
 msgid "Лише тварини"
 msgstr ""
 
@@ -3985,7 +3985,7 @@ msgid "Користувач:"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:98
-#: app/camera_traps/templates/identification.html:455
+#: app/camera_traps/templates/identification.html:464
 msgid "-- Всі користувачі --"
 msgstr ""
 
@@ -4042,52 +4042,64 @@ msgstr ""
 msgid "Позначити серію на повторний розгляд"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:215
+#: app/camera_traps/templates/identification.html:218
+msgid "Пошук виду…"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:219
+msgid "Enter обирає перший знайдений вид, Esc очищає пошук"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:220
+msgid "Нічого не знайдено"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:224
 msgid "Загальні опції"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:228
+#: app/camera_traps/templates/identification.html:237
 msgid "Свійські тварини"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:230
+#: app/camera_traps/templates/identification.html:239
 msgid "Інші"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:378
+#: app/camera_traps/templates/identification.html:387
 msgid "Будь ласка, виберіть вид, або опцію \"Пусто\"."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:379
+#: app/camera_traps/templates/identification.html:388
 #: app/camera_traps/templates/manage_deployments.html:702
 #: app/camera_traps/templates/manage_locations.html:682
 #: app/camera_traps/templates/service_log.html:350
 msgid "Помилка збереження:"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:383
+#: app/camera_traps/templates/identification.html:392
 msgid "Залишилось вам:"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:384
+#: app/camera_traps/templates/identification.html:393
 msgid ""
 "У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою "
 "думку."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:640
+#: app/camera_traps/templates/identification.html:649
 msgid "AI пропонує"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:641
+#: app/camera_traps/templates/identification.html:650
 msgid "впевненість"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:642
+#: app/camera_traps/templates/identification.html:651
 msgid "особин"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:1019
+#: app/camera_traps/templates/identification.html:1072
 msgid "Коментар до позначки (за бажанням):"
 msgstr ""
 
@@ -5280,11 +5292,11 @@ msgstr ""
 msgid "Усі класи"
 msgstr ""
 
-#: app/camera_traps/templates/species_admin_list.html:44
+#: app/camera_traps/templates/species_admin_list.html:45
 msgid "Червона книга"
 msgstr ""
 
-#: app/camera_traps/templates/species_admin_list.html:65
+#: app/camera_traps/templates/species_admin_list.html:56
 msgid "Редагувати"
 msgstr ""
 

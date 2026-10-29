@@ -1797,6 +1797,17 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     transition: color 0.3s ease, border-color 0.3s ease;
 }
 .species-group-title:first-child { margin-top: 0; }
+/* Search sticks to the top of the scrolling species panel so it never scrolls away. */
+.species-search {
+    position: sticky;
+    top: -12px;              /* cancels the panel's top padding */
+    z-index: 2;
+    background-color: var(--card-bg);
+    margin: 0 -12px 6px;
+    padding: 6px 12px;
+}
+.species-search input { width: 100%; max-width: none; box-sizing: border-box; }
+.species-search-empty { margin-top: 6px; color: var(--text-secondary); font-style: italic; }
 .species-option { display: block; margin-bottom: 0; }
 .species-option label {
     cursor: pointer;

@@ -211,6 +211,15 @@
                             <span class="ai-pred-text"></span>
                         </div>
 
+                        <!-- Quick species search: filters the list below (no name, never submitted) -->
+                        <div class="species-search">
+                            <input type="search" id="species-search" class="form-control form-control-sm"
+                                   autocomplete="off" spellcheck="false"
+                                   placeholder="{{ _('Пошук виду…') }}"
+                                   title="{{ _('Enter обирає перший знайдений вид, Esc очищає пошук') }}">
+                            <div id="species-search-empty" class="species-search-empty" style="display: none;">{{ _('Нічого не знайдено') }}</div>
+                        </div>
+
                         <!-- First category: Empty -->
                         <h3 class="species-group-title">{{ _('Загальні опції') }}</h3>
                         {% for value, label in empty_choices %}
@@ -918,6 +927,7 @@ $(document).ready(function() {
                 noPhotosMessage.hide();
                 form[0].reset();
                 $('#comment-counter').text('0');  // #47: reset the comment character counter.
+                filterSpecies('');  // reset() clears the search text, the hidden rows must come back too
 
                 // Автопрокрутка: контроли швидкості й тумблер живуть усередині
                 // <form>, тож form.reset() вище скидає повзунок на HTML-дефолт
@@ -983,6 +993,49 @@ $(document).ready(function() {
         }
     });
     
+    // === QUICK SPECIES SEARCH ===
+    // Case-insensitive; every word of the query must start some word of the
+    // label, so "кун лісова" and "martes" both find Куниця лісова (Martes martes),
+    // while "кун" does not drag in Єнот-полоскун. Apostrophe variants are folded
+    // so ' finds names typed with ʼ or ’.
+    function normalizeSpeciesText(s) {
+        return (s || '').toLowerCase().replace(/[’ʼ`']/g, "'").replace(/ё/g, 'е');
+    }
+
+    function filterSpecies(query) {
+        const words = normalizeSpeciesText(query).trim().split(/[\s\-()]+/).filter(Boolean);
+        const panel = $('.species-selection-panel');
+        let anyVisible = false;
+        panel.find('.species-option').each(function() {
+            const labelWords = normalizeSpeciesText($(this).text()).split(/[\s\-()]+/).filter(Boolean);
+            const match = words.every(w => labelWords.some(lw => lw.startsWith(w)));
+            $(this).toggle(match);
+            if (match) anyVisible = true;
+        });
+        // A group title stays only while at least one of its species is shown.
+        panel.find('.species-group-title').each(function() {
+            const hasVisible = $(this).nextUntil('.species-group-title', '.species-option')
+                .filter(function() { return this.style.display !== 'none'; }).length > 0;
+            $(this).toggle(hasVisible);
+        });
+        $('#species-search-empty').toggle(!anyVisible);
+    }
+
+    $('#species-search').on('input', function() {
+        filterSpecies(this.value);
+    }).on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            // Never submit the form from the search box: pick the first match instead.
+            e.preventDefault();
+            const first = $('.species-selection-panel .species-option')
+                .filter(function() { return this.style.display !== 'none'; }).first();
+            first.find('input[type="radio"]').prop('checked', true).trigger('change');
+        } else if (e.key === 'Escape') {
+            this.value = '';
+            filterSpecies('');
+        }
+    });
+
     $(document).on('keydown', function(e) {
         if (!wrapper.is(':visible')) return;
         // Не перехоплювати клавіші, коли фокус у полі вводу (коментар, к-ть тощо).
