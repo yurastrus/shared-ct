@@ -33,16 +33,16 @@
     <table class="table table-sm sp-table">
         <thead>
             <tr>
-                <th>{{ _('Латинська назва') }}</th>
-                <th>{{ _('Українська назва') }}</th>
-                <th>{{ _('Англійська назва') }}</th>
-                <th>{{ _('Категорія') }}</th>
-                <th>{{ _('Клас') }}</th>
-                <th>{{ _('Ряд') }}</th>
-                <th>{{ _('Родина') }}</th>
-                <th>{{ _('Статус присутності') }}</th>
-                <th>{{ _('Червона книга') }}</th>
-                <th>{{ _('Активний') }}</th>
+                <th data-sortable>{{ _('Латинська назва') }}</th>
+                <th data-sortable>{{ _('Українська назва') }}</th>
+                <th data-sortable>{{ _('Англійська назва') }}</th>
+                <th data-sortable>{{ _('Категорія') }}</th>
+                <th data-sortable>{{ _('Клас') }}</th>
+                <th data-sortable>{{ _('Ряд') }}</th>
+                <th data-sortable>{{ _('Родина') }}</th>
+                <th data-sortable>{{ _('Статус присутності') }}</th>
+                <th data-sortable>{{ _('Червона книга') }}</th>
+                <th data-sortable>{{ _('Активний') }}</th>
                 <th></th>
             </tr>
         </thead>
@@ -60,7 +60,7 @@
                 <td>{{ r.order_rank or '' }}</td>
                 <td>{{ r.family or '' }}</td>
                 <td>{{ r.establishment_means or '' }}</td>
-                <td>{% if r.redbook2021 %}<span class="sp-redbook">{{ redbook_labels.get(r.redbook2021, r.redbook2021) }}</span>{% endif %}</td>
+                <td data-sort="{{ redbook_rank.get(r.redbook2021, '') }}">{% if r.redbook2021 %}<span class="sp-redbook">{{ redbook_labels.get(r.redbook2021, r.redbook2021) }}</span>{% endif %}</td>
                 <td>{{ '✓' if r.is_active else '—' }}</td>
                 <td><a class="btn btn-sm btn-secondary"
                        href="{{ url_for('camera_traps.species_admin_edit', lang_code=g.lang_code, species_id=r.id) }}">{{ _('Редагувати') }}</a></td>
@@ -75,5 +75,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/species_admin.js', lang_code=g.lang_code) }}?v=2"></script>
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/species_admin.js', lang_code=g.lang_code) }}?v=3"></script>
 {% endblock %}

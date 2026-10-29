@@ -163,7 +163,8 @@ def species_admin_list(lang_code):
     with get_ct_engine().connect() as conn:
         rows = list_species(conn)
     return render_template('species_admin_list.html', rows=rows,
-                           redbook_labels=REDBOOK_LABELS)
+                           redbook_labels=REDBOOK_LABELS,
+                           redbook_rank={c: f'{i:02d}' for i, c in enumerate(REDBOOK_CODES)})
 
 
 @camera_traps_bp.route('/admin/species/new', methods=['GET', 'POST'])
