@@ -33,6 +33,7 @@
     <table class="table table-sm sp-table">
         <thead>
             <tr>
+                <th></th>
                 <th data-sortable>{{ _('Латинська назва') }}</th>
                 <th data-sortable>{{ _('Українська назва') }}</th>
                 <th data-sortable>{{ _('Англійська назва') }}</th>
@@ -43,7 +44,6 @@
                 <th data-sortable>{{ _('Статус присутності') }}</th>
                 <th data-sortable>{{ _('Червона книга') }}</th>
                 <th data-sortable>{{ _('Активний') }}</th>
-                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -52,6 +52,8 @@
                 data-redlisted="{{ 1 if r.redbook2021 else 0 }}"
                 data-search="{{ [r.scientific_name, r.common_name_ua, r.common_name_en, r.order_rank, r.family, r.genus] | select | join(' ') | lower }}"
                 {% if not r.is_active %}class="sp-inactive"{% endif %}>
+                <td><a class="btn btn-sm btn-secondary"
+                       href="{{ url_for('camera_traps.species_admin_edit', lang_code=g.lang_code, species_id=r.id) }}">{{ _('Редагувати') }}</a></td>
                 <td><em>{{ r.scientific_name }}</em></td>
                 <td>{{ r.common_name_ua or '' }}</td>
                 <td>{{ r.common_name_en or '' }}</td>
@@ -62,8 +64,6 @@
                 <td>{{ r.establishment_means or '' }}</td>
                 <td data-sort="{{ redbook_rank.get(r.redbook2021, '') }}">{% if r.redbook2021 %}<span class="sp-redbook">{{ redbook_labels.get(r.redbook2021, r.redbook2021) }}</span>{% endif %}</td>
                 <td>{{ '✓' if r.is_active else '—' }}</td>
-                <td><a class="btn btn-sm btn-secondary"
-                       href="{{ url_for('camera_traps.species_admin_edit', lang_code=g.lang_code, species_id=r.id) }}">{{ _('Редагувати') }}</a></td>
             </tr>
         {% endfor %}
         </tbody>
