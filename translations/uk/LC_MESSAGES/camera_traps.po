@@ -512,9 +512,8 @@ msgid "Помилка перерахунку консенсусу. Переві�
 msgstr ""
 
 #: app/camera_traps/routes.py:5066
-#, fuzzy
 msgid "Невідомий вид"
-msgstr "стан невідомий"
+msgstr ""
 
 #: app/camera_traps/routes.py:5151
 #: app/camera_traps/templates/identification.html:104
@@ -792,9 +791,8 @@ msgid "неоцінений"
 msgstr ""
 
 #: app/camera_traps/species_admin.py:35
-#, fuzzy
 msgid "недостатньо відомий"
-msgstr "стан невідомий"
+msgstr ""
 
 #: app/camera_traps/species_admin.py:43
 #: app/camera_traps/templates/species_admin_list.html:36
@@ -5233,9 +5231,8 @@ msgstr ""
 
 #: app/camera_traps/templates/species_admin_edit.html:3
 #: app/camera_traps/templates/species_admin_edit.html:11
-#, fuzzy
 msgid "Новий вид"
-msgstr "стан невідомий"
+msgstr ""
 
 #: app/camera_traps/templates/species_admin_edit.html:12
 msgid "До довідника видів"
@@ -5272,9 +5269,8 @@ msgid ""
 msgstr ""
 
 #: app/camera_traps/templates/species_admin_list.html:16
-#, fuzzy
 msgid "Додати вид"
-msgstr "стан невідомий"
+msgstr ""
 
 #: app/camera_traps/templates/species_admin_list.html:24
 msgid "Пошук за назвою, родиною…"
