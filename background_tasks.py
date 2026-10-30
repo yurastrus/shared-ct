@@ -2,11 +2,39 @@
 import os, shutil
 from datetime import datetime, timedelta
 from flask import current_app
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, text
 from sqlalchemy.orm import selectinload
 
 from .database import get_ct_session, close_ct_session
+from .consensus import consensus_ctes, UNIDENTIFIABLE_MIN_VOTERS, UNIDENTIFIABLE_SPECIES_ID
 from .models import Photo, Identification, Observation, UploadBatch, Species
+
+OTHER_SPECIES_ID = -2  # "Інший вид": a species that is not in the list
+
+
+def _kept_by_consensus_ids(ct_session):
+    """Completed series the cleanup must keep because of their consensus.
+
+    Same consensus rule as every statistic (consensus.py):
+      * "Other species" is among the ACCEPTED species: an animal nobody could
+        name from the list, waiting for an operator. A minority "Other" vote
+        does not count.
+      * "Not identifiable" won with fewer than five verifiers: such a series
+        should not have closed under the current rule (it predates it) and is
+        waiting to be reopened for more votes (scripts.reopen_unidentifiable).
+    """
+    rows = ct_session.execute(text(
+        "WITH " + consensus_ctes(
+            """FROM identifications i JOIN photos p ON i.photo_id = p.id
+               JOIN observations o ON o.id = p.observation_id
+               WHERE o.status = 'completed'""") + """
+        SELECT DISTINCT observation_id FROM RankedConsensus
+        WHERE (species_id = :other AND accepted)
+           OR (rn = 1 AND species_id = :unidentifiable AND voters < :unidentifiable_min)"""),
+        {'other': OTHER_SPECIES_ID, 'unidentifiable': UNIDENTIFIABLE_SPECIES_ID,
+         'unidentifiable_min': UNIDENTIFIABLE_MIN_VOTERS})
+    return [r[0] for r in rows]
+
 
 def cleanup_old_photos():
     """Find completed observations older than the configured period that are not "favorites".
@@ -24,8 +52,11 @@ def cleanup_old_photos():
          a successful commit, the file becomes an orphan (picked up by the
          new cleanup module in cleanup.py).
       4. species_id=-2 is the "Other" category in the species reference
-         (Identification without a determined species); such series are
-         intentionally NOT archived because they need operator review.
+         (Identification without a determined species); a series whose
+         CONSENSUS includes it is intentionally NOT archived because it needs
+         operator review. (Until 2026-10-30 any single "Other" vote kept a
+         series forever, even one that closed as another species.)
+      5. Series flagged for re-review are never archived (2026-10-30).
     """
     ct_session = get_ct_session()
 
@@ -57,7 +88,7 @@ def cleanup_old_photos():
         # OPTIMIZATION #1: selectinload — photos are loaded in one
         # query `WHERE observation_id IN (...)`, not via N+1 round-trips.
         # OPTIMIZATION #4: species_id=-2 is the "Other" category in the
-        # species reference; such series are intentionally NOT archived.
+        # species reference; series whose consensus includes it are NOT archived.
         old_observations = ct_session.query(Observation).join(
             Photo, Observation.id == Photo.observation_id
         ).join(
@@ -71,11 +102,11 @@ def cleanup_old_photos():
             # (Before 2026-10-30 flagged series were archived like any other
             # and two of the three flagged on prod had lost every photo.)
             Observation.flagged.is_(False),
-            ~Observation.photos.any(
-                Photo.identifications.any(
-                    Identification.species_id.in_([-2])
-                )
-            ),
+            # Kept by consensus: "Other species" accepted, or "not
+            # identifiable" with fewer than five verifiers. A lone "Other" vote
+            # in a series that closed as roe deer used to keep it forever: 397
+            # series / 1913 photos on prod, 2026-10-30.
+            ~Observation.id.in_(_kept_by_consensus_ids(ct_session)),
             # A series is only truly archivable if it has at least one photo the
             # job will actually archive: status='completed' AND not a favorite.
             # A series whose photos are ALL favorites can never reach
@@ -345,11 +376,11 @@ def get_cleanup_statistics():
             # (Before 2026-10-30 flagged series were archived like any other
             # and two of the three flagged on prod had lost every photo.)
             Observation.flagged.is_(False),
-            ~Observation.photos.any(
-                Photo.identifications.any(
-                    Identification.species_id.in_([-2])
-                )
-            ),
+            # Kept by consensus: "Other species" accepted, or "not
+            # identifiable" with fewer than five verifiers. A lone "Other" vote
+            # in a series that closed as roe deer used to keep it forever: 397
+            # series / 1913 photos on prod, 2026-10-30.
+            ~Observation.id.in_(_kept_by_consensus_ids(ct_session)),
             # A series is only truly archivable if it has at least one photo the
             # job will actually archive: status='completed' AND not a favorite.
             # A series whose photos are ALL favorites can never reach

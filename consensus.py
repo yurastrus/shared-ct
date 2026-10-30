@@ -135,6 +135,10 @@ def is_multi_species(votes):
     return any(len(named) > 1 for named in per_user.values())
 
 
+UNIDENTIFIABLE_SPECIES_ID = -6   # "Неможливо визначити"
+UNIDENTIFIABLE_MIN_VOTERS = 5    # owner's rule 2026-10-30: give someone else a chance
+
+
 def can_close(per_species, voters, multi):
     """Closing rule of a pending series.
 
@@ -148,6 +152,12 @@ def can_close(per_species, voters, multi):
     accepted nor dropped on a coin toss. (Owner's rule, 2026-10-30.)
     """
     if not has_majority(per_species, voters):
+        return False
+    # "Not identifiable" wins only with at least five people behind it: a
+    # sixth verifier may still recognise the animal, and a series closed as
+    # unidentifiable is soon cleaned away.
+    top = max(per_species.items(), key=lambda kv: kv[1][0])[0]
+    if top == UNIDENTIFIABLE_SPECIES_ID and voters < UNIDENTIFIABLE_MIN_VOTERS:
         return False
     if not multi:
         return True

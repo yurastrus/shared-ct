@@ -12,7 +12,8 @@ from sqlalchemy import func, text
 from flask import current_app
 from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import Location, Observation, Photo, UploadBatch, Identification
-from .consensus import accepted_species, can_close, consensus_ctes, is_multi_species, tally_votes
+from .consensus import (accepted_species, can_close, consensus_ctes, is_multi_species, tally_votes,
+                        UNIDENTIFIABLE_MIN_VOTERS, UNIDENTIFIABLE_SPECIES_ID)
 
 
 def get_user_ct_stats(user_id, lang='uk'):
@@ -959,8 +960,15 @@ def migrate_pending_observations_to_single_identification():
                     AND observation_id IN (
                         SELECT observation_id FROM ObservationVotes
                         GROUP BY observation_id, user_id HAVING COUNT(*) > 1))
+              -- consensus.can_close: "not identifiable" needs five verifiers
+              AND observation_id NOT IN (
+                  SELECT observation_id FROM RankedConsensus
+                  WHERE rn = 1 AND species_id = :unidentifiable
+                    AND voters < :unidentifiable_min)
             ORDER BY observation_id, rn
-        """), {'min_ids': min_identifications}).fetchall()
+        """), {'min_ids': min_identifications,
+               'unidentifiable': UNIDENTIFIABLE_SPECIES_ID,
+               'unidentifiable_min': UNIDENTIFIABLE_MIN_VOTERS}).fetchall()
 
         series = {}
         for obs_id, species_id, rn, accepted, votes, total_users in rows:
