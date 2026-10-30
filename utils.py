@@ -12,7 +12,7 @@ from sqlalchemy import func, text
 from flask import current_app
 from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import Location, Observation, Photo, UploadBatch, Identification
-from .consensus import accepted_species, consensus_ctes, has_majority, tally_votes
+from .consensus import accepted_species, can_close, consensus_ctes, is_multi_species, tally_votes
 
 
 def get_user_ct_stats(user_id, lang='uk'):
@@ -839,7 +839,9 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
         if voters < min_identifications:
             return
 
-        if has_majority(per_species, voters):
+        # One species per verifier: the old rule. If someone named several,
+        # every named species must also be decided (consensus.can_close).
+        if can_close(per_species, voters, is_multi_species(user_identifications)):
             winner_species = max(per_species.items(), key=lambda x: x[1][0])[0]
             mark_observation_complete(
                 observation_id, db_session=db_session,
@@ -949,6 +951,14 @@ def migrate_pending_observations_to_single_identification():
               AND observation_id IN (
                   SELECT observation_id FROM RankedConsensus
                   WHERE rn = 1 AND vote_count * 2 > voters)
+              -- consensus.can_close: where someone named several species, a
+              -- species at exactly half keeps the series open.
+              AND observation_id NOT IN (
+                  SELECT observation_id FROM RankedConsensus
+                  WHERE vote_count * 2 = voters
+                    AND observation_id IN (
+                        SELECT observation_id FROM ObservationVotes
+                        GROUP BY observation_id, user_id HAVING COUNT(*) > 1))
             ORDER BY observation_id, rn
         """), {'min_ids': min_identifications}).fetchall()
 

@@ -2,7 +2,7 @@
 import os, shutil
 from datetime import datetime, timedelta
 from flask import current_app
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import selectinload
 
 from .database import get_ct_session, close_ct_session
@@ -66,6 +66,11 @@ def cleanup_old_photos():
             selectinload(Observation.photos)
         ).filter(
             Observation.status == 'completed',
+            # A series flagged for re-review keeps its files until an admin
+            # removes the flag: its photos are the evidence the review needs.
+            # (Before 2026-10-30 flagged series were archived like any other
+            # and two of the three flagged on prod had lost every photo.)
+            Observation.flagged.is_(False),
             ~Observation.photos.any(
                 Photo.identifications.any(
                     Identification.species_id.in_([-2])
@@ -335,6 +340,11 @@ def get_cleanup_statistics():
             selectinload(Observation.photos)
         ).filter(
             Observation.status == 'completed',
+            # A series flagged for re-review keeps its files until an admin
+            # removes the flag: its photos are the evidence the review needs.
+            # (Before 2026-10-30 flagged series were archived like any other
+            # and two of the three flagged on prod had lost every photo.)
+            Observation.flagged.is_(False),
             ~Observation.photos.any(
                 Photo.identifications.any(
                     Identification.species_id.in_([-2])
@@ -410,9 +420,13 @@ def delete_unfavorited_raw_files():
         raw_folder = os.path.join(upload_path, 'pending_photos', 'raw')
 
         # --- Step 1: Find candidate photos in the database ---
-        # Criterion: any photo where is_favorite = False.
-        photos_to_delete_raw = ct_session.query(Photo).filter(
-            Photo.is_favorite == False
+        # Criterion: any photo where is_favorite = False, except photos of a
+        # series flagged for re-review (kept until an admin removes the flag).
+        photos_to_delete_raw = ct_session.query(Photo).outerjoin(
+            Observation, Photo.observation_id == Observation.id
+        ).filter(
+            Photo.is_favorite == False,
+            or_(Photo.observation_id.is_(None), Observation.flagged.is_(False)),
         ).all()
 
         if not photos_to_delete_raw:

@@ -203,9 +203,11 @@ def flag_observation(lang_code, obs_id):
 
 @camera_traps_bp.route('/observation/<int:obs_id>/unflag', methods=['POST'])
 @login_required
-@role_required('ct_verifier')
+@role_required('admin')
 def unflag_observation(lang_code, obs_id):
-    """Remove the re-review flag (Idea 6)."""
+    """Remove the re-review flag (Idea 6). Admin only: while the flag is on,
+    the nightly cleanup keeps the series' photos, so removing it decides
+    whether they may be deleted."""
     ct_session = get_ct_session()
     try:
         obs = ct_session.query(Observation).get(obs_id)

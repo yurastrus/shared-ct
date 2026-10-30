@@ -122,3 +122,33 @@ def has_majority(per_species, voters):
         return False
     top = max(count for count, _q in per_species.values())
     return top * 2 > voters
+
+
+def is_multi_species(votes):
+    """True when some verifier named more than one species in the series.
+
+    ``votes`` are (user_id, species_id, ...) tuples, possibly one per photo.
+    """
+    per_user = {}
+    for vote in votes:
+        per_user.setdefault(vote[0], set()).add(vote[1])
+    return any(len(named) > 1 for named in per_user.values())
+
+
+def can_close(per_species, voters, multi):
+    """Closing rule of a pending series.
+
+    One species per verifier (``multi`` False): the old rule, the top species
+    needs more than half of the verifiers.
+
+    Someone named several species (``multi`` True): additionally EVERY named
+    species must be decided, named by more or by fewer than half of the
+    verifiers. A species at exactly half keeps the series open for the next
+    verifier, so a second animal noticed by one of two people is neither
+    accepted nor dropped on a coin toss. (Owner's rule, 2026-10-30.)
+    """
+    if not has_majority(per_species, voters):
+        return False
+    if not multi:
+        return True
+    return all(count * 2 != voters for count, _q in per_species.values())
