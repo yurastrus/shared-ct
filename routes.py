@@ -29,6 +29,7 @@ from .data_export import get_ct_occurrence_data, _build_qc_exclusion_cond
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 from .activity_heatmap import fetch_heatmap_data, fetch_date_range
 from .validity import valid_location_id_subquery, VALID_LOCATION_SQL
+from .consensus import consensus_ctes, tally_votes, accepted_species
 
 #
 # --- MODULE STATIC FILES ---
@@ -1160,6 +1161,20 @@ def loo_species(votes, user_id):
     return ranked[0][0]
 
 
+def accepted_set(votes, primary):
+    """Accepted species of a series (consensus.py rule) as a set."""
+    per_species, voters = tally_votes(v for v in votes if v[1] is not None)
+    return set(accepted_species(per_species, voters, primary))
+
+
+def loo_accepted(votes, user_id):
+    """Accepted species among everyone except `user_id`, or None (undecidable)."""
+    primary = loo_species(votes, user_id)
+    if primary is None:
+        return None
+    return accepted_set([v for v in votes if v[0] != user_id], primary)
+
+
 def wilson_interval(hits, total, z=1.96):
     """95% Wilson score interval for a proportion, in percent.
 
@@ -1264,9 +1279,28 @@ def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
             continue
         total_series += 1
 
+        # Since 2026-10 a series may hold several accepted species and a
+        # verifier may name several. The unit stays (verifier, species):
+        #   recall    — for every ACCEPTED species F: did this verifier name F;
+        #   LOO       — ... and do the others, without this verifier, accept F;
+        #   precision — for every species S the verifier named: is S accepted.
+        # With one species per verifier this is exactly the old arithmetic
+        # (accepted = {final}; "named final and others accept final" equals
+        # "agreed with the others' winner", because a vote for the others'
+        # winner always makes it the final species too).
+        accepted = accepted_set(votes, final)
+        accepted_order = [final] + sorted(a for a in accepted if a != final)
+        named = {}
+        first_vote = {}
         for uid, sp, _q, voted_at in rows:
+            named.setdefault(uid, set()).add(sp)
+            if voted_at is not None and (uid not in first_vote or voted_at < first_vote[uid]):
+                first_vote[uid] = voted_at
+
+        for uid, said_species in named.items():
             if user_id is not None and uid != user_id:
                 continue
+            voted_at = first_vote.get(uid)
             if voted_at is not None:
                 moment = _naive(voted_at)
                 if start_dt is not None and moment < start_dt:
@@ -1274,25 +1308,33 @@ def compute_expertise_stats(vote_rows, start_dt=None, end_dt=None, mode='users',
                 if end_dt is not None and moment > end_dt:
                     continue
 
-            # --- recall block: keyed by the series' final species ---
-            if by_species or species_id is None or final == species_id:
-                slot = _slot(final if by_species else uid)
+            # --- recall block: keyed by the series' accepted species ---
+            loo = None
+            loo_done = False
+            for target in accepted_order:
+                if not (by_species or species_id is None or target == species_id):
+                    continue
+                if not include_special and target < 0:
+                    continue  # a service category is not graded (primary < 0 skipped above)
+                slot = _slot(target if by_species else uid)
                 slot['n'] += 1
-                slot['hits'] += 1 if sp == final else 0
-                loo = loo_species(votes, uid)
+                slot['hits'] += 1 if target in said_species else 0
+                if not loo_done:
+                    loo, loo_done = loo_accepted(votes, uid), True
                 if loo is None:
                     undecidable += 1
                 else:
                     slot['loo_n'] += 1
-                    slot['loo_hits'] += 1 if sp == loo else 0
+                    slot['loo_hits'] += 1 if (target in said_species and target in loo) else 0
 
             # --- precision block: keyed by the species the vote named ---
-            if not include_special and sp < 0:
-                continue  # no row for "empty"; the miss is already on the animal
-            if by_species or (species_id is not None and sp == species_id):
-                slot = _slot(sp if by_species else uid)
-                slot['said'] += 1
-                slot['said_hits'] += 1 if sp == final else 0
+            for sp in sorted(said_species):
+                if not include_special and sp < 0:
+                    continue  # no row for "empty"; the miss is already on the animal
+                if by_species or (species_id is not None and sp == species_id):
+                    slot = _slot(sp if by_species else uid)
+                    slot['said'] += 1
+                    slot['said_hits'] += 1 if sp in accepted else 0
 
     return stats, {'series': total_series, 'undecidable': undecidable}
 
@@ -3507,35 +3549,19 @@ def stats_top_species(lang_code):
                 JOIN locations l ON o.location_id = l.id
         """
 
+        # species_id breaks ties that the vote count and quantity leave open.
+        # Without it ROW_NUMBER picks arbitrarily and the chart changes between
+        # runs whenever two species tie (11 such observations in the 2025 window
+        # alone). DESC means a real species outranks the negative pseudo-rows
+        # ('empty', 'not identifiable'), which the `s.id > 0` filter would
+        # otherwise drop the observation for. Every ACCEPTED species of a series
+        # counts (several since multi-species identification, see consensus.py).
         consensus_cte_tail = """
-            ),
-            ObservationConsensus AS (
-                SELECT
-                    p.observation_id, i.species_id,
-                    COUNT(DISTINCT i.user_id) as vote_count,
-                    MAX(i.quantity) as max_quantity
-                FROM identifications i
+            ),""" + consensus_ctes(
+            """FROM identifications i
                 JOIN photos p ON i.photo_id = p.id
-                JOIN EligibleObservations eo ON eo.id = p.observation_id
-                GROUP BY p.observation_id, i.species_id
-            ),
-            RankedConsensus AS (
-                SELECT
-                    observation_id, species_id,
-                    ROW_NUMBER() OVER(
-                        PARTITION BY observation_id
-                        -- species_id breaks ties that the vote count and quantity
-                        -- leave open. Without it ROW_NUMBER picks arbitrarily and
-                        -- the chart changes between runs whenever two species tie
-                        -- (11 such observations in the 2025 window alone). DESC
-                        -- means a real species outranks the negative pseudo-rows
-                        -- ('empty', 'not identifiable'), which the `s.id > 0`
-                        -- filter would otherwise drop the observation for.
-                        ORDER BY vote_count DESC, max_quantity DESC, species_id DESC
-                    ) as rn
-                FROM ObservationConsensus
-            )
-        """
+                JOIN EligibleObservations eo ON eo.id = p.observation_id""",
+            'vote_count DESC, max_quantity DESC, species_id DESC') + "\n"
 
         query_base = """
             SELECT
@@ -3593,7 +3619,7 @@ def stats_top_species(lang_code):
         eligible_where = " WHERE " + " AND ".join(conditions)
         # s.id > 0 stays on the outer query: it selects which consensus winners
         # count as species, and must not narrow the consensus vote itself.
-        outer_where = " WHERE rc.rn = 1 AND s.id > 0"
+        outer_where = " WHERE rc.accepted AND s.id > 0"
         group_by_clause = " GROUP BY s.id, s.scientific_name, s.common_name_ua, s.common_name_en"
         order_by_clause = " ORDER BY observation_count DESC, s.scientific_name ASC"
         limit_clause = " LIMIT 15"
@@ -4207,6 +4233,28 @@ def _can_access_observation(ct_session, observation):
         user_inst_ids=ct_access.allowed_institution_ids(current_user))
 
 
+# Upper bound on species in one answer: a real frame rarely holds more than
+# three, and the cap keeps a malformed request from writing photos x N rows.
+MAX_SPECIES_PER_ANSWER = 10
+EMPTY_SPECIES_ID = -1
+
+
+def _validate_identification_entries(entries):
+    """Error message for an invalid list of species entries, or None."""
+    if not entries:
+        return _('Оберіть вид.')
+    if len(entries) > MAX_SPECIES_PER_ANSWER:
+        return _('Забагато видів в одній відповіді.')
+    species = [e['species_id'] for e in entries]
+    if len(set(species)) != len(species):
+        return _('Один вид указано двічі.')
+    if EMPTY_SPECIES_ID in species and len(species) > 1:
+        return _('«Пусто» не можна поєднувати з іншими видами.')
+    if any(e['quantity'] < 1 for e in entries):
+        return _('Кількість має бути не менше 1.')
+    return None
+
+
 # --- IDENTIFICATION AND UPLOAD API ---
 @camera_traps_bp.route('/api/submit-identification', methods=['POST'])
 @login_required
@@ -4217,18 +4265,31 @@ def submit_identification(lang_code):
         try:
             data = request.json
             observation_id = int(data['observation_id'])
-            species_id = int(data['species_id'])
-            quantity = int(data.get('quantity', 1))
+            # Several species per series (2026-10): `entries` is a list of
+            # {species_id, quantity, behaviors}. A request without it is the
+            # one-species form and becomes a single entry.
+            raw_entries = data.get('entries')
+            if raw_entries is None:
+                raw_entries = [{'species_id': data['species_id'],
+                                'quantity': data.get('quantity', 1),
+                                'behaviors': data.get('behaviors', [])}]
+            entries = [{'species_id': int(e['species_id']),
+                        'quantity': int(e.get('quantity', 1)),
+                        'behaviors': [int(b) for b in (e.get('behaviors') or [])]}
+                       for e in raw_entries]
             is_favorite = bool(data.get('is_favorite', False))
             current_photo_index = int(data.get('current_photo_index', 0))
-            behavior_ids = data.get('behaviors', [])
             # #47: optional comment field; back-end guard — truncate to 200 chars
             comment = (data.get('comment') or '').strip()[:200] or None
             # The verifier stepped back to a series they already submitted and
             # is correcting it: their own identifications are replaced, not skipped.
             replace = bool(data.get('replace', False))
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, AttributeError):
             return jsonify({'success': False, 'error': _('Неправильний формат даних.')}), 400
+
+        entry_error = _validate_identification_entries(entries)
+        if entry_error:
+            return jsonify({'success': False, 'error': entry_error}), 400
 
         observation = ct_session.query(Observation).get(observation_id)
         if not observation:
@@ -4257,9 +4318,11 @@ def submit_identification(lang_code):
                 Identification.user_id == current_user.id,
                 Identification.photo_id.in_([p.id for p in photos_sorted])
             ).all()
+            # identification_count counts people per photo, not species rows.
+            for photo in {old.photo for old in own}:
+                photo.identification_count = max(
+                    0, (photo.identification_count or 0) - 1)
             for old in own:
-                old.photo.identification_count = max(
-                    0, (old.photo.identification_count or 0) - 1)
                 ct_session.delete(old)
             if own:
                 ct_session.flush()
@@ -4267,7 +4330,11 @@ def submit_identification(lang_code):
 
         moderator_override = is_moderator and observation.status == 'completed'
 
-        selected_behaviors = ct_session.query(BehaviorType).filter(BehaviorType.id.in_(behavior_ids)).all() if behavior_ids else []
+        all_behavior_ids = {b for e in entries for b in e['behaviors']}
+        behaviors_by_id = {
+            b.id: b for b in ct_session.query(BehaviorType)
+            .filter(BehaviorType.id.in_(all_behavior_ids)).all()
+        } if all_behavior_ids else {}
         # Validate the index
         if current_photo_index >= len(photos_sorted):
             current_photo_index = 0  # Fallback to first photo
@@ -4281,19 +4348,26 @@ def submit_identification(lang_code):
             elif not is_favorite and not replace and i == current_photo_index:
                 photo.is_favorite = False
 
-            existing_id = ct_session.query(Identification).filter_by(user_id=current_user.id, photo_id=photo.id).first()
-            if not existing_id:
+            # A photo the caller already answered is left alone, exactly as
+            # before multi-species: a double click or a stale second tab must
+            # not add species to an answer. Changing an answer goes through
+            # `replace`, which removed the old rows above.
+            already = ct_session.query(Identification.id).filter_by(
+                user_id=current_user.id, photo_id=photo.id).first()
+            if already:
+                continue
+            photo.identification_count += 1  # people per photo, not species rows
+            for entry in entries:
                 new_id = Identification(
                     photo_id=photo.id,
                     user_id=current_user.id,
-                    species_id=species_id,
-                    quantity=quantity,
+                    species_id=entry['species_id'],
+                    quantity=entry['quantity'],
                     comment=comment
                 )
-                if selected_behaviors:
-                    new_id.behaviors.extend(selected_behaviors)
+                new_id.behaviors.extend(
+                    behaviors_by_id[b] for b in entry['behaviors'] if b in behaviors_by_id)
                 ct_session.add(new_id)
-                photo.identification_count += 1
                 
         ct_session.flush()
         
@@ -4481,17 +4555,27 @@ def next_observation_for_identification(lang_code):
             }
             # The caller's own earlier answer, so the form can be pre-filled when
             # they step back to correct it.
-            mine = (ct_session.query(Identification)
-                    .filter(Identification.user_id == current_user.id,
-                            Identification.photo_id.in_([p.id for p in photos_sorted]))
-                    .order_by(Identification.id).first())
-            if mine is not None:
-                response_data['my_identification'] = {
-                    'species_id': mine.species_id,
-                    'quantity': mine.quantity,
-                    'comment': mine.comment or '',
-                    'behavior_ids': [b.id for b in mine.behaviors],
-                }
+            # One entry per species (a verifier may have named several); the
+            # rows are copied onto every photo, so the first photo's are enough.
+            mine_rows = (ct_session.query(Identification)
+                         .filter(Identification.user_id == current_user.id,
+                                 Identification.photo_id.in_([p.id for p in photos_sorted]))
+                         .order_by(Identification.id).all())
+            mine_entries = []
+            seen_species = set()
+            for row in mine_rows:
+                if row.species_id in seen_species:
+                    continue
+                seen_species.add(row.species_id)
+                mine_entries.append({
+                    'species_id': row.species_id,
+                    'quantity': row.quantity,
+                    'comment': row.comment or '',
+                    'behavior_ids': [b.id for b in row.behaviors],
+                })
+            if mine_entries:
+                response_data['my_identification'] = mine_entries[0]
+                response_data['my_identifications'] = mine_entries
             try:
                 from .ai_runner import is_ai_available, get_observation_ai_prediction
                 if is_ai_available():
@@ -4653,9 +4737,14 @@ def next_observation_for_identification(lang_code):
             for photo in photos_sorted:
                 for ident in photo.identifications:
                     user_id = ident.user_id
-                    if user_id not in user_identifications:
+                    known = user_identifications.get(user_id)
+                    # A verifier may have named several species: one entry per
+                    # species, the rows are copies across the series' photos.
+                    if known is not None and ident.species_id in known['_species']:
+                        continue
+                    if known is None or ident.photo_id == known['_photo_id']:
                         # We are guaranteed to take the identification from the earliest photo
-                        user = User.query.get(ident.user_id)
+                        user = User.query.get(ident.user_id) if known is None else None
                         species_name = "Невідомо"
                         if ident.species_id and ident.species_id > 0:
                             species = ct_session.query(Species).get(ident.species_id)
@@ -4677,15 +4766,34 @@ def next_observation_for_identification(lang_code):
                         elif ident.species_id == -4:
                             species_name = _('Мотоцикл')
                         
+                        if known is not None:
+                            # Further species of the same verifier: one line,
+                            # each species with its own count.
+                            known['species_name'] = (
+                                f"{known['species_name']} ×{known['quantity']}"
+                                if len(known['_species']) == 1 else known['species_name'])
+                            known['species_name'] += f" + {species_name} ×{ident.quantity}"
+                            known['_species'].add(ident.species_id)
+                            known['_multi'] = True
+                            continue
                         user_identifications[user_id] = {
                             'username': user.username if user else f"User {ident.user_id}",
                             'species_name': species_name,
                             'quantity': ident.quantity,
                             'comment': ident.comment or '',
-                            'created_at': ident.created_at.strftime('%d.%m.%Y %H:%M')
+                            'created_at': ident.created_at.strftime('%d.%m.%Y %H:%M'),
+                            '_species': {ident.species_id},
+                            '_photo_id': ident.photo_id,
                         }
-            
-            existing_identifications = list(user_identifications.values())
+
+            existing_identifications = []
+            for entry in user_identifications.values():
+                multi = entry.pop('_multi', False)
+                entry.pop('_species')
+                entry.pop('_photo_id')
+                if multi:
+                    entry['quantity'] = None  # counts are inside species_name
+                existing_identifications.append(entry)
         
         response_data = {
             'observation_id': observation.id,
@@ -5083,10 +5191,37 @@ def _observation_consensus_species(ct_session, observation_ids):
     reported quantity. Series with no identifications (or a NULL/"Other"
     winner) are simply absent from the result.
     """
+    return {obs: accepted[0]
+            for obs, accepted in _observation_accepted_species(ct_session, observation_ids).items()}
+
+
+def _observation_accepted_species(ct_session, observation_ids):
+    """Map ``observation_id -> [accepted species_id, ...]``, primary first.
+
+    The primary is the species _observation_consensus_species always returned;
+    the others are species named by more than half of the series' verifiers
+    (several species per series since 2026-10, see consensus.py).
+    """
     observation_ids = [oid for oid in set(observation_ids) if oid is not None]
     if not observation_ids:
         return {}
 
+    voters = dict(ct_session.query(
+        Photo.observation_id, func.count(distinct(Identification.user_id))
+    ).join(Identification, Identification.photo_id == Photo.id)
+     .filter(Photo.observation_id.in_(observation_ids))
+     .group_by(Photo.observation_id).all())
+    primary = _observation_primary_species(ct_session, observation_ids)
+    accepted = {obs: [sp] for obs, (sp, _tally) in primary.items()}
+    for obs, (sp, tally) in primary.items():
+        for other, (count, _q) in tally.items():
+            if other is not None and other != sp and count * 2 > voters.get(obs, 0):
+                accepted[obs].append(other)
+    return accepted
+
+
+def _observation_primary_species(ct_session, observation_ids):
+    """``observation_id -> (primary species_id, {species: (votes, max_qty)})``."""
     rows = ct_session.query(
         Photo.observation_id,
         Identification.species_id,
@@ -5098,14 +5233,16 @@ def _observation_consensus_species(ct_session, observation_ids):
 
     # observation_id -> (vote_count, max_quantity, species_id); keep the best.
     best = {}
+    tallies = {}
     for obs_id, species_id, vote_count, max_quantity in rows:
+        tallies.setdefault(obs_id, {})[species_id] = (vote_count, max_quantity or 0)
         if species_id is None:
             continue
         candidate = (vote_count, max_quantity or 0, species_id)
         current = best.get(obs_id)
         if current is None or candidate[:2] > current[:2]:
             best[obs_id] = candidate
-    return {obs_id: val[2] for obs_id, val in best.items()}
+    return {obs_id: (val[2], tallies[obs_id]) for obs_id, val in best.items()}
 
 
 @camera_traps_bp.route('/gallery')
@@ -5138,8 +5275,9 @@ def gallery(lang_code):
                 text(inst_condition)
             ).params(**inst_params).distinct().all()
 
-        consensus = _observation_consensus_species(ct_session, [r[0] for r in obs_rows])
-        species_ids = {sid for sid in consensus.values() if sid is not None}
+        consensus = _observation_accepted_species(ct_session, [r[0] for r in obs_rows])
+        species_ids = {sid for accepted in consensus.values() for sid in accepted
+                       if sid is not None}
         if not can_manage_favorites:
             # Hide special categories (Empty, Human, Vehicle, …) from regular users.
             species_ids = {sid for sid in species_ids if sid > 0}
@@ -5196,11 +5334,12 @@ def get_gallery_photos(lang_code):
             ).params(**inst_params)\
             .order_by(Photo.captured_at.desc()).all()
 
-        consensus = _observation_consensus_species(
+        consensus = _observation_accepted_species(
             ct_session, {p.observation_id for p in photos})
 
         # Resolve the consensus species objects we will actually display.
-        needed_ids = {sid for sid in consensus.values() if sid is not None}
+        needed_ids = {sid for accepted in consensus.values() for sid in accepted
+                      if sid is not None}
         species_by_id = {
             s.id: s for s in ct_session.query(Species)
             .filter(Species.id.in_(needed_ids)).all()
@@ -5208,14 +5347,19 @@ def get_gallery_photos(lang_code):
 
         selected = []
         for photo in photos:
-            cons_id = consensus.get(photo.observation_id)
+            accepted = consensus.get(photo.observation_id) or []
+            # species_id == 0 means "all species": the photo is shown once,
+            # under the series' primary species. A specific species matches
+            # any accepted species of the series (a fox+badger series is
+            # found under both).
+            if species_id == 0:
+                cons_id = accepted[0] if accepted else None
+            else:
+                cons_id = species_id if species_id in accepted else None
             if cons_id is None or cons_id not in species_by_id:
                 continue  # series has no resolvable consensus species
             # Hide special categories (id < 0) from regular users.
             if not can_manage_favorites and cons_id <= 0:
-                continue
-            # species_id == 0 means "all species"; otherwise require an exact match.
-            if species_id != 0 and cons_id != species_id:
                 continue
             selected.append((photo, species_by_id[cons_id]))
 
@@ -7284,27 +7428,11 @@ def get_cached_species_for_filter():
         # registrations. A registration is the consensus-winning species of a
         # completed/archived observation — the same definition used by
         # fetch_raw_daily_data, so the dropdown matches what the chart plots.
-        count_sql = text("""
-            WITH ObservationConsensus AS (
-                SELECT
-                    p.observation_id, i.species_id,
-                    COUNT(DISTINCT i.user_id) AS vote_count,
-                    MAX(i.quantity) AS max_quantity
-                FROM identifications i JOIN photos p ON i.photo_id = p.id
-                GROUP BY p.observation_id, i.species_id
-            ),
-            RankedConsensus AS (
-                SELECT
-                    observation_id, species_id,
-                    ROW_NUMBER() OVER(
-                        PARTITION BY observation_id
-                        ORDER BY vote_count DESC, max_quantity DESC
-                    ) AS rn
-                FROM ObservationConsensus
-            )
+        count_sql = text("WITH " + consensus_ctes(
+            "FROM identifications i JOIN photos p ON i.photo_id = p.id") + """
             SELECT rc.species_id
             FROM observations o
-            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.accepted
             WHERE o.status IN ('completed', 'archived')
               AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)
             GROUP BY rc.species_id
@@ -7442,30 +7570,17 @@ def api_distribution_map(lang_code):
         params.update(inst_params)  # add institution parameters (:user_inst_ids)
 
         # Consensus CTE.
-        consensus_cte = """
-            WITH ObservationConsensus AS (
-                SELECT
-                    p.observation_id, i.species_id,
-                    COUNT(DISTINCT i.user_id) as vote_count,
-                    MAX(i.quantity) as max_quantity
-                FROM identifications i JOIN photos p ON i.photo_id = p.id
-                GROUP BY p.observation_id, i.species_id
-            ),
-            RankedConsensus AS (
-                SELECT
-                    observation_id, species_id,
-                    ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC, max_quantity DESC) as rn
-                FROM ObservationConsensus
-            )
-        """
-        
-        # Main query with the institution filter applied.
+        consensus_cte = "WITH " + consensus_ctes(
+            "FROM identifications i JOIN photos p ON i.photo_id = p.id") + "\n"
+
+        # Main query with the institution filter applied. Every accepted species
+        # of a series is a detection of that species.
         query_sql = f"""
             SELECT
                 l.id, l.name, l.latitude, l.longitude,
                 COUNT(o.id) as det_count
             FROM observations o
-            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+            JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.accepted
             JOIN locations l ON o.location_id = l.id
             WHERE
                 rc.species_id = :species_id

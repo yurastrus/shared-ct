@@ -6,6 +6,7 @@ from sqlalchemy import func, case, text
 from flask import current_app
 
 from .database import get_ct_session, close_ct_session
+from .consensus import consensus_ctes
 from .models import Location, Photo, Identification, Species, LocationStats, Observation, CalculationLog
 
 def calculate_stats_for_location(location_id, db_session):
@@ -33,37 +34,26 @@ def calculate_stats_for_location(location_id, db_session):
         # --- 2. Consensus-based observation statistics ---
         # Raw SQL: more efficient for this windowed consensus logic.
         
-        consensus_query = text("""
-            WITH ObservationConsensus AS (
-                -- Step 1: Count votes for each species in each observation
-                SELECT
-                    p.observation_id,
-                    i.species_id,
-                    COUNT(DISTINCT i.user_id) as vote_count
-                FROM identifications i
+        # Every accepted species of a series counts (several since multi-species
+        # identification, consensus.py). Series are counted DISTINCT: a series
+        # with a roe deer and a human is one animal series and one "other"
+        # series, never two animal series. Ranking keeps its historic key
+        # (votes only) plus species_id DESC, so a tie no longer resolves at random.
+        consensus_query = text("WITH " + consensus_ctes(
+            """FROM identifications i
                 JOIN photos p ON i.photo_id = p.id
-                WHERE p.observation_id IN (SELECT id FROM observations WHERE location_id = :location_id)
-                GROUP BY p.observation_id, i.species_id
-            ),
-            RankedConsensus AS (
-                -- Step 2: Determine the "winner" for each observation
-                SELECT
-                    observation_id,
-                    species_id,
-                    ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC) as rn
-                FROM ObservationConsensus
-            )
-            -- Step 3: Aggregate the results for a single location
+                WHERE p.observation_id IN (SELECT id FROM observations WHERE location_id = :location_id)""",
+            'vote_count DESC, species_id DESC') + """
             SELECT
-                COUNT(rc.observation_id) as total_observations,
+                COUNT(DISTINCT rc.observation_id) as total_observations,
                 COUNT(DISTINCT s.id) FILTER (WHERE s.id > 0) as total_species,
-                COUNT(rc.observation_id) FILTER (WHERE s.id > 0) as animal_observations,
-                COUNT(rc.observation_id) FILTER (WHERE s.id = -1) as empty_observations,
-                COUNT(rc.observation_id) FILTER (WHERE s.id < -1) as other_observations
+                COUNT(DISTINCT rc.observation_id) FILTER (WHERE s.id > 0) as animal_observations,
+                COUNT(DISTINCT rc.observation_id) FILTER (WHERE s.id = -1) as empty_observations,
+                COUNT(DISTINCT rc.observation_id) FILTER (WHERE s.id < -1) as other_observations
             FROM RankedConsensus rc
             JOIN observations o ON rc.observation_id = o.id
             JOIN species s ON rc.species_id = s.id
-            WHERE rc.rn = 1
+            WHERE rc.accepted
               AND o.location_id = :location_id
               AND o.status IN ('completed', 'archived');
         """)

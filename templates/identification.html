@@ -201,7 +201,12 @@
                             {{ form.is_favorite.label(class="form-label") }}
                             {{ form.is_favorite(class="form-check-input") }}
                         </div>
+                        <button type="button" id="add-species-btn" class="btn btn-sm btn-outline-secondary add-species-btn"
+                                title="{{ _('Зберегти обраний вид, кількість і теги та обрати ще один вид у цій серії') }}">+ {{ _('ще вид') }}</button>
                     </div>
+
+                    <!-- Species already added to this answer (several species in one series) -->
+                    <div id="species-entries" class="species-entries" style="display: none;"></div>
 
                     <!-- Separate container for the species list -->
                     <div class="species-selection-panel">
@@ -385,6 +390,11 @@ $(document).ready(function() {
         time: "{{ _('Час') }}",
         photo: "{{ _('Фото') }}",
         selectSpecies: '{{ _('Будь ласка, виберіть вид, або опцію "Пусто".') }}',
+        selectSpeciesToAdd: "{{ _('Спершу оберіть вид, потім натисніть «+ ще вид».') }}",
+        emptyAlone: "{{ _('«Пусто» не можна поєднувати з іншими видами.') }}",
+        removeEntry: "{{ _('Прибрати') }}",
+        editEntry: "{{ _('Повернути у форму, щоб змінити') }}",
+        quantityShort: "{{ _('ос.') }}",
         saveError: "{{ _('Помилка збереження:') }}",
         loadError: "{{ _('Не вдалося завантажити дані.') }}",
         congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
@@ -618,7 +628,7 @@ $(document).ready(function() {
                     <div class="identification-username">${ident.username}</div>
                     <div class="identification-species">${ident.species_name}</div>
                     <div class="identification-meta">
-                        Кількість: ${ident.quantity} | ${ident.created_at}
+                        ${ident.quantity == null ? '' : `{{ _('Кількість') }}: ${ident.quantity} | `}${ident.created_at}
                     </div>
                     ${ident.comment ? `<div class="identification-comment">💬 ${esc(ident.comment)}</div>` : ''}
                 </div>
@@ -928,6 +938,7 @@ $(document).ready(function() {
                 form[0].reset();
                 $('#comment-counter').text('0');  // #47: reset the comment character counter.
                 filterSpecies('');  // reset() clears the search text, the hidden rows must come back too
+                resetSpeciesEntries();  // species chips belong to the previous series
 
                 // Автопрокрутка: контроли швидкості й тумблер живуть усередині
                 // <form>, тож form.reset() вище скидає повзунок на HTML-дефолт
@@ -942,7 +953,17 @@ $(document).ready(function() {
 
                 // Крок «Назад»: власна попередня відповідь має перекрити підказку AI.
                 editingSubmitted = goingBack && !!data.my_identification;
-                if (editingSubmitted) prefillFromMine(data.my_identification);
+                if (editingSubmitted) {
+                    // Several species: the first goes back into the form, the
+                    // rest become chips, so a correction keeps all of them.
+                    const mine = data.my_identifications || [data.my_identification];
+                    prefillFromMine(mine[0]);
+                    mine.slice(1).forEach(function(m) {
+                        addSpeciesEntry({species_id: m.species_id, name: speciesLabel(m.species_id),
+                                         quantity: m.quantity == null ? 1 : m.quantity,
+                                         behaviors: m.behavior_ids || []});
+                    });
+                }
 
                 // 2. Restore checkbox state after form reset.
                 updateReviewModeUI();
@@ -1036,6 +1057,110 @@ $(document).ready(function() {
         }
     });
 
+    // === SEVERAL SPECIES IN ONE SERIES ===
+    // The form holds one species at a time. "+ ще вид" moves the current choice
+    // (species, count, tags) into a chip and clears the form for the next one;
+    // on submit every chip plus the current choice is sent as `entries`.
+    const EMPTY_SPECIES_ID = -1;
+    let speciesEntries = [];  // [{species_id, name, quantity, behaviors: [ids]}]
+
+    function speciesLabel(speciesId) {
+        const $radio = $(`input[name="{{ form.species.name }}"][value="${speciesId}"]`);
+        return $radio.closest('label').find('.species-name').text().trim() || String(speciesId);
+    }
+
+    function currentFormEntry() {
+        const selected = $('input[name="{{ form.species.name }}"]:checked').val();
+        if (selected === undefined) return null;
+        const behaviors = [];
+        $('input[name="{{ form.behaviors.name }}"]:checked').each(function() {
+            behaviors.push(parseInt($(this).val()));
+        });
+        return {
+            species_id: parseInt(selected),
+            name: speciesLabel(selected),
+            quantity: parseInt($('#{{ form.quantity.id }}').val()) || 1,
+            behaviors: behaviors
+        };
+    }
+
+    function putEntryInForm(entry) {
+        $(`input[name="{{ form.species.name }}"][value="${entry.species_id}"]`).prop('checked', true);
+        $('#{{ form.quantity.id }}').val(entry.quantity == null ? 1 : entry.quantity);
+        $('input[name="{{ form.behaviors.name }}"]').each(function() {
+            $(this).prop('checked', (entry.behaviors || []).indexOf(parseInt($(this).val())) !== -1);
+        });
+    }
+
+    function clearFormEntry() {
+        $('input[name="{{ form.species.name }}"]').prop('checked', false);
+        $('#{{ form.quantity.id }}').val(1);
+        $('input[name="{{ form.behaviors.name }}"]').prop('checked', false);
+        $('#species-search').val('');
+        filterSpecies('');
+    }
+
+    function renderSpeciesEntries() {
+        const $box = $('#species-entries').empty();
+        speciesEntries.forEach(function(entry, idx) {
+            const $chip = $('<span class="species-entry"></span>');
+            $('<button type="button" class="species-entry-name"></button>')
+                .attr('title', translations.editEntry)
+                .text(`${entry.name} · ${entry.quantity} ${translations.quantityShort}`)
+                .on('click', function() { editSpeciesEntry(idx); })
+                .appendTo($chip);
+            $('<button type="button" class="species-entry-remove">×</button>')
+                .attr('title', translations.removeEntry)
+                .attr('aria-label', translations.removeEntry)
+                .on('click', function() { speciesEntries.splice(idx, 1); renderSpeciesEntries(); })
+                .appendTo($chip);
+            $box.append($chip);
+        });
+        $box.toggle(speciesEntries.length > 0);
+    }
+
+    // Adds an entry, replacing an earlier one for the same species. Returns
+    // false (and says why) when "empty" would be combined with a species.
+    function addSpeciesEntry(entry) {
+        const others = speciesEntries.filter(e => e.species_id !== entry.species_id);
+        if (others.length && (entry.species_id === EMPTY_SPECIES_ID ||
+                              others.some(e => e.species_id === EMPTY_SPECIES_ID))) {
+            alert(translations.emptyAlone);
+            return false;
+        }
+        speciesEntries = others.concat([entry]);
+        renderSpeciesEntries();
+        return true;
+    }
+
+    function editSpeciesEntry(idx) {
+        const entry = speciesEntries[idx];
+        const current = currentFormEntry();
+        speciesEntries.splice(idx, 1);
+        if (current && current.species_id !== entry.species_id && !addSpeciesEntry(current)) {
+            speciesEntries.splice(idx, 0, entry);  // nothing changes
+            renderSpeciesEntries();
+            return;
+        }
+        clearFormEntry();
+        putEntryInForm(entry);
+        renderSpeciesEntries();
+    }
+
+    function resetSpeciesEntries() {
+        speciesEntries = [];
+        renderSpeciesEntries();
+    }
+
+    $('#add-species-btn').on('click', function() {
+        const entry = currentFormEntry();
+        if (!entry) {
+            alert(translations.selectSpeciesToAdd);
+            return;
+        }
+        if (addSpeciesEntry(entry)) clearFormEntry();
+    });
+
     $(document).on('keydown', function(e) {
         if (!wrapper.is(':visible')) return;
         // Не перехоплювати клавіші, коли фокус у полі вводу (коментар, к-ть тощо).
@@ -1089,26 +1214,32 @@ $(document).ready(function() {
     form.on('submit', function(e) {
         e.preventDefault();
         
-        const selectedSpecies = $('input[name="species"]:checked').val();
-        
-        if (!selectedSpecies) {
+        // Chips plus whatever is selected in the form right now (a chip for
+        // the same species is replaced by the form's values).
+        const current = currentFormEntry();
+        let entries = speciesEntries.slice();
+        if (current) {
+            entries = entries.filter(en => en.species_id !== current.species_id).concat([current]);
+        }
+        if (entries.length === 0) {
             alert(translations.selectSpecies);
             return;
         }
-
-        // Collect selected behaviours from checkboxes.
-        const selectedBehaviors = [];
-        $('input[name="{{ form.behaviors.name }}"]:checked').each(function() {
-            selectedBehaviors.push(parseInt($(this).val()));
-        });
+        if (entries.length > 1 && entries.some(en => en.species_id === EMPTY_SPECIES_ID)) {
+            alert(translations.emptyAlone);
+            return;
+        }
 
         const identificationData = {
             observation_id: observationIdInput.val(),
-            species_id: selectedSpecies,
-            quantity: $('#{{ form.quantity.id }}').val(),
+            entries: entries.map(en => ({species_id: en.species_id, quantity: en.quantity,
+                                         behaviors: en.behaviors})),
+            // One-species fields kept for a server that predates `entries`.
+            species_id: entries[0].species_id,
+            quantity: entries[0].quantity,
+            behaviors: entries[0].behaviors,
             is_favorite: $('#{{ form.is_favorite.id }}').is(':checked'),
             current_photo_index: currentPhotoIndex, // current photo index.
-            behaviors: selectedBehaviors,
             comment: $('#{{ form.comment.id }}').val(),  // #47
             replace: editingSubmitted,
             csrf_token: $('input[name="csrf_token"]').val()

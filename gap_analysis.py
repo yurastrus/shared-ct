@@ -35,6 +35,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import text
 
 from . import gap_metrics as gm
+from .consensus import consensus_ctes
 
 VERIFIED_STATUSES = ('completed', 'archived')
 
@@ -199,9 +200,14 @@ def fetch_gap_data(session, inst_condition, inst_params, start_date=None, end_da
         if days:
             data.pending_days[lid] = days
 
-    # 4. Detection days per species (consensus winner of verified series).
+    # 4. Detection days per species (consensus species of verified series).
     categories = TAXON_GROUPS.get(taxon, TAXON_GROUPS['mammals'])
     params.update(categories=list(categories))
+    # Every accepted species of a verified series (consensus.py).
+    consensus_sql = consensus_ctes(
+        """FROM identifications i
+            JOIN photos p ON p.id = i.photo_id
+            WHERE p.observation_id IN (SELECT id FROM obs)""")
     rows = session.execute(text(f"""
         WITH obs AS (
             SELECT o.id, o.location_id, DATE(o.series_start_time) AS d
@@ -210,25 +216,11 @@ def fetch_gap_data(session, inst_condition, inst_params, start_date=None, end_da
             WHERE o.status IN ('completed', 'archived')
               AND {loc_where} {date_clause} {qc_clause}
         ),
-        oc AS (
-            SELECT p.observation_id, i.species_id,
-                   COUNT(DISTINCT i.user_id) AS vote_count,
-                   MAX(i.quantity) AS max_quantity
-            FROM identifications i
-            JOIN photos p ON p.id = i.photo_id
-            WHERE p.observation_id IN (SELECT id FROM obs)
-            GROUP BY p.observation_id, i.species_id
-        ),
-        rc AS (
-            SELECT observation_id, species_id,
-                   ROW_NUMBER() OVER (PARTITION BY observation_id
-                                      ORDER BY vote_count DESC, max_quantity DESC) AS rn
-            FROM oc
-        )
+        {consensus_sql}
         SELECT DISTINCT obs.location_id, obs.d, s.id, s.common_name_ua,
                s.common_name_en, s.scientific_name
         FROM obs
-        JOIN rc ON rc.observation_id = obs.id AND rc.rn = 1
+        JOIN RankedConsensus rc ON rc.observation_id = obs.id AND rc.accepted
         JOIN species s ON s.id = rc.species_id
         WHERE s.id > 0 AND s.category = ANY(:categories)
     """), params).fetchall()

@@ -380,9 +380,16 @@ class Identification(CTBase):
     species = relationship('Species', back_populates='identifications')
     behaviors = relationship('BehaviorType', secondary=identification_behaviors, back_populates='identifications')
 
-    # Unique constraint: one user can identify a single photo only once
+    # One row per (photo, user, species): a verifier may name several species
+    # in one series (2026-10), but never the same species twice. NULLS NOT
+    # DISTINCT keeps that true for legacy NULL-species rows. Existing databases
+    # get it from scripts/init_multi_species.py (was UNIQUE(photo_id, user_id)).
     __table_args__ = (
-        UniqueConstraint('photo_id', 'user_id', name='_photo_user_uc'),
+        UniqueConstraint('photo_id', 'user_id', 'species_id', name='_photo_user_species_uc',
+                         postgresql_nulls_not_distinct=True),
+        # Lookups by photo: the old (photo_id, user_id) unique index used to
+        # serve them. Production already has this index.
+        Index('idx_identifications_photo_id', 'photo_id'),
         # Filter/grouping by author: dashboard top-contributors,
         # contribution page. Index already exists on prod — declared here for
         # consistency with create_all on new/dev installations.

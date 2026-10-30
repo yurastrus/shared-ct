@@ -2,6 +2,7 @@
 from flask import current_app
 from sqlalchemy import text
 from .database import get_ct_engine
+from .consensus import consensus_ctes
 from app.models import User
 
 # Whitelist of valid QC flag names — prevents SQL injection when building
@@ -171,28 +172,15 @@ def get_ct_occurrence_data(filters, limit=None):
 
             # --- Shared CTEs (built from the identifications table) ---
             # Each one joins ScopedObs first: aggregate the park, not the archive.
+            # RankedConsensus.accepted marks every species of a series (several
+            # since multi-species identification, consensus.py); species_id is
+            # the deterministic tie-break for the primary one (rn = 1).
             shared_ctes = f"""
-                WITH {scoped_obs_cte},
-                ObservationConsensus AS (
-                    SELECT
-                        p.observation_id, i.species_id,
-                        COUNT(DISTINCT i.user_id) as vote_count,
-                        MAX(i.quantity) as max_quantity
-                    FROM identifications i
+                WITH {scoped_obs_cte},""" + consensus_ctes(
+                """FROM identifications i
                     JOIN photos p ON i.photo_id = p.id
-                    JOIN ScopedObs so ON so.observation_id = p.observation_id
-                    GROUP BY p.observation_id, i.species_id
-                ),
-                RankedConsensus AS (
-                    SELECT
-                        observation_id, species_id, max_quantity,
-                        ROW_NUMBER() OVER(
-                            PARTITION BY observation_id
-                            ORDER BY vote_count DESC, max_quantity DESC,
-                                     species_id  -- deterministic tie-break
-                        ) as rn
-                    FROM ObservationConsensus
-                ),
+                    JOIN ScopedObs so ON so.observation_id = p.observation_id""",
+                'vote_count DESC, max_quantity DESC, species_id') + """,
                 -- IDs of users who voted for each species in a series (per species,
                 -- so it serves both the winning row and each competing conflict row).
                 WinningIdentifiers AS (
@@ -207,7 +195,9 @@ def get_ct_occurrence_data(filters, limit=None):
                 )
             """
 
-            # Producer C — consensus rows (status completed/archived), one per series.
+            # Producer C — consensus rows (status completed/archived), one per accepted
+            # species: usually one per series, several when verifiers agreed on
+            # several species (consensus.py).
             producer_consensus = f"""
                     SELECT
                         o.id as observation_id,
@@ -220,9 +210,10 @@ def get_ct_occurrence_data(filters, limit=None):
                         wi.identifier_user_ids,
                         'human_consensus'::text as row_kind,
                         NULL::double precision as ai_confidence,
-                        NULL::text as ai_model_name
+                        NULL::text as ai_model_name,
+                        rc.rn as consensus_rank
                     FROM observations o
-                    JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+                    JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.accepted
                     JOIN locations l ON o.location_id = l.id
                     JOIN species s ON s.id = rc.species_id
                     LEFT JOIN WinningIdentifiers wi ON o.id = wi.observation_id AND rc.species_id = wi.species_id
@@ -244,7 +235,8 @@ def get_ct_occurrence_data(filters, limit=None):
                         wi.identifier_user_ids,
                         'human_conflict'::text as row_kind,
                         NULL::double precision as ai_confidence,
-                        NULL::text as ai_model_name
+                        NULL::text as ai_model_name,
+                        NULL::bigint as consensus_rank
                     FROM observations o
                     JOIN ObservationConsensus oc ON o.id = oc.observation_id
                     JOIN locations l ON o.location_id = l.id
@@ -291,7 +283,8 @@ def get_ct_occurrence_data(filters, limit=None):
                         'ai'::text as row_kind,
                         aip.prediction_score as ai_confidence,
                         (aip.model_name || ' ' || aip.model_version
-                            || COALESCE(' (' || aip.level_code || ')', '')) as ai_model_name
+                            || COALESCE(' (' || aip.level_code || ')', '')) as ai_model_name,
+                        NULL::bigint as consensus_rank
                     FROM observations o
                     JOIN AIPick aip ON o.id = aip.observation_id AND aip.rn = 1
                     JOIN locations l ON o.location_id = l.id
@@ -332,7 +325,7 @@ def get_ct_occurrence_data(filters, limit=None):
                 aggregation_cte = f"""
                     , RankedAggregatedData AS (
                         SELECT
-                            observation_id,
+                            observation_id, species_id,
                             ROW_NUMBER() OVER(
                                 PARTITION BY scientific_name, location_name, DATE(series_start_time)
                                 ORDER BY max_quantity DESC, series_start_time ASC,
@@ -342,7 +335,10 @@ def get_ct_occurrence_data(filters, limit=None):
                     )
                     SELECT bd.*
                     FROM BaseData bd
+                    -- (series, species), not series: a multi-species series has
+                    -- one row per species and each is aggregated on its own.
                     JOIN RankedAggregatedData rad ON bd.observation_id = rad.observation_id
+                                                 AND bd.species_id = rad.species_id
                     WHERE rad.agg_rn = 1
                 """
                 final_query_base = f"{base_query_cte} {aggregation_cte}"
@@ -363,7 +359,7 @@ def get_ct_occurrence_data(filters, limit=None):
                 params['agg_seconds'] = agg_minutes * 60
                 aggregation_cte = """
                     , EventTagged AS (
-                        SELECT observation_id, scientific_name, location_name,
+                        SELECT observation_id, species_id, scientific_name, location_name,
                                series_start_time, max_quantity,
                                CASE
                                  WHEN LAG(series_start_time) OVER w IS NULL THEN 1
@@ -376,7 +372,7 @@ def get_ct_occurrence_data(filters, limit=None):
                                      ORDER BY series_start_time)
                     ),
                     EventGrouped AS (
-                        SELECT observation_id, scientific_name, location_name,
+                        SELECT observation_id, species_id, scientific_name, location_name,
                                series_start_time, max_quantity,
                                SUM(is_new_event) OVER (
                                    PARTITION BY scientific_name, location_name
@@ -386,7 +382,7 @@ def get_ct_occurrence_data(filters, limit=None):
                         FROM EventTagged
                     ),
                     RankedAggregatedData AS (
-                        SELECT observation_id,
+                        SELECT observation_id, species_id,
                                ROW_NUMBER() OVER(
                                    PARTITION BY scientific_name, location_name, event_id
                                    ORDER BY max_quantity DESC, series_start_time ASC,
@@ -396,7 +392,10 @@ def get_ct_occurrence_data(filters, limit=None):
                     )
                     SELECT bd.*
                     FROM BaseData bd
+                    -- (series, species), not series: a multi-species series has
+                    -- one row per species and each is aggregated on its own.
                     JOIN RankedAggregatedData rad ON bd.observation_id = rad.observation_id
+                                                 AND bd.species_id = rad.species_id
                     WHERE rad.agg_rn = 1
                 """
                 final_query_base = f"{base_query_cte} {aggregation_cte}"
@@ -477,8 +476,11 @@ def get_ct_occurrence_data(filters, limit=None):
 
                 # Per-row occurrenceID must stay unique; conflict rows share a series
                 # so disambiguate them by taxon. observationID is the shared grouping key.
+                # A further accepted species of a multi-species series gets the
+                # same taxon suffix; the primary keeps the plain ID it always had,
+                # so IDs of exported records never change when a species is added.
                 occurrence_id = f"URN:ctmon:{institution_code}:observation:{row['observation_id']}"
-                if row_kind == 'human_conflict':
+                if row_kind == 'human_conflict' or (row.get('consensus_rank') or 1) > 1:
                     occurrence_id += f":taxon:{row['species_id']}"
 
                 occurrence_data.append({

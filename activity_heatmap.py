@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from sqlalchemy import text
 
+from .consensus import consensus_ctes
+
 
 def _build_matrix(rows):
     """Build the 24×12 count matrix from raw (hour, month, count) rows.
@@ -78,33 +80,15 @@ def fetch_heatmap_data(session, species_id, location_ids=None,
     qc_pred = _build_qc_exclusion_cond(qc_exclude or [], obs_alias='o')
     qc_clause = ("AND " + qc_pred) if qc_pred else ""
 
-    sql = f"""
-        WITH ObservationConsensus AS (
-            SELECT
-                p.observation_id,
-                i.species_id,
-                COUNT(DISTINCT i.user_id) AS vote_count,
-                MAX(i.quantity)           AS max_quantity
-            FROM identifications i
-            JOIN photos p ON i.photo_id = p.id
-            GROUP BY p.observation_id, i.species_id
-        ),
-        RankedConsensus AS (
-            SELECT
-                observation_id,
-                species_id,
-                ROW_NUMBER() OVER (
-                    PARTITION BY observation_id
-                    ORDER BY vote_count DESC, max_quantity DESC
-                ) AS rn
-            FROM ObservationConsensus
-        )
+    # Every accepted species of a series is a detection (consensus.py).
+    sql = "WITH " + consensus_ctes(
+        "FROM identifications i JOIN photos p ON i.photo_id = p.id") + f"""
         SELECT
             CAST(EXTRACT(HOUR  FROM o.series_start_time) AS INTEGER) AS hour_of_day,
             CAST(EXTRACT(MONTH FROM o.series_start_time) AS INTEGER) AS month_of_year,
             COUNT(*) AS detection_count
         FROM observations o
-        JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+        JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.accepted
         WHERE rc.species_id = :species_id
           AND o.status IN ('completed', 'archived')
           AND o.location_id IN (SELECT id FROM locations WHERE is_valid IS NOT FALSE)

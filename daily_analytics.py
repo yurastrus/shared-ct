@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.stats import gaussian_kde
 from sqlalchemy import text
+from .consensus import consensus_ctes
 import io
 import csv
 
@@ -27,27 +28,15 @@ def fetch_raw_daily_data(session, start_date, end_date, species_ids, location_id
     qc_pred = _build_qc_exclusion_cond(qc_exclude or [], obs_alias='o')
     qc_clause = ("AND " + qc_pred) if qc_pred else ""
 
-    query_sql = f"""
-        WITH ObservationConsensus AS (
-            SELECT
-                p.observation_id, i.species_id,
-                COUNT(DISTINCT i.user_id) as vote_count,
-                MAX(i.quantity) as max_quantity
-            FROM identifications i JOIN photos p ON i.photo_id = p.id
-            GROUP BY p.observation_id, i.species_id
-        ),
-        RankedConsensus AS (
-            SELECT
-                observation_id, species_id,
-                ROW_NUMBER() OVER(PARTITION BY observation_id ORDER BY vote_count DESC, max_quantity DESC) as rn
-            FROM ObservationConsensus
-        )
+    # Every accepted species of a series is a detection (consensus.py).
+    query_sql = "WITH " + consensus_ctes(
+        "FROM identifications i JOIN photos p ON i.photo_id = p.id") + f"""
         SELECT
             rc.species_id,
             o.location_id,
             EXTRACT(EPOCH FROM o.series_start_time::time)/3600.0 as decimal_hour
         FROM observations o
-        JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.rn = 1
+        JOIN RankedConsensus rc ON o.id = rc.observation_id AND rc.accepted
         WHERE
             rc.species_id IN :species_ids
             AND o.status IN ('completed', 'archived')

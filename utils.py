@@ -12,6 +12,7 @@ from sqlalchemy import func, text
 from flask import current_app
 from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import Location, Observation, Photo, UploadBatch, Identification
+from .consensus import accepted_species, consensus_ctes, has_majority, tally_votes
 
 
 def get_user_ct_stats(user_id, lang='uk'):
@@ -27,7 +28,9 @@ def get_user_ct_stats(user_id, lang='uk'):
     engine = get_ct_engine()
     with engine.connect() as conn:
         agg = conn.execute(text("""
-            SELECT COUNT(*) AS idents,
+            -- DISTINCT photo: one person may hold several rows per photo (one
+            -- per species) since multi-species identification.
+            SELECT COUNT(DISTINCT i.photo_id) AS idents,
                    COUNT(DISTINCT p.observation_id) AS series,
                    COUNT(DISTINCT CASE WHEN i.species_id > 0 THEN i.species_id END) AS species
             FROM identifications i
@@ -820,30 +823,29 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
 
         user_identifications = db_session.query(
             Identification.user_id,
-            Identification.species_id
+            Identification.species_id,
+            Identification.quantity,
         ).join(Photo).filter(
             Photo.observation_id == observation_id
         ).distinct().all()
 
-        # Keep only this logging call
-        if len(user_identifications) >= min_identifications:
-            current_app.logger.info(f"Processing observation {observation_id}: {len(user_identifications)} identifications")
+        # Votes are people: one verifier may name several species, and each
+        # answer is copied onto every photo of the series.
+        per_species, voters = tally_votes(user_identifications)
 
-        if len(user_identifications) < min_identifications:
+        if voters >= min_identifications:
+            current_app.logger.info(f"Processing observation {observation_id}: {voters} verifiers")
+
+        if voters < min_identifications:
             return
 
-        votes = {}
-        for user_id, species_id in user_identifications:
-            votes[species_id] = votes.get(species_id, 0) + 1
-
-        if votes:
-            winner_species, winner_votes = max(votes.items(), key=lambda x: x[1])
-            vote_percentage = winner_votes / len(user_identifications)
-
-            if vote_percentage > 0.5:
-                mark_observation_complete(observation_id, db_session=db_session,
-                                          winner_species_id=winner_species)
-                current_app.logger.info(f"Completed observation {observation_id}")
+        if has_majority(per_species, voters):
+            winner_species = max(per_species.items(), key=lambda x: x[1][0])[0]
+            mark_observation_complete(
+                observation_id, db_session=db_session,
+                winner_species_id=winner_species,
+                accepted_species_ids=accepted_species(per_species, voters, winner_species))
+            current_app.logger.info(f"Completed observation {observation_id}")
 
     except Exception as e:
         current_app.logger.error(f"Error in check_consensus_for_observation {observation_id}: {e}")
@@ -874,12 +876,14 @@ def reopen_observation(observation_id, db_session):
     db_session.flush()
 
 
-def mark_observation_complete(observation_id, db_session, winner_species_id=None):
+def mark_observation_complete(observation_id, db_session, winner_species_id=None,
+                              accepted_species_ids=None):
     """Mark an observation as complete.
 
     If winner_species_id (consensus species) is provided, records the
     correctness of AI predictions for this series (Idea 4):
-      was_correct = (prediction_species_id == winner_species_id),
+      was_correct = prediction_species_id is one of the accepted species
+                    (accepted_species_ids; just the winner when not given),
       None — if AI did not identify a species (prediction_species_id IS NULL).
     """
     try:
@@ -895,6 +899,7 @@ def mark_observation_complete(observation_id, db_session, winner_species_id=None
             # (ai_predictions does not exist) this must not abort the
             # consensus itself.
             if winner_species_id is not None:
+                accepted = set(accepted_species_ids or [winner_species_id])
                 try:
                     from .models import AIPrediction
                     preds = db_session.query(AIPrediction).filter(
@@ -905,7 +910,7 @@ def mark_observation_complete(observation_id, db_session, winner_species_id=None
                             pred.was_correct = None  # AI did not identify a species → undetermined
                         else:
                             pred.was_correct = (
-                                pred.prediction_species_id == winner_species_id
+                                pred.prediction_species_id in accepted
                             )
                 except Exception as ai_exc:
                     current_app.logger.warning(
@@ -927,38 +932,44 @@ def migrate_pending_observations_to_single_identification():
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
         min_identifications = config.get('MIN_IDENTIFICATIONS', 3)
 
-        # Single query for all pending observations with enough identifications
-        subquery = ct_session.query(
-            Photo.observation_id,
-            func.count(func.distinct(Identification.user_id)).label('user_count'),
-            Identification.species_id,
-            func.count(Identification.species_id).label('species_votes')
-        ).join(Identification)\
-        .filter(
-            Photo.observation_id.in_(
-                ct_session.query(Observation.id).filter(Observation.status == 'pending')
-            )
-        )\
-        .group_by(Photo.observation_id, Identification.species_id)\
-        .subquery()
+        # Same rule as check_consensus_for_observation, for every pending series
+        # in one query: enough verifiers, and the top species named by more
+        # than half of them. (Until 2026-10 this compared identification ROWS,
+        # photos x people, with the voters of that one species: any species
+        # with MIN_IDENTIFICATIONS voters closed the series, even when another
+        # species had more.)
+        rows = ct_session.execute(text(
+            "WITH " + consensus_ctes(
+                """FROM identifications i JOIN photos p ON i.photo_id = p.id
+                   JOIN observations o ON o.id = p.observation_id
+                   WHERE o.status = 'pending'""") + """
+            SELECT observation_id, species_id, rn, accepted, vote_count, voters
+            FROM RankedConsensus
+            WHERE voters >= :min_ids
+              AND observation_id IN (
+                  SELECT observation_id FROM RankedConsensus
+                  WHERE rn = 1 AND vote_count * 2 > voters)
+            ORDER BY observation_id, rn
+        """), {'min_ids': min_identifications}).fetchall()
 
-        # Find observations with consensus
-        consensus_observations = ct_session.query(
-            subquery.c.observation_id,
-            subquery.c.species_id,
-            subquery.c.species_votes,
-            subquery.c.user_count
-        ).filter(
-            subquery.c.user_count >= min_identifications,
-            subquery.c.species_votes > (subquery.c.user_count / 2)
-        ).all()
+        series = {}
+        for obs_id, species_id, rn, accepted, votes, total_users in rows:
+            entry = series.setdefault(obs_id, {'winner': None, 'accepted': [],
+                                               'votes': votes, 'voters': total_users})
+            if rn == 1:
+                entry['winner'] = species_id
+            if accepted:
+                entry['accepted'].append(species_id)
 
         completed_count = 0
-        for obs_id, species_id, votes, total_users in consensus_observations:
+        for obs_id, entry in series.items():
             mark_observation_complete(obs_id, db_session=ct_session,
-                                      winner_species_id=species_id)
+                                      winner_species_id=entry['winner'],
+                                      accepted_species_ids=entry['accepted'])
             completed_count += 1
-            current_app.logger.info(f"Completed observation {obs_id}: {votes}/{total_users} votes for species {species_id}")
+            current_app.logger.info(
+                f"Completed observation {obs_id}: {entry['votes']}/{entry['voters']} "
+                f"votes for species {entry['winner']}")
 
         ct_session.commit()
         return completed_count

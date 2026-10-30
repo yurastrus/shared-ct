@@ -167,9 +167,15 @@ def run_verification_import(session, location_id, rows, verifier_user_id):
             continue
 
         for photo in obs.photos:
-            existing = (session.query(Identification)
+            own_rows = (session.query(Identification)
                         .filter_by(user_id=verifier_user_id, photo_id=photo.id)
-                        .first())
+                        .all())
+            # Since 2026-10 one verifier may hold several species rows on a
+            # photo. Only a single-row answer is the import's own to rewrite;
+            # a multi-species answer was given by hand and is left alone.
+            existing = own_rows[0] if len(own_rows) == 1 else None
+            if len(own_rows) > 1:
+                continue
             if existing is None:
                 session.add(Identification(
                     photo_id=photo.id,
