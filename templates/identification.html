@@ -444,6 +444,16 @@ $(document).ready(function() {
                 language: {noResults: () => "{{ _('Нічого не знайдено') }}"},
             });
         });
+        // select2 puts the focus back on its box after closing, and that box
+        // opens the list again on Enter/Space/arrows before the page keys see
+        // them: Ctrl+Enter reopened the AI list instead of sending. A chosen
+        // filter gives the keys back to the page, as the species search does.
+        $('#scope-select, #ai-species-select').on('select2:close', function() {
+            setTimeout(function() {
+                const active = document.activeElement;
+                if (active && $(active).closest('.select2-container').length) active.blur();
+            }, 0);
+        });
     }
 
     applyFilterPlaceholders();
