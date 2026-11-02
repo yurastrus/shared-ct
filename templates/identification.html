@@ -196,6 +196,8 @@
                             (['Shift+←'], _('Повернутися до попередньої надісланої серії')),
                             (['Ctrl+Enter'], _('Надіслати')),
                             (['1…9', '0'], _('Тег із цим номером (номер видно біля тегу)')),
+                            (['Shift+1…9', 'Shift+0'], _('Кількість особин 1…9, Shift+0 = 10')),
+                            (['Q'], _('Вписати кількість вручну: Enter або Esc повертає до клавіш')),
                             (['T'], _('Пошук тегу: набрати назву, потім цифра або Enter; Esc закриває')),
                             (['/'], _('Пошук виду: Enter обирає перший знайдений; Esc очищає, повторний Esc виходить з пошуку')),
                             (['F'], _('У вибране')),
@@ -1329,6 +1331,15 @@ $(document).ready(function() {
         displayCurrentPhoto();
     }
 
+    // Enter in the count field confirms the number instead of sending the form
+    // (Ctrl+Enter still sends).
+    $('#{{ form.quantity.id }}').on('keydown', function(e) {
+        if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            this.blur();
+        }
+    });
+
     $(document).on('keydown', function(e) {
         if (!wrapper.is(':visible')) return;
         const code = keyCode(e);
@@ -1349,7 +1360,10 @@ $(document).ready(function() {
 
         const digit = digitOf(e);
         let handled = true;
-        if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
+        // Shift+digit first: in the Ukrainian layout Shift+7 types "?".
+        if (digit !== null && e.shiftKey) {
+            $('#{{ form.quantity.id }}').val(digit === 0 ? 10 : digit).trigger('change');
+        } else if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
             toggleHelp();
         } else if (code === 'ArrowRight' && e.shiftKey) {
             if (!e.repeat) skipBtn.trigger('click');
@@ -1378,6 +1392,8 @@ $(document).ready(function() {
                 const $fav = $('#{{ form.is_favorite.id }}');
                 $fav.prop('checked', !$fav.prop('checked')).trigger('change');
             }
+        } else if (code === 'KeyQ' && !e.shiftKey) {
+            $('#{{ form.quantity.id }}').trigger('focus').trigger('select');
         } else if (code === 'KeyI' && !e.shiftKey) {
             if (!e.repeat) $('#invert-btn').trigger('click');
         } else if (e.key === 'Escape') {
