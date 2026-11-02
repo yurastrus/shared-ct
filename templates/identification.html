@@ -940,6 +940,90 @@ $(document).ready(function() {
             });
         }
 
+        // ── Наступна серія підтягується заздалегідь ──────────────────────────
+        // Поки людина дивиться поточну серію, сторінка вже питає сервер про
+        // наступну (крім поточної) і вантажить її перші кадри. Після «Надіслати»
+        // чи «Пропустити» серія з'являється одразу, без очікування запиту.
+        // Попередня вибірка годиться, лише якщо фільтри ті самі, на екрані та
+        // сама серія і вона не застаріла; інакше звичайний запит.
+        // Фільтри сторінки як параметри запиту наступної серії.
+        function nextObservationParams() {
+            const params = new URLSearchParams();
+
+            // Scope filter (institution or ecoregion).
+            const scopeVal = $('#scope-select').val() || '';
+            if (scopeVal.startsWith('institution:')) {
+                params.set('scope_institution_id', scopeVal.split(':')[1]);
+            } else if (scopeVal.startsWith('ecoregion:')) {
+                params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
+            }
+
+            // AI filter: show only series where AI identified this species.
+            const aiSpeciesId = $('#ai-species-select').val();
+            if (aiSpeciesId) {
+                params.set('ai_species_id', aiSpeciesId);
+            }
+
+            // Sort order — sent in both normal and review mode.
+            params.set('sort_by', sortBy);
+
+            if (reviewMode) {
+                params.set('review', 'true');
+                if (reviewFiltersData.userId) params.append('review_user_id', reviewFiltersData.userId);
+                if (reviewFiltersData.speciesId) params.append('review_species_id', reviewFiltersData.speciesId);
+            }
+            return params;
+        }
+
+        const nextObservationUrl ="{{ url_for('camera_traps.next_observation_for_identification', lang_code=g.lang_code) }}";
+        const NEXT_PREFETCH_MAX_AGE_MS = 2 * 60 * 1000;
+        const NEXT_PREFETCH_FRAMES = 3;
+        let nextPrefetch = null;  // {key, excludeId, at, promise, images}
+
+        function fetchObservation(query) {
+            return fetch(nextObservationUrl + (query ? '?' + query : ''))
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => Promise.reject(err));
+                    }
+                    return response.json();
+                });
+        }
+
+        function prefetchNextObservation() {
+            nextPrefetch = null;
+            if (!currentObservation) return;
+            const key = nextObservationParams().toString();
+            const params = nextObservationParams();
+            params.append('exclude_obs_id', currentObservation.observation_id);
+            const entry = {key: key, excludeId: currentObservation.observation_id,
+                           at: Date.now(), images: []};
+            entry.promise = fetchObservation(params.toString()).then(data => {
+                // Тримати посилання на Image, щоб браузер не викинув кадри з пам'яті.
+                (data.photos || []).slice(0, NEXT_PREFETCH_FRAMES).forEach(p => {
+                    const img = new Image();
+                    img.src = p.thumbnail_url;
+                    entry.images.push(img);
+                });
+                return data;
+            });
+            entry.promise.catch(() => {});  // невдала попередня вибірка = звичайний запит потім
+            nextPrefetch = entry;
+        }
+
+        // Проміс із заздалегідь узятою серією, або null, якщо вона не годиться.
+        function takePrefetchedObservation(key) {
+            const entry = nextPrefetch;
+            nextPrefetch = null;
+            if (!entry || entry.key !== key || !currentObservation
+                    || entry.excludeId !== currentObservation.observation_id
+                    || Date.now() - entry.at > NEXT_PREFETCH_MAX_AGE_MS) {
+                return null;
+            }
+            // 404 без поточної серії ще не означає «більше нічого»: спитати як завжди.
+            return entry.promise.catch(() => fetchObservation(key));
+        }
+
         function loadNextObservation() {
         const goingBack = _loadingBack;
         _loadingBack = false;
@@ -950,47 +1034,21 @@ $(document).ready(function() {
         const _savedScrollY = window.scrollY;
         wrapper.css('opacity', 0.5);
 
-        let apiUrl = "{{ url_for('camera_traps.next_observation_for_identification', lang_code=g.lang_code) }}";
-        const params = new URLSearchParams();
+        const params = nextObservationParams();
+        const key = params.toString();
+        let request = null;
 
         // Якщо є «стартова» серія (прийшли зі сторінки зафлагованих) — передати один раз.
         if (_pendingStartObsId) {
             params.set('start_obs_id', _pendingStartObsId);
             _pendingStartObsId = null;  // одноразово
+            nextPrefetch = null;
+        } else {
+            request = takePrefetchedObservation(key);
         }
+        if (!request) request = fetchObservation(params.toString());
 
-        // Scope filter (institution or ecoregion).
-        const scopeVal = $('#scope-select').val() || '';
-        if (scopeVal.startsWith('institution:')) {
-            params.set('scope_institution_id', scopeVal.split(':')[1]);
-        } else if (scopeVal.startsWith('ecoregion:')) {
-            params.set('scope_ecoregion', scopeVal.slice('ecoregion:'.length));
-        }
-
-        // AI filter: show only series where AI identified this species.
-        const aiSpeciesId = $('#ai-species-select').val();
-        if (aiSpeciesId) {
-            params.set('ai_species_id', aiSpeciesId);
-        }
-
-        // Sort order — sent in both normal and review mode.
-        params.set('sort_by', sortBy);
-
-        if (reviewMode) {
-            params.set('review', 'true');
-            if (reviewFiltersData.userId) params.append('review_user_id', reviewFiltersData.userId);
-            if (reviewFiltersData.speciesId) params.append('review_species_id', reviewFiltersData.speciesId);
-        }
-
-        if (params.toString()) apiUrl += '?' + params.toString();
-
-        fetch(apiUrl)
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(err => Promise.reject(err));
-                }
-                return response.json();
-            })
+        request
             .then(data => {
                 currentObservation = data;
                 currentPhotoIndex = 0;
@@ -1040,6 +1098,9 @@ $(document).ready(function() {
 
                 // Якщо тумблер увімкнений — нова серія одразу в автопрокрутці.
                 if (autoPlay) startAutoPlay();
+
+                // Поки людина працює з цією серією, підтягнути наступну.
+                prefetchNextObservation();
 
                 // Restore scroll after the DOM/photo swap so the page doesn't
                 // jump to the top on every verdict button press.

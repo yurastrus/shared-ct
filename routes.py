@@ -4342,7 +4342,14 @@ def submit_identification(lang_code):
         # Validate the index
         if current_photo_index >= len(photos_sorted):
             current_photo_index = 0  # Fallback to first photo
-                
+
+        # Photos the caller already answered, in one query rather than one per photo.
+        answered_photo_ids = {
+            pid for (pid,) in ct_session.query(Identification.photo_id).filter(
+                Identification.user_id == current_user.id,
+                Identification.photo_id.in_([p.id for p in photos_sorted]))
+        }
+
         for i, photo in enumerate(photos_sorted):
             # Set is_favorite only for the current photo. A correction never
             # clears a favourite: the flag is shared, and the form on a
@@ -4356,9 +4363,7 @@ def submit_identification(lang_code):
             # before multi-species: a double click or a stale second tab must
             # not add species to an answer. Changing an answer goes through
             # `replace`, which removed the old rows above.
-            already = ct_session.query(Identification.id).filter_by(
-                user_id=current_user.id, photo_id=photo.id).first()
-            if already:
+            if photo.id in answered_photo_ids:
                 continue
             photo.identification_count += 1  # people per photo, not species rows
             for entry in entries:
@@ -4473,7 +4478,24 @@ def _identify_voted_subq(status_filter, extra_filters=()):
     return q.distinct().subquery()
 
 
-def _apply_identify_sort(query, sort_by, status_filter, extra_filters=()):
+def _series_photo_probe(column):
+    """`column` of one photo of the outer query's series, as a correlated scalar.
+
+    Identifications are written to every photo of a series (submit-identification
+    copies the rows across), so one photo answers "has anyone voted here" and
+    "have I voted here". PERF: asking the whole series instead meant joining all
+    photos (0.8M rows) to all identifications on every /identify request, about
+    0.5 s on production; one index probe per candidate series is ~0.05 s.
+    """
+    return (select(column)
+            .where(Photo.observation_id == Observation.id)
+            .correlate(Observation)
+            .limit(1)
+            .scalar_subquery())
+
+
+def _apply_identify_sort(query, sort_by, status_filter, extra_filters=(),
+                         voted_expr=None):
     """Apply one of IDENTIFY_SORT_OPTIONS to `query`.
 
     'priority_random' (the default) has exactly two tiers: series somebody has
@@ -4487,6 +4509,9 @@ def _apply_identify_sort(query, sort_by, status_filter, extra_filters=()):
     so `LIMIT 1` returned that same series every time and the skip button could
     not move off it until somebody else voted. Two coarse tiers put random()
     first in practice, which is what makes skipping work at all.
+
+    `voted_expr`, when given, is a cheap per-series "has votes" expression used
+    for the first tier instead of the voted-series subquery.
     """
     if sort_by == 'date_desc':
         return query.order_by(Observation.series_start_time.desc())
@@ -4499,6 +4524,8 @@ def _apply_identify_sort(query, sort_by, status_filter, extra_filters=()):
     elif sort_by == 'random':
         return query.order_by(func.random())
     else:  # 'priority_random'
+        if voted_expr is not None:
+            return query.order_by(voted_expr.desc(), func.random())
         voted_subq = _identify_voted_subq(status_filter, extra_filters)
         query = query.outerjoin(
             voted_subq, voted_subq.c.observation_id == Observation.id)
@@ -4525,6 +4552,9 @@ def next_observation_for_identification(lang_code):
         # ('not_empty', 'animals'). observations_subq_for_ai_filter sorts it out.
         ai_filter = request.args.get('ai_species_id') or None
         start_obs_id = request.args.get('start_obs_id', type=int)  # open a specific series first
+        # The page prefetches the next series while the current one is still on
+        # screen, so it asks for "anything but the series I am showing now".
+        exclude_obs_ids = [i for i in request.args.getlist('exclude_obs_id', type=int)][:5]
 
         # Check access rights for review mode
         if review_mode and not ct_access.manages_any(current_user):
@@ -4664,6 +4694,9 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
+            if exclude_obs_ids:
+                query = query.filter(Observation.id.notin_(exclude_obs_ids))
+
             # Add user filter
             if review_user_id:
                 query = query.filter(
@@ -4687,11 +4720,18 @@ def next_observation_for_identification(lang_code):
             observation = query.first()
 
         else:
-            # Normal mode — pending only
+            # Normal mode — pending only, series this user has not answered.
+            # One photo per series is enough, see _series_photo_probe.
             query = ct_session.query(Observation).filter(
                 Observation.status == 'pending',
-                ~Observation.photos.any(Photo.id.in_(user_identified_photos))
+                ~select(Identification.id).where(
+                    Identification.user_id == current_user.id,
+                    Identification.photo_id == _series_photo_probe(Photo.id),
+                ).exists()
             )
+
+            if exclude_obs_ids:
+                query = query.filter(Observation.id.notin_(exclude_obs_ids))
 
             if not is_admin:
                 query = query.join(Location, Observation.location_id == Location.id)\
@@ -4703,8 +4743,10 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
+            voted_expr = select(Identification.id).where(
+                Identification.photo_id == _series_photo_probe(Photo.id)).exists()
             query = _apply_identify_sort(query, sort_by, Observation.status == 'pending',
-                                         identify_extra_filters)
+                                         identify_extra_filters, voted_expr=voted_expr)
             observation = query.first()
         
         if not observation:
@@ -4809,7 +4851,10 @@ def next_observation_for_identification(lang_code):
             # identification present is from another user). Lets the front end keep
             # the "(N) already identified" counter accurate on submit without a
             # round trip.
-            'has_other_identifications': any(p.identifications for p in photos_sorted),
+            # One query, not a lazy load of identifications per photo.
+            'has_other_identifications': ct_session.query(Identification.id).filter(
+                Identification.photo_id.in_([p.id for p in photos_sorted])
+            ).first() is not None,
         }
 
         # AI prediction for this observation (if present): pass to the front end
