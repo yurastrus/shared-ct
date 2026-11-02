@@ -238,11 +238,12 @@
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
                                 <button type="button" id="back-btn" class="btn btn-secondary" disabled title="{{ _('Повернутися до попередньої серії, щоб виправити відповідь') }} (Shift+←)">&lt;</button>
-                                <button type="submit" class="btn btn-primary" title="Ctrl+Enter">{{ _('Надіслати') }}</button>
+                                <button type="submit" id="submit-btn" class="btn btn-primary" title="Ctrl+Enter">{{ _('Надіслати') }}<span id="unseen-count"></span></button>
                                 <button type="button" id="skip-btn" class="btn btn-secondary" title="Shift+→">{{ _('Пропустити') }}</button>
                                 <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩</button>
                             </div>
                         </div>
+                        <div id="unseen-warning" class="unseen-warning" role="status" hidden></div>
                     </div>
                     
                     <!-- Count + Favourites — above the species list -->
@@ -471,7 +472,8 @@ $(document).ready(function() {
         alreadyIdentifiedTitle: "{{ _('У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою думку.') }}",
         rightsPrefix: "{{ _('© Фото належать') }}",
         rightsSuffix: "{{ _('Копіювання і поширення заборонене.') }}",
-        rightsGeneric: "{{ _('© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.') }}"
+        rightsGeneric: "{{ _('© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.') }}",
+        seeAllFrames: "{{ _('Спершу перегляньте всі фото серії (стрілки або автопрокрутка). Не переглянуто:') }}"
     };
 
     // Render the "Залишилось вам: N (M)" counter from the current state.
@@ -758,11 +760,46 @@ $(document).ready(function() {
         photoDisplay.css('filter', invertActive ? 'invert(1)' : '');
     });
 
+    // ── Відповідь лише після перегляду всіх фото серії ───────────────────────
+    // «Надіслати» (і Ctrl+Enter) заблоковані, доки кожен кадр серії не побував
+    // на екрані: стрілками, Home/End, кліком чи автопрокруткою. Захищає від
+    // відповіді за першим кадром, зокрема коли автопрокрутку забули ввімкнути.
+    // Виправлення власної відповіді («<») не блокується: серію вже переглядали.
+    let seenPhotos = new Set();
+    const submitBtn = $('#submit-btn');
+
+    function unseenPhotoCount() {
+        if (!currentObservation || !currentObservation.photos || editingSubmitted) return 0;
+        return currentObservation.photos.length - seenPhotos.size;
+    }
+
+    // Not [disabled]: a disabled button shows no hover title in some browsers,
+    // and the title is how the reason is explained. The submit handler refuses.
+    function updateSubmitGate() {
+        const left = unseenPhotoCount();
+        const n = currentObservation && currentObservation.photos ? currentObservation.photos.length : 0;
+        submitBtn.toggleClass('submit-gated', left > 0)
+            .attr('aria-disabled', left > 0 ? 'true' : null)
+            .attr('title', left > 0 ? `${translations.seeAllFrames} ${left}` : 'Ctrl+Enter');
+        $('#unseen-count').text(left > 0 ? ` ${seenPhotos.size}/${n}` : '');
+        if (left === 0) $('#unseen-warning').prop('hidden', true);
+    }
+
+    // Ctrl+Enter зарано: попередження на 2 секунди.
+    let unseenWarningTimer = null;
+    function warnUnseenPhotos() {
+        $('#unseen-warning').text(`${translations.seeAllFrames} ${unseenPhotoCount()}`).prop('hidden', false);
+        clearTimeout(unseenWarningTimer);
+        unseenWarningTimer = setTimeout(() => $('#unseen-warning').prop('hidden', true), 2000);
+    }
+
     function displayCurrentPhoto() {
         if (!currentObservation || !currentObservation.photos || !currentObservation.photos[currentPhotoIndex]) return;
 
         const photo = currentObservation.photos[currentPhotoIndex];
         const photoCount = currentObservation.photos.length;
+        seenPhotos.add(currentPhotoIndex);
+        updateSubmitGate();
 
         photoDisplay.attr('src', photo.thumbnail_url);
         photoDisplay.css('filter', invertActive ? 'invert(1)' : '');
@@ -1052,6 +1089,7 @@ $(document).ready(function() {
             .then(data => {
                 currentObservation = data;
                 currentPhotoIndex = 0;
+                seenPhotos = new Set();
                 resetPrefetch();  // нова серія — скинути кеш предзавантаження
                 observationIdInput.val(data.observation_id);
                 displayCurrentPhoto();
@@ -1092,6 +1130,8 @@ $(document).ready(function() {
                                          behaviors: m.behavior_ids || []});
                     });
                 }
+
+                updateSubmitGate();  // editingSubmitted is known only now
 
                 // 2. Restore checkbox state after form reset.
                 updateReviewModeUI();
@@ -1479,7 +1519,9 @@ $(document).ready(function() {
         // Ctrl+Enter submits from anywhere, the comment box included.
         if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || code === 'Enter' || code === 'NumpadEnter')) {
             e.preventDefault();
-            if (!e.repeat) form.find('button[type="submit"]').trigger('click');
+            if (e.repeat) return;
+            if (unseenPhotoCount() > 0) warnUnseenPhotos();
+            else submitBtn.trigger('click');
             return;
         }
         if (isTextField(e.target)) {
@@ -1584,7 +1626,8 @@ $(document).ready(function() {
 
     form.on('submit', function(e) {
         e.preventDefault();
-        
+        if (unseenPhotoCount() > 0) return;  // the gated button just does nothing
+
         // Chips plus whatever is selected in the form right now (a chip for
         // the same species is replaced by the form's values).
         const current = currentFormEntry();

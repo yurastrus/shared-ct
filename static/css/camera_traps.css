@@ -1918,6 +1918,13 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .hotkeys-off .tag-key { display: none !important; }
 @keyframes key-flash { from { background-color: rgba(255, 193, 7, 0.55); } to { background-color: transparent; } }
 .key-flash { animation: key-flash 1.2s ease-out; border-radius: var(--radius-sm); }
+/* /identify: "Надіслати" until every frame of the series was on screen. Not
+   [disabled]: a disabled button shows no hover title in some browsers. */
+.submit-gated { opacity: 0.55; cursor: not-allowed; }
+.unseen-warning {
+    margin-top: 6px; padding: 4px 8px; font-size: 0.8rem; border-radius: var(--radius-sm);
+    background: #fff3cd; color: #664d03; border: 1px solid #ffe69c;
+}
 .hotkeys-help {
     margin-top: 16px;
     padding: 6px 12px;
