@@ -1255,14 +1255,17 @@ $(document).ready(function() {
             $(this).toggle(words.every(w => labelWords.some(lw => lw.startsWith(w))));
         });
         if (words.length) {
-            tagRows.find('.tag-key').hide();
+            // .css('display', ...) rather than show()/toggle(): while the keys
+            // are off the badge is display:none by CSS, and jQuery's show()
+            // would then write an inline display:block that outlives the switch.
+            tagRows.find('.tag-key').css('display', 'none');
             visibleTagRows().slice(0, 10).each(function(i) {
-                $(this).find('.tag-key').text((i + 1) % 10).show();
+                $(this).find('.tag-key').text((i + 1) % 10).css('display', '');
             });
         } else {
             tagRows.each(function() {
                 const key = $(this).attr('data-hotkey');
-                $(this).find('.tag-key').text(key).toggle(key !== '');
+                $(this).find('.tag-key').text(key).css('display', key !== '' ? '' : 'none');
             });
         }
     }
