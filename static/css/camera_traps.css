@@ -1869,6 +1869,54 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .behavior-checkboxes .form-check         { margin-bottom: 0; flex: 0 0 auto; }
 .behavior-checkboxes .form-check-label   { font-size: 0.82rem; white-space: nowrap; color: var(--text-primary); transition: color 0.3s ease; }
 
+/* Keyboard shortcuts on /identify: digit badges on tags, tag search, help. */
+.behavior-checkboxes .tag-search { flex: 0 0 160px; width: 160px; }
+.tag-key,
+.hotkeys-table kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 4px;
+    border: 1px solid var(--border-color);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    text-align: center;
+}
+.tag-key { margin-left: 3px; vertical-align: 1px; }
+.hotkeys-hint {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 0 6px;
+    cursor: pointer;
+}
+.hotkeys-hint:hover { color: var(--text-primary); background: var(--bg-secondary); }
+.hotkeys-help {
+    margin-top: 16px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+.hotkeys-help summary { cursor: pointer; color: var(--text-secondary); }
+.hotkeys-table { margin: 8px 0 4px; border-collapse: collapse; }
+.hotkeys-table td { padding: 2px 16px 2px 0; vertical-align: top; }
+.hotkeys-table td:first-child { white-space: nowrap; }
+.hotkeys-table kbd { color: var(--text-primary); font-size: 0.78rem; }
+.hotkeys-note { margin: 4px 0 2px; color: var(--text-secondary); font-size: 0.8rem; }
+/* Touch screens have no keyboard: no help, no hint, no digit badges. */
+@media (hover: none) and (pointer: coarse) {
+    .hotkeys-help, .hotkeys-hint, .tag-key { display: none !important; }
+}
+
 
 /* ──────────────────────────────────────────────────────────
    17. Upload Page

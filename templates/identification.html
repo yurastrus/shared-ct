@@ -134,7 +134,7 @@
                         </button>
 
                         <!-- Invert colours toggle -->
-                        <button type="button" id="invert-btn" class="invert-btn" title="{{ _('Інвертувати кольори') }}">
+                        <button type="button" id="invert-btn" class="invert-btn" title="{{ _('Інвертувати кольори') }} (I)">
                             ☀
                         </button>
                         
@@ -154,16 +154,24 @@
                                 {{ _('кадр/с') }}
                             </span>
                             <span id="autoplay-buffer" class="autoplay-buffer" title="{{ _('Буферизація…') }}" style="min-width:1.2em;"></span>
+                            <button type="button" id="hotkeys-hint" class="hotkeys-hint" title="{{ _('Гарячі клавіші (?)') }}">⌨ ?</button>
                         </div>
                     </div>
 
                     <div class="identification-form-main">
                         <div class="behavior-checkboxes">
                             <span class="tags-label">{{ _('Додаткові теги') }}:</span>
+                            <!-- Tag search (key T): no name, never submitted -->
+                            <input type="search" id="tag-search" class="form-control form-control-sm tag-search"
+                                   autocomplete="off" spellcheck="false" style="display: none;"
+                                   placeholder="{{ _('Пошук тегу…') }}"
+                                   title="{{ _('Цифра або Enter ставить тег, Esc закриває пошук') }}">
                             {% for subfield in form.behaviors %}
-                                <div class="form-check">
+                                {% set key = behavior_hotkeys.get(subfield.data) %}
+                                <div class="form-check" data-hotkey="{{ key if key is not none else '' }}">
                                     {{ subfield(class="form-check-input") }}
                                     {{ subfield.label(class="form-check-label") }}
+                                    <kbd class="tag-key"{% if key is none %} style="display: none;"{% endif %}>{{ key if key is not none else '' }}</kbd>
                                 </div>
                             {% endfor %}
                         </div>
@@ -183,9 +191,9 @@
                     <div class="action-buttons-container">
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
-                                <button type="button" id="back-btn" class="btn btn-secondary" disabled title="{{ _('Повернутися до попередньої серії, щоб виправити відповідь') }}">&lt;</button>
-                                <button type="submit" class="btn btn-primary">{{ _('Надіслати') }}</button>
-                                <button type="button" id="skip-btn" class="btn btn-secondary">{{ _('Пропустити') }}</button>
+                                <button type="button" id="back-btn" class="btn btn-secondary" disabled title="{{ _('Повернутися до попередньої серії, щоб виправити відповідь') }} (Shift+←)">&lt;</button>
+                                <button type="submit" class="btn btn-primary" title="Ctrl+Enter">{{ _('Надіслати') }}</button>
+                                <button type="button" id="skip-btn" class="btn btn-secondary" title="Shift+→">{{ _('Пропустити') }}</button>
                                 <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩</button>
                             </div>
                         </div>
@@ -221,7 +229,7 @@
                             <input type="search" id="species-search" class="form-control form-control-sm"
                                    autocomplete="off" spellcheck="false"
                                    placeholder="{{ _('Пошук виду…') }}"
-                                   title="{{ _('Enter обирає перший знайдений вид, Esc очищає пошук') }}">
+                                   title="{{ _('Enter обирає перший знайдений вид, Esc очищає пошук') }} (/)">
                             <div id="species-search-empty" class="species-search-empty" style="display: none;">{{ _('Нічого не знайдено') }}</div>
                         </div>
 
@@ -261,8 +269,38 @@
                 </div>
             </div>
         </form>
+
+        <!-- Keyboard shortcuts help (key ?). Must match the keydown handler below. -->
+        <details id="hotkeys-help" class="hotkeys-help">
+            <summary>⌨ {{ _('Гарячі клавіші') }}</summary>
+            {% set hotkey_rows = [
+                (['←', '→'], _('Попереднє / наступне фото')),
+                (['Home', 'End'], _('Перше / останнє фото')),
+                ([_('Пробіл')], _('Увімкнути / вимкнути автопрокрутку')),
+                (['[', ']'], _('Повільніше / швидше автопрокрутка')),
+                (['Shift+→'], _('Пропустити серію')),
+                (['Shift+←'], _('Повернутися до попередньої надісланої серії')),
+                (['Ctrl+Enter'], _('Надіслати')),
+                (['1…9', '0'], _('Тег із цим номером (номер видно біля тегу)')),
+                (['T'], _('Пошук тегу: набрати назву, потім цифра або Enter; Esc закриває')),
+                (['/'], _('Пошук виду: Enter обирає перший знайдений; Esc очищає, повторний Esc виходить з пошуку')),
+                (['F'], _('У вибране')),
+                (['I'], _('Інвертувати кольори')),
+                (['Ctrl+Shift+T'], _('Світла / темна тема')),
+                (['?'], _('Показати / сховати цю довідку')),
+            ] %}
+            <table class="hotkeys-table">
+                {% for keys, action in hotkey_rows %}
+                <tr>
+                    <td>{% for k in keys %}<kbd>{{ k }}</kbd>{% if not loop.last %} {% endif %}{% endfor %}</td>
+                    <td>{{ action }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            <p class="hotkeys-note">{{ _('Клавіші не діють, коли курсор у текстовому полі (коментар, кількість, пошук). Розкладка клавіатури значення не має.') }}</p>
+        </details>
     </div>
-    
+
     <div id="no-photos-message" style="display: none;" class="no-photos-message alert alert-success"></div>
 </div>
 {% endblock %}
@@ -716,7 +754,7 @@ $(document).ready(function() {
 
     // ── Автопрокрутка серії (клієнтський «плеєр» на тумбнейлах) ──────────────
     // Тумблер = play/pause (стан у localStorage). Наприкінці серії — луп.
-    // Пробіл або клік по фото → пауза (тумблер вимикається); далі — стрілками.
+    // Пробіл вмикає/вимикає, клік по фото → пауза; далі — стрілками.
     // Ковзне вікно предзавантаження тримає кадри готовими наперед, щоб на
     // довгих серіях не гальмувало і кадри «встигали» вантажитись.
     const AUTOPLAY_AHEAD = 25;      // скільки кадрів тримати готовими попереду
@@ -938,6 +976,7 @@ $(document).ready(function() {
                 form[0].reset();
                 $('#comment-counter').text('0');  // #47: reset the comment character counter.
                 filterSpecies('');  // reset() clears the search text, the hidden rows must come back too
+                closeTagSearch();   // same for the tag search
                 resetSpeciesEntries();  // species chips belong to the previous series
 
                 // Автопрокрутка: контроли швидкості й тумблер живуть усередині
@@ -1051,9 +1090,15 @@ $(document).ready(function() {
             const first = $('.species-selection-panel .species-option')
                 .filter(function() { return this.style.display !== 'none'; }).first();
             first.find('input[type="radio"]').prop('checked', true).trigger('change');
+            if (first.length) this.blur();  // species chosen: the page keys work again
         } else if (e.key === 'Escape') {
-            this.value = '';
-            filterSpecies('');
+            // First Esc clears the query, the next one gives the keys back to the page.
+            if (this.value) {
+                this.value = '';
+                filterSpecies('');
+            } else {
+                this.blur();
+            }
         }
     });
 
@@ -1161,22 +1206,188 @@ $(document).ready(function() {
         if (addSpeciesEntry(entry)) clearFormEntry();
     });
 
+    // === TAG SEARCH (key T) ===
+    // Digits reach any tag, however many there are: with a query typed, the
+    // badges renumber the matching tags 1..9, 0 and a digit ticks that one.
+    // Without a query the badges show each tag's fixed key (behavior_types.hotkey).
+    const tagSearch = $('#tag-search');
+    const tagRows = $('.behavior-checkboxes .form-check');
+
+    function visibleTagRows() {
+        return tagRows.filter(function() { return this.style.display !== 'none'; });
+    }
+
+    function filterTags(query) {
+        const words = normalizeSpeciesText(query).trim().split(/[\s\-()]+/).filter(Boolean);
+        tagRows.each(function() {
+            const labelWords = normalizeSpeciesText($(this).find('label').text()).split(/[\s\-()]+/).filter(Boolean);
+            $(this).toggle(words.every(w => labelWords.some(lw => lw.startsWith(w))));
+        });
+        if (words.length) {
+            tagRows.find('.tag-key').hide();
+            visibleTagRows().slice(0, 10).each(function(i) {
+                $(this).find('.tag-key').text((i + 1) % 10).show();
+            });
+        } else {
+            tagRows.each(function() {
+                const key = $(this).attr('data-hotkey');
+                $(this).find('.tag-key').text(key).toggle(key !== '');
+            });
+        }
+    }
+
+    function openTagSearch() {
+        tagSearch.show().trigger('focus');
+    }
+
+    function closeTagSearch() {
+        tagSearch.val('').hide().trigger('blur');
+        filterTags('');
+    }
+
+    function toggleTag($row) {
+        const $box = $row.find('input[type="checkbox"]');
+        if ($box.length) $box.prop('checked', !$box.prop('checked')).trigger('change');
+    }
+
+    // Digit key → tag row: the n-th match while searching, else the fixed key.
+    function tagRowForDigit(digit) {
+        if (tagSearch.is(':visible') && tagSearch.val().trim()) {
+            return visibleTagRows().eq((digit + 9) % 10);  // 1→0th … 0→9th
+        }
+        return tagRows.filter(`[data-hotkey="${digit}"]`);
+    }
+
+    // Physical key. Some virtual keyboards and remote desktops send no e.code;
+    // then fall back to the character (works in the English layout only).
+    const CODE_BY_KEY = {' ': 'Space', '[': 'BracketLeft', ']': 'BracketRight', '/': 'Slash', '?': 'Slash'};
+    function keyCode(e) {
+        if (e.code) return e.code;
+        const k = e.key || '';
+        if (CODE_BY_KEY[k]) return CODE_BY_KEY[k];
+        if (/^[0-9]$/.test(k)) return 'Digit' + k;
+        if (/^[a-z]$/i.test(k)) return 'Key' + k.toUpperCase();
+        return k;  // ArrowLeft, Home, Escape, Enter … already match their code
+    }
+
+    function digitOf(e) {
+        const m = /^(?:Digit|Numpad)([0-9])$/.exec(keyCode(e));
+        return m ? parseInt(m[1], 10) : null;
+    }
+
+    tagSearch.on('input', function() {
+        filterTags(this.value);
+    }).on('keydown', function(e) {
+        const digit = digitOf(e);
+        if (digit !== null && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            e.preventDefault();
+            toggleTag(tagRowForDigit(digit));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();  // never submit the form from here
+            toggleTag(visibleTagRows().first());
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeTagSearch();
+        }
+    });
+
+    // === KEYBOARD SHORTCUTS ===
+    // One handler for the whole page; the help table at the bottom lists the
+    // same keys (keep both in step). Keys are matched on e.code, the physical
+    // key, so they work the same in the Ukrainian and English layouts.
+    const hotkeysHelp = $('#hotkeys-help');
+    try {
+        if (localStorage.getItem('ct-hotkeys-help-open') === '1') hotkeysHelp.prop('open', true);
+    } catch (err) { /* storage blocked: help just starts closed */ }
+    hotkeysHelp.on('toggle', function() {
+        try { localStorage.setItem('ct-hotkeys-help-open', this.open ? '1' : '0'); } catch (err) { /* ignore */ }
+    });
+
+    function toggleHelp() {
+        const open = !hotkeysHelp.prop('open');
+        hotkeysHelp.prop('open', open);
+        if (open) hotkeysHelp[0].scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+    $('#hotkeys-hint').on('click', toggleHelp);
+
+    // Fields where keys must type text. Radio buttons and checkboxes are NOT
+    // among them: after a click on a species the focus stays on its radio, and
+    // the shortcuts must keep working there.
+    const NON_TEXT_INPUTS = ['radio', 'checkbox', 'button', 'submit', 'reset', 'range', 'image'];
+    function isTextField(el) {
+        if (!el) return false;
+        if (el.isContentEditable) return true;
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'textarea' || tag === 'select') return true;
+        return tag === 'input' && NON_TEXT_INPUTS.indexOf((el.type || '').toLowerCase()) === -1;
+    }
+
+    function showPhoto(index) {
+        if (!currentObservation || !currentObservation.photos) return;
+        const n = currentObservation.photos.length;
+        currentPhotoIndex = Math.max(0, Math.min(n - 1, index));
+        displayCurrentPhoto();
+    }
+
     $(document).on('keydown', function(e) {
         if (!wrapper.is(':visible')) return;
-        // Не перехоплювати клавіші, коли фокус у полі вводу (коментар, к-ть тощо).
-        const tag = (e.target.tagName || '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        const code = keyCode(e);
 
-        // Пробіл — пауза автопрокрутки (і не гортати сторінку).
-        if (e.key === " " || e.code === "Space") {
-            if (autoPlay) { e.preventDefault(); setAutoPlay(false); }
+        // Ctrl+Enter submits from anywhere, the comment box included.
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || code === 'Enter' || code === 'NumpadEnter')) {
+            e.preventDefault();
+            if (!e.repeat) form.find('button[type="submit"]').trigger('click');
             return;
         }
-        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-            if (autoPlay) setAutoPlay(false);  // ручна навігація зупиняє «плеєр»
-            if (e.key === "ArrowRight") nextBtn.click();
-            else prevBtn.click();
+        if (isTextField(e.target)) {
+            // Esc leaves a text field so the keys work again (the species search
+            // clears itself first, see its own handler).
+            if (e.key === 'Escape' && e.target.id !== 'species-search') e.target.blur();
+            return;
         }
+        if (e.ctrlKey || e.altKey || e.metaKey) return;  // browser and theme shortcuts
+
+        const digit = digitOf(e);
+        let handled = true;
+        if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
+            toggleHelp();
+        } else if (code === 'ArrowRight' && e.shiftKey) {
+            if (!e.repeat) skipBtn.trigger('click');
+        } else if (code === 'ArrowLeft' && e.shiftKey) {
+            if (!e.repeat && !backBtn.prop('disabled')) backBtn.trigger('click');
+        } else if (code === 'ArrowRight' || code === 'ArrowLeft') {
+            // Also keeps the browser from moving a focused species radio.
+            if (autoPlay) setAutoPlay(false);  // manual navigation stops the player
+            showPhoto(currentPhotoIndex + (code === 'ArrowRight' ? 1 : -1));
+        } else if (code === 'Home' || code === 'End') {
+            if (autoPlay) setAutoPlay(false);
+            showPhoto(code === 'Home' ? 0 : Infinity);
+        } else if (code === 'Space') {
+            // Toggle; also stops a focused button from being pressed again.
+            if (!e.repeat) setAutoPlay(!autoPlay);
+        } else if (code === 'BracketLeft' || code === 'BracketRight') {
+            setAutoPlayFps(autoPlayFps + (code === 'BracketRight' ? 1 : -1));
+        } else if (digit !== null && !e.shiftKey) {
+            if (!e.repeat) toggleTag(tagRowForDigit(digit));
+        } else if (code === 'KeyT' && !e.shiftKey) {
+            openTagSearch();
+        } else if (code === 'Slash') {
+            $('#species-search').trigger('focus');
+        } else if (code === 'KeyF' && !e.shiftKey) {
+            if (!e.repeat) {
+                const $fav = $('#{{ form.is_favorite.id }}');
+                $fav.prop('checked', !$fav.prop('checked')).trigger('change');
+            }
+        } else if (code === 'KeyI' && !e.shiftKey) {
+            if (!e.repeat) $('#invert-btn').trigger('click');
+        } else if (e.key === 'Escape') {
+            if (tagSearch.is(':visible')) closeTagSearch();
+            else if (hotkeysHelp.prop('open')) hotkeysHelp.prop('open', false);
+            else handled = false;
+        } else {
+            handled = false;
+        }
+        if (handled) e.preventDefault();
     });
 
     skipBtn.on('click', loadNextObservation);

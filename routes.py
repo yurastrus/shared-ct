@@ -2331,14 +2331,15 @@ def identify(lang_code):
 
         # --- END OF NEW LOGIC ---
 
-        # Populate behaviour choices — sort by usage frequency
-        # (like the species list: most-frequent tags first, then descending;
-        #  equally-frequent entries retain alphabetical order — stable sort).
+        # Populate behaviour choices: tags with a fixed digit key first, in key
+        # order, so the keys never move; the rest by usage frequency (ties keep
+        # alphabetical order — stable sort).
         behavior_ranking = get_behavior_ranking()
         behavior_types = ct_session.query(BehaviorType).order_by(BehaviorType.name_ua).all()
-        behavior_choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
-        behavior_choices.sort(key=lambda c: behavior_ranking.get(c[0], 0), reverse=True)
-        form.behaviors.choices = behavior_choices
+        behavior_types.sort(key=lambda bt: (bt.hotkey is None, bt.hotkey or 0,
+                                            -behavior_ranking.get(bt.id, 0)))
+        form.behaviors.choices = [(bt.id, bt.get_name(g.lang_code)) for bt in behavior_types]
+        behavior_hotkeys = {bt.id: bt.hotkey % 10 for bt in behavior_types if bt.hotkey}
 
         # AI filter: list of species with AI predictions (only if AI is available).
         # Takes into account the user's access to locations and already-made
@@ -2371,7 +2372,8 @@ def identify(lang_code):
                              ecoregions=ecoregions,
                              ai_available=ai_available,
                              ai_species_list=ai_species_list,
-                             start_obs_id=start_obs_id)
+                             start_obs_id=start_obs_id,
+                             behavior_hotkeys=behavior_hotkeys)
     finally:
         close_ct_session()
 

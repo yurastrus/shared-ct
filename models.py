@@ -352,6 +352,15 @@ class BehaviorType(CTBase):
     id = Column(Integer, primary_key=True)
     name_ua = Column(String(100), nullable=False, unique=True)
     name_en = Column(String(100), nullable=False, unique=True)
+    # Fixed keyboard slot on /identify: 1-9 are the digit keys, 10 is "0".
+    # NULL = no key (reachable through the tag search). Stable on purpose: the
+    # usage ranking reorders tags over time and must not move a verifier's keys.
+    # Seeded once by scripts.init_behavior_hotkeys.
+    hotkey = Column(Integer, nullable=True, unique=True)
+
+    __table_args__ = (
+        CheckConstraint('hotkey BETWEEN 1 AND 10', name='behavior_types_hotkey_range'),
+    )
 
     # Relationships
     identifications = relationship('Identification', secondary=identification_behaviors, back_populates='behaviors')
