@@ -1030,7 +1030,18 @@ body.dark-theme .ai-pred-badge {
 
 /* ── Manage locations: list & detail panels ── */
 #placeholder   { display: flex; align-items: center; justify-content: center; height: 100%; padding: 20px; }
-#panel-content { display: none; height: 100%; overflow-y: auto; padding: 14px; }
+/* position: relative makes this the containing block for Select2's absolutely
+   positioned hidden <select>s; otherwise they escape the scroll clipping and
+   stretch the page below the footer. */
+#panel-content { display: none; height: 100%; overflow-y: auto; padding: 14px; position: relative; }
+/* The base .btn takes its blue background from style.css. */
+.ct-manage-locs #delete-location-btn {
+    background: #fff;
+    color: var(--color-danger);
+    border: 1px solid var(--color-danger);
+    margin-top: 8px;
+}
+.ct-manage-locs #delete-location-btn:hover { background: var(--color-danger); color: #fff; }
 
 .locations-list-panel  { border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow-y: auto; background: var(--card-bg); }
 .locations-list        { list-style: none; padding: 0; margin: 0; }

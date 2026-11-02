@@ -3,9 +3,9 @@ from flask import render_template, g, flash, redirect, url_for, jsonify, request
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
-from app.camera_traps.domain import _
+from app.camera_traps.domain import _, _l
 from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, Date, bindparam
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import io
 import csv
 import os
@@ -20,7 +20,7 @@ from .utils import (process_photo_batch, check_consensus_for_observation,
 from .database import get_ct_session, close_ct_session
 from .models import Location, Species, Photo, Observation, Identification, BehaviorType, Biotope, SpeciesYearlyTrend, SpeciesTrendTest, LocationMonthlyActivity, UploadBatch
 from .models import ServiceVisit, BatteryType, VisitPurpose, LocationStats, location_institutions, identification_behaviors, location_biotopes
-from .models import Deployment
+from .models import Deployment, LocationMergeLog
 from .models import CameraTimestampProfile
 from app.models import User, Institution
 from .decorators import role_required
@@ -6419,6 +6419,13 @@ def update_location(lang_code, location_id):
         if not location:
             return jsonify({'success': False, 'error': _('Локацію не знайдено.')}), 404
 
+        if 'name' in data and not (data.get('name') or '').strip():
+            return jsonify({'success': False, 'error': _('Вкажіть назву локації.')}), 400
+        # A manager's save rewrites only their own institution rows, so an empty
+        # list would strip the location from every institution they manage.
+        if not is_admin and data.get('institution_ids') == []:
+            return jsonify({'success': False, 'error': _('Оберіть установу.')}), 400
+
         location.name = data.get('name', location.name)
         location.latitude = data.get('latitude', location.latitude)
         location.longitude = data.get('longitude', location.longitude)
@@ -6484,8 +6491,13 @@ def api_create_location_admin(lang_code):
         if lat is None or lon is None:
             return jsonify({'success': False, 'error': _('Вкажіть координати.')}), 400
 
+        # An institution is mandatory: a location outside every institution of
+        # its creator disappears from their list at once (since 2026-11-02).
+        if not institution_ids:
+            return jsonify({'success': False, 'error': _('Оберіть установу.')}), 400
+
         # Validation: managers can only assign their own institutions
-        if institution_ids and not is_admin:
+        if not is_admin:
             if not all(i_id in user_inst_ids for i_id in institution_ids):
                 return jsonify({'success': False, 'error': _('Немає доступу до цієї установи.')}), 403
 
@@ -6521,6 +6533,69 @@ def api_create_location_admin(lang_code):
         ct_session.rollback()
         current_app.logger.error(f"Error creating CT location: {e}", exc_info=True)
         return jsonify({'success': False, 'error': _('Помилка сервера при створенні локації.')}), 500
+    finally:
+        close_ct_session()
+
+
+# Tables whose rows are data tied to a location: any row blocks deletion.
+_LOCATION_DATA_TABLES = (
+    (Observation, Observation.location_id, 'has_data',
+     _l('На локацію вже завантажено дані, видалити її не можна.')),
+    (UploadBatch, UploadBatch.location_id, 'has_data',
+     _l('На локацію вже завантажено дані, видалити її не можна.')),
+    (Deployment, Deployment.location_id, 'has_deployments',
+     _l('Для локації є розгортання. Спершу видаліть їх.')),
+    (ServiceVisit, ServiceVisit.location_id, 'has_service_log',
+     _l('Для локації є записи журналу обслуговування, видалити її не можна.')),
+    (LocationMergeLog, LocationMergeLog.main_location_id, 'has_merge_log',
+     _l('Локація брала участь в об\'єднанні локацій, видалити її не можна.')),
+)
+
+
+@camera_traps_bp.route('/api/location/<int:location_id>/delete', methods=['POST'])
+@login_required
+@role_required('manager')
+def api_delete_location(lang_code, location_id):
+    """Delete a location created by mistake (since 2026-11-02).
+
+    Refused once anything is tied to it: observations, upload batches,
+    deployments, service visits or a merge record. Precomputed per-location
+    stats are derived, so they go with it.
+    """
+    ct_session = get_ct_session()
+    try:
+        location = ct_session.query(Location).get(location_id)
+        if not location:
+            return jsonify({'success': False, 'error': _('Локацію не знайдено.')}), 404
+        if not _user_can_manage_location(ct_session, location_id):
+            return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
+
+        for model, column, code, message in _LOCATION_DATA_TABLES:
+            if ct_session.query(column).filter(column == location_id).limit(1).first() is not None:
+                return jsonify({'success': False, 'code': code, 'error': str(message)}), 409
+
+        name = location.name
+        ct_session.query(LocationStats).filter(LocationStats.location_id == location_id).delete()
+        ct_session.query(LocationMonthlyActivity).filter(
+            LocationMonthlyActivity.location_id == location_id).delete()
+        location.biotopes = []
+        ct_session.execute(location_institutions.delete().where(
+            location_institutions.c.location_id == location_id))
+        ct_session.delete(location)
+        ct_session.commit()
+
+        current_app.logger.info(
+            f"User {current_user.username} deleted CT location '{name}' (id={location_id})")
+        return jsonify({'success': True, 'message': _('Локацію видалено.')})
+    except IntegrityError:
+        # A reference this guard does not know about: keep the location.
+        ct_session.rollback()
+        return jsonify({'success': False, 'code': 'referenced',
+                        'error': _('Локація має пов\'язані дані, видалити її не можна.')}), 409
+    except Exception as e:
+        ct_session.rollback()
+        current_app.logger.error(f"Error deleting CT location {location_id}: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': _('Помилка сервера при видаленні локації.')}), 500
     finally:
         close_ct_session()
 

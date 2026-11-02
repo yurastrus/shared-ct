@@ -94,7 +94,7 @@
                 <form id="edit-form">
                     <input type="hidden" id="location-id">
                     <div class="mb-2">
-                        <label class="form-label form-label-sm">{{ _('Назва') }}</label>
+                        <label class="form-label form-label-sm">{{ _('Назва') }} <span class="text-danger" title="{{ _("Обов'язкове поле") }}">*</span></label>
                         <input type="text" class="form-control form-control-sm" id="location-name" required>
                     </div>
                     <div class="mb-2">
@@ -104,11 +104,11 @@
                     </div>
                     <div class="row">
                         <div class="col-6 mb-2">
-                            <label class="form-label form-label-sm text-muted">{{ _('Широта') }}</label>
+                            <label class="form-label form-label-sm text-muted">{{ _('Широта') }} <span class="text-danger">*</span></label>
                             <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?" class="form-control form-control-sm" id="location-lat" placeholder="49.85000">
                         </div>
                         <div class="col-6 mb-2">
-                            <label class="form-label form-label-sm text-muted">{{ _('Довгота') }}</label>
+                            <label class="form-label form-label-sm text-muted">{{ _('Довгота') }} <span class="text-danger">*</span></label>
                             <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?" class="form-control form-control-sm" id="location-lon" placeholder="23.65000">
                         </div>
                     </div>
@@ -125,7 +125,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label form-label-sm text-success">
-                            <i class="fas fa-university me-1"></i>{{ _('Установи') }}
+                            <i class="fas fa-university me-1"></i>{{ _('Установи') }} <span class="text-danger" title="{{ _("Обов'язкове поле") }}">*</span>
                         </label>
                         <select id="institution-select" class="form-control form-control-sm" multiple>
                             {% for inst in user_institutions %}
@@ -137,6 +137,9 @@
                         <button type="submit" id="save-btn" class="btn btn-primary btn-sm flex-fill">{{ _('Зберегти') }}</button>
                         <button type="button" id="cancel-btn" class="btn btn-outline-secondary btn-sm">{{ _('Скасувати') }}</button>
                     </div>
+                    <button type="button" id="delete-location-btn" class="btn btn-sm" style="display:none;"
+                            title="{{ _('Видалити локацію (лише якщо на неї ще не завантажено даних)') }}">&#128465; {{ _('Видалити') }}</button>
+                    <small class="text-muted mt-2" style="display:block;"><span class="text-danger">*</span> {{ _("обов'язкові поля") }}</small>
                 </form>
 
                 {% if can_edit %}
@@ -615,6 +618,7 @@ $(document).ready(function() {
         $('#edit-form-title').text(`{{ _('Редагування:') }} ${data.name}`);
         $('#save-btn').text('{{ _("Зберегти") }}');
         $('#coord-hint').hide();
+        $('#delete-location-btn').show();
         $('#location-name').val(data.name);
         $('#location-description').val(data.description || '');
         $('#location-lat').val(data.latitude);
@@ -629,6 +633,7 @@ $(document).ready(function() {
         $('#edit-form-title').text('{{ _("Нова локація") }}');
         $('#save-btn').text('{{ _("Створити") }}');
         $('#coord-hint').show();
+        $('#delete-location-btn').hide();
         if (singleInstitutionId) {
             $('#institution-select').val([singleInstitutionId]).trigger('change');
         }
@@ -643,6 +648,8 @@ $(document).ready(function() {
 
     function submitUpdateLocation() {
         const locationId = $('#location-id').val();
+        if (!$('#location-name').val().trim()) { alert('{{ _("Вкажіть назву локації.") }}'); return; }
+        if (!($('#institution-select').val() || []).length) { alert('{{ _("Оберіть установу.") }}'); return; }
         const dataToSave = {
             name: $('#location-name').val(),
             description: $('#location-description').val(),
@@ -687,6 +694,7 @@ $(document).ready(function() {
         const lon = parseFloat($('#location-lon').val());
         if (!$('#location-name').val().trim()) { alert('{{ _("Вкажіть назву локації.") }}'); return; }
         if (isNaN(lat) || isNaN(lon)) { alert('{{ _("Вкажіть координати: клацніть на карті або введіть вручну.") }}'); return; }
+        if (!($('#institution-select').val() || []).length) { alert('{{ _("Оберіть установу.") }}'); return; }
 
         const dataToSend = {
             name: $('#location-name').val().trim(),
@@ -730,6 +738,28 @@ $(document).ready(function() {
     }
 
     $('#cancel-btn').on('click', deselectAll);
+
+    $('#delete-location-btn').on('click', function() {
+        const locationId = $('#location-id').val();
+        if (!locationId || mode !== 'edit') return;
+        if (!confirm('{{ _("Видалити цю локацію? Дію не можна скасувати.") }}')) return;
+        fetch(`/{{ g.lang_code }}/camera-traps/api/location/${locationId}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' }
+        })
+        .then(r => r.json())
+        .then(response => {
+            if (!response.success) throw new Error(response.error);
+            alert(response.message);
+            $(`.locations-list li[data-location-id="${locationId}"]`).remove();
+            if (markers[locationId]) { markersGroup.removeLayer(markers[locationId]); delete markers[locationId]; }
+            const idx = locationsData.findIndex(l => l.id == locationId);
+            if (idx > -1) locationsData.splice(idx, 1);
+            activeLocationId = null;
+            deselectAll();
+        })
+        .catch(err => alert(`{{ _('Помилка:') }} ${err.message}`));
+    });
     {% endif %}
 
     // ─── SERVICE LOG ────────────────────────────────────────────
