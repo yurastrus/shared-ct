@@ -507,8 +507,9 @@ def get_observation_ai_prediction(
     If there are predictions from multiple models for the series (e.g. server
     DF+MDS and imported MDR), we pick the one from the model with the HIGHEST
     accuracy_rank; within a model — the row with the highest score. If
-    prediction_species_id IS NULL (no mapping to our Species) — return only
-    the raw label.
+    prediction_species_id IS NULL, the label is looked up in ai_label_map
+    (the mapping may be newer than the prediction); still no mapping → return
+    only the raw label.
 
     Return structure:
         {
@@ -558,14 +559,22 @@ def get_observation_ai_prediction(
     # language, never the scientific (Latin) name. The raw model label is used
     # only when the prediction has no mapping to our Species reference.
     label = row.prediction_label
-    if row.prediction_species_id is not None:
+    species_id = row.prediction_species_id
+    if species_id is None and label:
+        # Safety net: the label may have got its mapping after the prediction
+        # was written (May 2026: "cow", "equid" stayed NULL until a backfill).
+        species_id = sess.execute(
+            text("SELECT species_id FROM ai_label_map WHERE label = :label"),
+            {'label': label.strip().lower()},
+        ).scalar()
+    if species_id is not None:
         srow = sess.execute(
             text("""
                 SELECT common_name_ua, common_name_en, scientific_name
                 FROM species
                 WHERE id = :sid
             """),
-            {'sid': row.prediction_species_id},
+            {'sid': species_id},
         ).fetchone()
         if srow is not None:
             if lang_code == 'en':
@@ -575,7 +584,7 @@ def get_observation_ai_prediction(
             label = name or srow.scientific_name or label
 
     return {
-        'species_id':    row.prediction_species_id,
+        'species_id':    species_id,
         'species_label': label,
         'score':         row.prediction_score,
         'animal_count':  max_count if max_count is not None else row.animal_count,
