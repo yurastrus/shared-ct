@@ -183,6 +183,36 @@
                             <small class="form-text text-muted" style="display:block; text-align:right;"><span id="comment-counter">0</span>/200</small>
                         </div>
                     </div>
+
+                    <!-- Keyboard shortcuts help (key ?). Must match the keydown handler below. -->
+                    <details id="hotkeys-help" class="hotkeys-help">
+                        <summary>⌨ {{ _('Гарячі клавіші') }}</summary>
+                        {% set hotkey_rows = [
+                            (['←', '→'], _('Попереднє / наступне фото')),
+                            (['Home', 'End'], _('Перше / останнє фото')),
+                            ([_('Пробіл')], _('Увімкнути / вимкнути автопрокрутку')),
+                            (['[', ']'], _('Повільніше / швидше автопрокрутка')),
+                            (['Shift+→'], _('Пропустити серію')),
+                            (['Shift+←'], _('Повернутися до попередньої надісланої серії')),
+                            (['Ctrl+Enter'], _('Надіслати')),
+                            (['1…9', '0'], _('Тег із цим номером (номер видно біля тегу)')),
+                            (['T'], _('Пошук тегу: набрати назву, потім цифра або Enter; Esc закриває')),
+                            (['/'], _('Пошук виду: Enter обирає перший знайдений; Esc очищає, повторний Esc виходить з пошуку')),
+                            (['F'], _('У вибране')),
+                            (['I'], _('Інвертувати кольори')),
+                            (['Ctrl+Shift+T'], _('Світла / темна тема')),
+                            (['?'], _('Показати / сховати цю довідку')),
+                        ] %}
+                        <table class="hotkeys-table">
+                            {% for keys, action in hotkey_rows %}
+                            <tr>
+                                <td>{% for k in keys %}<kbd>{{ k }}</kbd>{% if not loop.last %} {% endif %}{% endfor %}</td>
+                                <td>{{ action }}</td>
+                            </tr>
+                            {% endfor %}
+                        </table>
+                        <p class="hotkeys-note">{{ _('Клавіші не діють, коли курсор у текстовому полі (коментар, кількість, пошук). Розкладка клавіатури значення не має.') }}</p>
+                    </details>
                 </div>
 
                 <!-- Right column: two separate containers -->
@@ -269,36 +299,6 @@
                 </div>
             </div>
         </form>
-
-        <!-- Keyboard shortcuts help (key ?). Must match the keydown handler below. -->
-        <details id="hotkeys-help" class="hotkeys-help">
-            <summary>⌨ {{ _('Гарячі клавіші') }}</summary>
-            {% set hotkey_rows = [
-                (['←', '→'], _('Попереднє / наступне фото')),
-                (['Home', 'End'], _('Перше / останнє фото')),
-                ([_('Пробіл')], _('Увімкнути / вимкнути автопрокрутку')),
-                (['[', ']'], _('Повільніше / швидше автопрокрутка')),
-                (['Shift+→'], _('Пропустити серію')),
-                (['Shift+←'], _('Повернутися до попередньої надісланої серії')),
-                (['Ctrl+Enter'], _('Надіслати')),
-                (['1…9', '0'], _('Тег із цим номером (номер видно біля тегу)')),
-                (['T'], _('Пошук тегу: набрати назву, потім цифра або Enter; Esc закриває')),
-                (['/'], _('Пошук виду: Enter обирає перший знайдений; Esc очищає, повторний Esc виходить з пошуку')),
-                (['F'], _('У вибране')),
-                (['I'], _('Інвертувати кольори')),
-                (['Ctrl+Shift+T'], _('Світла / темна тема')),
-                (['?'], _('Показати / сховати цю довідку')),
-            ] %}
-            <table class="hotkeys-table">
-                {% for keys, action in hotkey_rows %}
-                <tr>
-                    <td>{% for k in keys %}<kbd>{{ k }}</kbd>{% if not loop.last %} {% endif %}{% endfor %}</td>
-                    <td>{{ action }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-            <p class="hotkeys-note">{{ _('Клавіші не діють, коли курсор у текстовому полі (коментар, кількість, пошук). Розкладка клавіатури значення не має.') }}</p>
-        </details>
     </div>
 
     <div id="no-photos-message" style="display: none;" class="no-photos-message alert alert-success"></div>
