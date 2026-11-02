@@ -3,6 +3,10 @@
 
 {% block title %}{{ _('Ідентифікація тварин') }}{% endblock %}
 
+{% block ct_head_extra %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+{% endblock %}
+
 {% block ct_content %}
 <div class="container mt-4 identification-container">
     <div class="scope-filter-bar">
@@ -43,8 +47,12 @@
             {# Group filters. Values are strings, not ids, so the backend can
                tell them apart from a species selection. #}
             <option value="not_empty">{{ _('Не пусто (будь-яке визначення)') }}</option>
+            {# "Empty" (-1) right after "not empty", the rest alphabetical. #}
+            {% for s in ai_species_list if s.id == -1 %}
+            <option value="{{ s.id }}">{{ s.text }}</option>
+            {% endfor %}
             <option value="animals">{{ _('Лише тварини') }}</option>
-            {% for s in ai_species_list %}
+            {% for s in ai_species_list if s.id != -1 %}
             <option value="{{ s.id }}">{{ s.text }}</option>
             {% endfor %}
         </select>
@@ -156,9 +164,9 @@
                             <span id="autoplay-buffer" class="autoplay-buffer" title="{{ _('Буферизація…') }}" style="min-width:1.2em;"></span>
                             <span style="display:inline-flex; gap:6px;">
                                 <button type="button" id="hotkeys-hint" class="hotkeys-hint" title="{{ _('Гарячі клавіші (?)') }}">⌨ ?</button>
-                                <button type="button" id="hotkeys-toggle" class="hotkeys-hint hotkeys-toggle" aria-pressed="true"
+                                <button type="button" id="hotkeys-toggle" class="hotkeys-hint hotkeys-toggle" aria-pressed="false"
                                         data-on="{{ _('⌨ увімк.') }}" data-off="{{ _('⌨ вимк.') }}"
-                                        title="{{ _('Увімкнути / вимкнути гарячі клавіші (запам’ятовується в цьому браузері)') }}">{{ _('⌨ увімк.') }}</button>
+                                        title="{{ _('Увімкнути / вимкнути гарячі клавіші (запам’ятовується в цьому браузері)') }}">{{ _('⌨ вимк.') }}</button>
                             </span>
                         </div>
                     </div>
@@ -209,7 +217,7 @@
                             (['I'], _('Інвертувати кольори')),
                             (['Ctrl+Shift+T'], _('Світла / темна тема')),
                             (['?'], _('Показати / сховати цю довідку')),
-                            ([_('⌨ увімк.')], _('Кнопка біля автопрокрутки вимикає всі клавіші, крім Ctrl+Enter')),
+                            ([_('⌨ увімк.')], _('Кнопка біля автопрокрутки вмикає клавіші (спершу вимкнені, вибір запам’ятовується); Ctrl+Enter діє завжди')),
                         ] %}
                         <table class="hotkeys-table">
                             {% for keys, action in hotkey_rows %}
@@ -315,6 +323,7 @@
 
 {% block scripts %}
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
     // === THEME TOGGLE SYSTEM ===
@@ -420,6 +429,19 @@ $(document).ready(function() {
                                 : $sel.data('desktop-placeholder');
             if (!text) return;
             $sel.find('option[value=""]').first().text(text);
+            if ($sel.data('select2')) $sel.trigger('change.select2');
+        });
+    }
+
+    // Searchable filter lists (the AI list runs to dozens of species).
+    if ($.fn.select2) {
+        $('#scope-select, #ai-species-select').each(function() {
+            $(this).select2({
+                width: 'style',
+                dropdownAutoWidth: true,
+                minimumResultsForSearch: 8,
+                language: {noResults: () => "{{ _('Нічого не знайдено') }}"},
+            });
         });
     }
 
@@ -623,12 +645,13 @@ $(document).ready(function() {
                 // Rebuild the options.
                 $sel.empty();
                 $sel.append($('<option>', {value: '', text: aiAnyLabel}));
+                // "Empty" (-1) right after "not empty", as in the template.
+                const addSpecies = s => $sel.append($('<option>', {value: s.id, text: s.text}));
                 aiGroupOptions.forEach(g => {
                     $sel.append($('<option>', {value: g.value, text: g.text}));
+                    if (g.value === 'not_empty') items.filter(s => String(s.id) === '-1').forEach(addSpecies);
                 });
-                items.forEach(s => {
-                    $sel.append($('<option>', {value: s.id, text: s.text}));
-                });
+                items.filter(s => String(s.id) !== '-1').forEach(addSpecies);
                 // Preserve the selection. A group filter always survives a
                 // scope change, because it is not tied to any species list; a
                 // species survives only while it still has predictions here.
@@ -1337,20 +1360,25 @@ $(document).ready(function() {
     }
     $('#hotkeys-hint').on('click', toggleHelp);
 
-    // On/off switch for all keys except Ctrl+Enter; per browser, on by default.
+    // On/off switch for all keys except Ctrl+Enter; per browser, OFF until the
+    // user turns it on (a stray digit must not tag a series unnoticed). New key
+    // name: the first version stored "on" for everyone who merely opened the page.
+    const HOTKEYS_STORE = 'ct-hotkeys-enabled';
     const hotkeysToggle = $('#hotkeys-toggle');
-    let hotkeysOn = true;
-    try { hotkeysOn = localStorage.getItem('ct-hotkeys-on') !== '0'; } catch (err) { /* default on */ }
-    function setHotkeysOn(on) {
+    let hotkeysOn = false;
+    try { hotkeysOn = localStorage.getItem(HOTKEYS_STORE) === '1'; } catch (err) { /* default off */ }
+    function setHotkeysOn(on, remember) {
         hotkeysOn = on;
         hotkeysToggle.attr('aria-pressed', on ? 'true' : 'false')
             .text(hotkeysToggle.data(on ? 'on' : 'off'));
         wrapper.toggleClass('hotkeys-off', !on);
         if (!on) closeTagSearch();
-        try { localStorage.setItem('ct-hotkeys-on', on ? '1' : '0'); } catch (err) { /* ignore */ }
+        if (remember) {
+            try { localStorage.setItem(HOTKEYS_STORE, on ? '1' : '0'); } catch (err) { /* ignore */ }
+        }
     }
-    setHotkeysOn(hotkeysOn);
-    hotkeysToggle.on('click', function() { setHotkeysOn(!hotkeysOn); });
+    setHotkeysOn(hotkeysOn, false);
+    hotkeysToggle.on('click', function() { setHotkeysOn(!hotkeysOn, true); });
 
     // Fields where keys must type text. Radio buttons and checkboxes are NOT
     // among them: after a click on a species the focus stays on its radio, and

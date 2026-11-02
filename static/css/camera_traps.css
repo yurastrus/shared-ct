@@ -330,6 +330,23 @@ main .identification-container {
     border-color: var(--input-border);
 }
 
+/* The same filters as select2 (searchable) take the place of the select. */
+.scope-filter-bar .select2-container {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 120px;
+    max-width: 300px;
+    font-size: 0.875rem;
+}
+/* Same height as the neighbouring form-control-sm selects. */
+.scope-filter-bar .select2-container .select2-selection--single { height: 31px !important; }
+.scope-filter-bar .select2-container .select2-selection--single .select2-selection__rendered { line-height: 29px !important; }
+.scope-filter-bar .select2-container .select2-selection--single .select2-selection__arrow { height: 29px !important; }
+/* The open dropdown is a .select2-container appended to <body>; the global
+   `width: 100% !important` above stretched it across the whole page. */
+body > .select2-container--open { width: auto !important; }
+body > .select2-container--open .select2-dropdown { max-width: min(480px, 92vw); font-size: 0.875rem; }
+
 /* Top filter bar (manage_locations) */
 .top-filter-bar {
     background: var(--card-bg);
@@ -2260,6 +2277,7 @@ body.dark-theme .message-container.error {
        Desktop keeps the labels. */
     .scope-filter-bar .scope-filter-label  { display: none; }
     .scope-filter-bar .scope-filter-select { flex: 1 1 100%; max-width: none; }
+    .scope-filter-bar .select2-container  { flex: 1 1 100%; max-width: none; }
 
     /* ── Stacked reading order on narrow screens ──────────────────────────
        Two columns collapse into one, and the order then matters: the photo is
