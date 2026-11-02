@@ -1897,6 +1897,10 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     cursor: pointer;
 }
 .hotkeys-hint:hover { color: var(--text-primary); background: var(--bg-secondary); }
+.hotkeys-toggle[aria-pressed="false"] { text-decoration: line-through; opacity: 0.7; }
+.hotkeys-off .tag-key { display: none !important; }
+@keyframes key-flash { from { background-color: rgba(255, 193, 7, 0.55); } to { background-color: transparent; } }
+.key-flash { animation: key-flash 1.2s ease-out; border-radius: var(--radius-sm); }
 .hotkeys-help {
     margin-top: 16px;
     padding: 6px 12px;

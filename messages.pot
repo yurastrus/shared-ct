@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-02 13:01+0200\n"
+"POT-Creation-Date: 2026-11-02 13:08+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -70,12 +70,12 @@ msgid "Особин"
 msgstr ""
 
 #: app/camera_traps/forms.py:46
-#: app/camera_traps/templates/identification.html:163
+#: app/camera_traps/templates/identification.html:166
 msgid "Додаткові теги"
 msgstr ""
 
 #: app/camera_traps/forms.py:53
-#: app/camera_traps/templates/identification.html:203
+#: app/camera_traps/templates/identification.html:206
 msgid "У вибране"
 msgstr ""
 
@@ -100,8 +100,8 @@ msgid "Серію позначено на повторний розгляд."
 msgstr ""
 
 #: app/camera_traps/routes.py:198
-#: app/camera_traps/templates/identification.html:1437
-#: app/camera_traps/templates/identification.html:1438
+#: app/camera_traps/templates/identification.html:1479
+#: app/camera_traps/templates/identification.html:1480
 msgid "Помилка позначення серії."
 msgstr ""
 
@@ -385,7 +385,7 @@ msgid "Один вид указано двічі."
 msgstr ""
 
 #: app/camera_traps/routes.py:4256
-#: app/camera_traps/templates/identification.html:434
+#: app/camera_traps/templates/identification.html:438
 msgid "«Пусто» не можна поєднувати з іншими видами."
 msgstr ""
 
@@ -425,12 +425,12 @@ msgid "Недостатньо прав для режиму перегляду"
 msgstr ""
 
 #: app/camera_traps/routes.py:4712
-#: app/camera_traps/templates/identification.html:441
+#: app/camera_traps/templates/identification.html:445
 msgid "Немає серій для перегляду, які б відповідали критеріям."
 msgstr ""
 
 #: app/camera_traps/routes.py:4714
-#: app/camera_traps/templates/identification.html:440
+#: app/camera_traps/templates/identification.html:444
 msgid "Вітаємо! Ви ідентифікували всі доступні серії фотографій."
 msgstr ""
 
@@ -539,7 +539,7 @@ msgstr ""
 
 #: app/camera_traps/routes.py:5293
 #: app/camera_traps/templates/identification.html:104
-#: app/camera_traps/templates/identification.html:520
+#: app/camera_traps/templates/identification.html:524
 msgid "-- Всі види --"
 msgstr ""
 
@@ -1409,7 +1409,7 @@ msgid "Останні запити"
 msgstr ""
 
 #: app/camera_traps/templates/admin.html:102
-#: app/camera_traps/templates/identification.html:430
+#: app/camera_traps/templates/identification.html:434
 #: app/camera_traps/templates/upload_video.html:170
 msgid "Час"
 msgstr ""
@@ -1712,7 +1712,7 @@ msgid "За локаціями"
 msgstr ""
 
 #: app/camera_traps/templates/admin.html:384
-#: app/camera_traps/templates/identification.html:429
+#: app/camera_traps/templates/identification.html:433
 #: app/camera_traps/templates/upload.html:30
 #: app/camera_traps/templates/upload_fast.html:138
 #: app/camera_traps/templates/upload_video.html:85
@@ -1722,7 +1722,7 @@ msgstr ""
 
 #: app/camera_traps/templates/admin.html:385
 #: app/camera_traps/templates/gallery.html:222
-#: app/camera_traps/templates/identification.html:431
+#: app/camera_traps/templates/identification.html:435
 #: app/camera_traps/templates/photo_viewer.html:70
 msgid "Фото"
 msgstr ""
@@ -3283,19 +3283,19 @@ msgid "Час:"
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:229
-#: app/camera_traps/templates/identification.html:444
+#: app/camera_traps/templates/identification.html:448
 #: app/camera_traps/templates/photo_viewer.html:47
 msgid "© Фото належать"
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:229
-#: app/camera_traps/templates/identification.html:445
+#: app/camera_traps/templates/identification.html:449
 #: app/camera_traps/templates/photo_viewer.html:47
 msgid "Копіювання і поширення заборонене."
 msgstr ""
 
 #: app/camera_traps/templates/gallery.html:230
-#: app/camera_traps/templates/identification.html:446
+#: app/camera_traps/templates/identification.html:450
 #: app/camera_traps/templates/photo_viewer.html:49
 msgid ""
 "© Фото належать установі, яка веде спостереження. Копіювання і поширення "
@@ -3358,12 +3358,12 @@ msgid "Група:"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:126
-#: app/camera_traps/templates/identification.html:281
+#: app/camera_traps/templates/identification.html:285
 msgid "Ссавці"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:127
-#: app/camera_traps/templates/identification.html:283
+#: app/camera_traps/templates/identification.html:287
 msgid "Птахи"
 msgstr ""
 
@@ -3707,7 +3707,7 @@ msgid "Рахую…"
 msgstr ""
 
 #: app/camera_traps/templates/gap_analysis.html:291
-#: app/camera_traps/templates/identification.html:439
+#: app/camera_traps/templates/identification.html:443
 msgid "Не вдалося завантажити дані."
 msgstr ""
 
@@ -3985,22 +3985,22 @@ msgstr ""
 
 #: app/camera_traps/templates/identification.html:40
 #: app/camera_traps/templates/identification.html:42
-#: app/camera_traps/templates/identification.html:585
+#: app/camera_traps/templates/identification.html:589
 msgid "Будь-який"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:41
-#: app/camera_traps/templates/identification.html:593
+#: app/camera_traps/templates/identification.html:597
 msgid "AI ще не виконував класифікацію — список порожній."
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:45
-#: app/camera_traps/templates/identification.html:589
+#: app/camera_traps/templates/identification.html:593
 msgid "Не пусто (будь-яке визначення)"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:46
-#: app/camera_traps/templates/identification.html:590
+#: app/camera_traps/templates/identification.html:594
 msgid "Лише тварини"
 msgstr ""
 
@@ -4045,7 +4045,7 @@ msgid "Користувач:"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:98
-#: app/camera_traps/templates/identification.html:514
+#: app/camera_traps/templates/identification.html:518
 msgid "-- Всі користувачі --"
 msgstr ""
 
@@ -4062,7 +4062,7 @@ msgid "Відкрити у повному розмірі"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:137
-#: app/camera_traps/templates/identification.html:204
+#: app/camera_traps/templates/identification.html:207
 #: app/camera_traps/templates/photo_viewer.html:27
 msgid "Інвертувати кольори"
 msgstr ""
@@ -4087,189 +4087,207 @@ msgstr ""
 msgid "Гарячі клавіші (?)"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:167
+#: app/camera_traps/templates/identification.html:159
+#: app/camera_traps/templates/identification.html:160
+#: app/camera_traps/templates/identification.html:210
+msgid "⌨ увімк."
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:159
+msgid "⌨ вимк."
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:160
+msgid "Увімкнути / вимкнути гарячі клавіші (запам’ятовується в цьому браузері)"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:170
 msgid "Пошук тегу…"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:168
+#: app/camera_traps/templates/identification.html:171
 msgid "Цифра або Enter ставить тег, Esc закриває пошук"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:182
+#: app/camera_traps/templates/identification.html:185
 msgid "Короткий коментар, до 200 символів"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:189
+#: app/camera_traps/templates/identification.html:192
 msgid "Гарячі клавіші"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:191
+#: app/camera_traps/templates/identification.html:194
 msgid "Попереднє / наступне фото"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:192
+#: app/camera_traps/templates/identification.html:195
 msgid "Перше / останнє фото"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:193
+#: app/camera_traps/templates/identification.html:196
 msgid "Пробіл"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:193
+#: app/camera_traps/templates/identification.html:196
 msgid "Увімкнути / вимкнути автопрокрутку"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:194
+#: app/camera_traps/templates/identification.html:197
 msgid "Повільніше / швидше автопрокрутка"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:195
+#: app/camera_traps/templates/identification.html:198
 msgid "Пропустити серію"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:196
+#: app/camera_traps/templates/identification.html:199
 msgid "Повернутися до попередньої надісланої серії"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:197
-#: app/camera_traps/templates/identification.html:227
+#: app/camera_traps/templates/identification.html:200
+#: app/camera_traps/templates/identification.html:231
 msgid "Надіслати"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:198
+#: app/camera_traps/templates/identification.html:201
 msgid "Тег із цим номером (номер видно біля тегу)"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:199
+#: app/camera_traps/templates/identification.html:202
 msgid "Кількість особин 1…9, Shift+0 = 10"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:200
+#: app/camera_traps/templates/identification.html:203
 msgid "Вписати кількість вручну: Enter або Esc повертає до клавіш"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:201
+#: app/camera_traps/templates/identification.html:204
 msgid "Пошук тегу: набрати назву, потім цифра або Enter; Esc закриває"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:202
+#: app/camera_traps/templates/identification.html:205
 msgid ""
 "Пошук виду: Enter обирає перший знайдений; Esc очищає, повторний Esc "
 "виходить з пошуку"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:205
+#: app/camera_traps/templates/identification.html:208
 msgid "Світла / темна тема"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:206
+#: app/camera_traps/templates/identification.html:209
 msgid "Показати / сховати цю довідку"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:216
+#: app/camera_traps/templates/identification.html:210
+msgid "Кнопка біля автопрокрутки вимикає всі клавіші, крім Ctrl+Enter"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:220
 msgid ""
 "Клавіші не діють, коли курсор у текстовому полі (коментар, кількість, "
 "пошук). Розкладка клавіатури значення не має."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:226
+#: app/camera_traps/templates/identification.html:230
 msgid "Повернутися до попередньої серії, щоб виправити відповідь"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:228
+#: app/camera_traps/templates/identification.html:232
 msgid "Пропустити"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:229
+#: app/camera_traps/templates/identification.html:233
 msgid "Позначити серію на повторний розгляд"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:245
+#: app/camera_traps/templates/identification.html:249
 msgid "Зберегти обраний вид, кількість і теги та обрати ще один вид у цій серії"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:245
+#: app/camera_traps/templates/identification.html:249
 msgid "ще вид"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:263
+#: app/camera_traps/templates/identification.html:267
 msgid "Пошук виду…"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:264
+#: app/camera_traps/templates/identification.html:268
 msgid "Enter обирає перший знайдений вид, Esc очищає пошук"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:265
+#: app/camera_traps/templates/identification.html:269
 msgid "Нічого не знайдено"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:269
+#: app/camera_traps/templates/identification.html:273
 msgid "Загальні опції"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:282
+#: app/camera_traps/templates/identification.html:286
 msgid "Свійські тварини"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:284
+#: app/camera_traps/templates/identification.html:288
 msgid "Інші"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:432
+#: app/camera_traps/templates/identification.html:436
 msgid "Будь ласка, виберіть вид, або опцію \"Пусто\"."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:433
+#: app/camera_traps/templates/identification.html:437
 msgid "Спершу оберіть вид, потім натисніть «+ ще вид»."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:435
+#: app/camera_traps/templates/identification.html:439
 msgid "Прибрати"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:436
+#: app/camera_traps/templates/identification.html:440
 msgid "Повернути у форму, щоб змінити"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:437
+#: app/camera_traps/templates/identification.html:441
 msgid "ос."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:438
+#: app/camera_traps/templates/identification.html:442
 #: app/camera_traps/templates/manage_deployments.html:702
 #: app/camera_traps/templates/manage_locations.html:689
 #: app/camera_traps/templates/service_log.html:350
 msgid "Помилка збереження:"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:442
+#: app/camera_traps/templates/identification.html:446
 msgid "Залишилось вам:"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:443
+#: app/camera_traps/templates/identification.html:447
 msgid ""
 "У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою "
 "думку."
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:671
+#: app/camera_traps/templates/identification.html:675
 msgid "Кількість"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:699
+#: app/camera_traps/templates/identification.html:703
 msgid "AI пропонує"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:700
+#: app/camera_traps/templates/identification.html:704
 msgid "впевненість"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:701
+#: app/camera_traps/templates/identification.html:705
 msgid "особин"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:1424
+#: app/camera_traps/templates/identification.html:1466
 msgid "Коментар до позначки (за бажанням):"
 msgstr ""
 

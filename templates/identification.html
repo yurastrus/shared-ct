@@ -154,7 +154,12 @@
                                 {{ _('кадр/с') }}
                             </span>
                             <span id="autoplay-buffer" class="autoplay-buffer" title="{{ _('Буферизація…') }}" style="min-width:1.2em;"></span>
-                            <button type="button" id="hotkeys-hint" class="hotkeys-hint" title="{{ _('Гарячі клавіші (?)') }}">⌨ ?</button>
+                            <span style="display:inline-flex; gap:6px;">
+                                <button type="button" id="hotkeys-hint" class="hotkeys-hint" title="{{ _('Гарячі клавіші (?)') }}">⌨ ?</button>
+                                <button type="button" id="hotkeys-toggle" class="hotkeys-hint hotkeys-toggle" aria-pressed="true"
+                                        data-on="{{ _('⌨ увімк.') }}" data-off="{{ _('⌨ вимк.') }}"
+                                        title="{{ _('Увімкнути / вимкнути гарячі клавіші (запам’ятовується в цьому браузері)') }}">{{ _('⌨ увімк.') }}</button>
+                            </span>
                         </div>
                     </div>
 
@@ -204,6 +209,7 @@
                             (['I'], _('Інвертувати кольори')),
                             (['Ctrl+Shift+T'], _('Світла / темна тема')),
                             (['?'], _('Показати / сховати цю довідку')),
+                            ([_('⌨ увімк.')], _('Кнопка біля автопрокрутки вимикає всі клавіші, крім Ctrl+Enter')),
                         ] %}
                         <table class="hotkeys-table">
                             {% for keys, action in hotkey_rows %}
@@ -1247,9 +1253,18 @@ $(document).ready(function() {
         filterTags('');
     }
 
+    // Brief highlight, so a key pressed by mistake does not go unnoticed.
+    function flash($el) {
+        $el.removeClass('key-flash');
+        void ($el[0] && $el[0].offsetWidth);  // restart the animation
+        $el.addClass('key-flash');
+    }
+
     function toggleTag($row) {
         const $box = $row.find('input[type="checkbox"]');
-        if ($box.length) $box.prop('checked', !$box.prop('checked')).trigger('change');
+        if (!$box.length) return;
+        $box.prop('checked', !$box.prop('checked')).trigger('change');
+        flash($row);
     }
 
     // Digit key → tag row: the n-th match while searching, else the fixed key.
@@ -1322,6 +1337,21 @@ $(document).ready(function() {
     }
     $('#hotkeys-hint').on('click', toggleHelp);
 
+    // On/off switch for all keys except Ctrl+Enter; per browser, on by default.
+    const hotkeysToggle = $('#hotkeys-toggle');
+    let hotkeysOn = true;
+    try { hotkeysOn = localStorage.getItem('ct-hotkeys-on') !== '0'; } catch (err) { /* default on */ }
+    function setHotkeysOn(on) {
+        hotkeysOn = on;
+        hotkeysToggle.attr('aria-pressed', on ? 'true' : 'false')
+            .text(hotkeysToggle.data(on ? 'on' : 'off'));
+        wrapper.toggleClass('hotkeys-off', !on);
+        if (!on) closeTagSearch();
+        try { localStorage.setItem('ct-hotkeys-on', on ? '1' : '0'); } catch (err) { /* ignore */ }
+    }
+    setHotkeysOn(hotkeysOn);
+    hotkeysToggle.on('click', function() { setHotkeysOn(!hotkeysOn); });
+
     // Fields where keys must type text. Radio buttons and checkboxes are NOT
     // among them: after a click on a species the focus stays on its radio, and
     // the shortcuts must keep working there.
@@ -1367,13 +1397,16 @@ $(document).ready(function() {
             return;
         }
         if (e.ctrlKey || e.altKey || e.metaKey) return;  // browser and theme shortcuts
+        if (!hotkeysOn) return;
 
         const digit = digitOf(e);
         let handled = true;
         // Shift+digit first: in the Ukrainian layout Shift+7 types "?".
         const shifted = digit !== null && digitShifted(e);
         if (shifted) {
-            $('#{{ form.quantity.id }}').val(digit === 0 ? 10 : digit).trigger('change');
+            const $qty = $('#{{ form.quantity.id }}');
+            $qty.val(digit === 0 ? 10 : digit).trigger('change');
+            flash($qty);
         } else if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
             toggleHelp();
         } else if (code === 'ArrowRight' && e.shiftKey) {
