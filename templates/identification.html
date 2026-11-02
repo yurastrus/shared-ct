@@ -1277,6 +1277,16 @@ $(document).ready(function() {
         return m ? parseInt(m[1], 10) : null;
     }
 
+    // Shift on the numeric keypad: with NumLock on, Windows drops Shift and
+    // sends the navigation key instead (End, ArrowDown, Insert…), so shiftKey
+    // is false and only e.key gives the Shift away.
+    function digitShifted(e) {
+        if (e.shiftKey) return true;
+        if (!/^Numpad[0-9]$/.test(keyCode(e)) || /^[0-9]$/.test(e.key || '')) return false;
+        const native = e.originalEvent || e;  // jQuery's event has no getModifierState
+        return !!(native.getModifierState && native.getModifierState('NumLock'));
+    }
+
     tagSearch.on('input', function() {
         filterTags(this.value);
     }).on('keydown', function(e) {
@@ -1361,7 +1371,8 @@ $(document).ready(function() {
         const digit = digitOf(e);
         let handled = true;
         // Shift+digit first: in the Ukrainian layout Shift+7 types "?".
-        if (digit !== null && e.shiftKey) {
+        const shifted = digit !== null && digitShifted(e);
+        if (shifted) {
             $('#{{ form.quantity.id }}').val(digit === 0 ? 10 : digit).trigger('change');
         } else if (e.key === '?' || (code === 'Slash' && e.shiftKey)) {
             toggleHelp();
@@ -1381,7 +1392,7 @@ $(document).ready(function() {
             if (!e.repeat) setAutoPlay(!autoPlay);
         } else if (code === 'BracketLeft' || code === 'BracketRight') {
             setAutoPlayFps(autoPlayFps + (code === 'BracketRight' ? 1 : -1));
-        } else if (digit !== null && !e.shiftKey) {
+        } else if (digit !== null) {
             if (!e.repeat) toggleTag(tagRowForDigit(digit));
         } else if (code === 'KeyT' && !e.shiftKey) {
             openTagSearch();
