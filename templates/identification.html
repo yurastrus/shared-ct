@@ -1428,7 +1428,15 @@ $(document).ready(function() {
             return;
         }
         if (e.ctrlKey || e.altKey || e.metaKey) return;  // browser and theme shortcuts
-        if (!hotkeysOn) return;
+        // Space and Enter would otherwise press whatever kept the focus after a
+        // mouse click (Skip, Send, a tag), and arrows would move the species
+        // radio. Ctrl+Enter, handled above, is the only way to send by key.
+        const browserAction = code === 'Space' || code === 'Enter' || code === 'NumpadEnter'
+            || /^Arrow/.test(code);
+        if (!hotkeysOn) {
+            if (browserAction) e.preventDefault();  // keys off = keys do nothing
+            return;
+        }
 
         const digit = digitOf(e);
         let handled = true;
@@ -1476,7 +1484,7 @@ $(document).ready(function() {
             else if (hotkeysHelp.prop('open')) hotkeysHelp.prop('open', false);
             else handled = false;
         } else {
-            handled = false;
+            handled = browserAction;  // e.g. Enter on a focused Skip button
         }
         if (handled) e.preventDefault();
     });
