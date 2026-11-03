@@ -3010,12 +3010,13 @@ def batch_uploaded_files(lang_code, batch_id):
 # video_upload.py for why the server, and not the client, decides what it is.
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Admin-only while the reader is still being taught new camera families: a
-# mis-read capture time is invisible once it is in the database, so the people
-# who can spot one are the only ones who should be producing them yet.
+# Open to managers since 2026-11-03. Most clips now get their time from the
+# file header or from the operator's own eyes on the first frame, shown side by
+# side before anything is written, so a wrong time is no longer invisible.
+# Frames go only to locations the user manages (_batch_access_error).
 @camera_traps_bp.route('/upload-video', methods=['GET'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def upload_video(lang_code):
     """Video upload page. Location selection mirrors upload_fast exactly."""
     from .video_upload import list_profiles
@@ -3070,7 +3071,7 @@ def _frames_from_request(field='frames'):
 
 @camera_traps_bp.route('/api/video/calibrate', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def video_calibrate(lang_code):
     """Teach the reader a camera model from frames plus what the operator reads.
 
@@ -3135,7 +3136,7 @@ def video_calibrate(lang_code):
 
 @camera_traps_bp.route('/api/video/read-clip', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def video_read_clip(lang_code):
     """Read one clip's capture time and hand back a signed token for its frames.
 
@@ -3178,7 +3179,7 @@ def video_read_clip(lang_code):
 
 @camera_traps_bp.route('/api/video/metadata', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def video_read_metadata(lang_code):
     """What a clip's container header says about when it was taken.
 
@@ -3203,7 +3204,7 @@ def video_read_metadata(lang_code):
 
 @camera_traps_bp.route('/api/video/sign-clip', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def video_sign_clip(lang_code):
     """Sign a start time the operator confirmed (from metadata or typed in).
 
@@ -3248,7 +3249,7 @@ def video_sign_clip(lang_code):
 
 @camera_traps_bp.route('/api/video/process-frame', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('manager')
 def video_process_frame(lang_code):
     """Store one frame of a clip, with the capture time its token dictates."""
     from .video_upload import VideoUploadError, frame_capture_time
@@ -3262,6 +3263,10 @@ def video_process_frame(lang_code):
 
         if not all([location_id, batch_id, token, uploaded_file]):
             return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
+
+        denied = _batch_access_error(batch_id, location_id)
+        if denied is not None:
+            return denied
 
         frame_index = int(request.form.get('frame_index', 0))
         captured_at = frame_capture_time(token, batch_id, clip_name, frame_index)

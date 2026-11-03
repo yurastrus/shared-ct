@@ -127,14 +127,10 @@
             </a>
             {% endif %}
 
-            {# Admin-only while the reader is still being taught new camera
-               families. A mis-read capture time is invisible once it reaches the
-               database, so until every family in the archives reads cleanly, the
-               people who can recognise a wrong one are the only ones producing
-               them. Deliberately outside the can_upload block: that flag is the
-               manager role, and an admin who is not also a manager must still
-               reach the page the route grants them. #}
-            {% if is_admin %}
+            {# Managers and admins, like the route. Outside the can_upload block
+               because that flag is the manager role, and an admin who is not
+               also a manager must still reach the page. #}
+            {% if can_upload or is_admin %}
             <a class="hub-card" href="{{ url_for('camera_traps.upload_video', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">🎞️</span>
                 <span class="hub-card__title">{{ _('Завантаження відео') }}</span>
