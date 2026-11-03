@@ -658,7 +658,8 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
 
     Access is filtered via `inst_condition_orm`/`inst_params`
     (result of get_institution_filter), so the function does not resolve
-    permissions itself. Returns a list of Rows sorted by total desc.
+    permissions itself. Returns a list of Rows sorted by d_week desc,
+    then total desc.
 
     Optional `species_id` narrows results to identifications of that species only.
     """
@@ -691,8 +692,9 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
     if species_id:
         query = query.filter(Identification.species_id == species_id)
 
+    # Default order is last week's activity; ties go to all-time total.
     return query.group_by(Identification.user_id)\
-        .order_by(func.count(distinct(Photo.observation_id)).desc())\
+        .order_by(text('d_week DESC'), text('total DESC'), Identification.user_id)\
         .all()
 
 
