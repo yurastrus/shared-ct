@@ -468,13 +468,14 @@ $(document).ready(function() {
         location: "{{ _('Локація') }}",
         time: "{{ _('Час') }}",
         photo: "{{ _('Фото') }}",
-        selectSpecies: '{{ _('Будь ласка, виберіть вид, або опцію "Пусто".') }}',
+        selectSpecies: {{ _('Будь ласка, виберіть вид, або опцію "Пусто".')|tojson }},
         selectSpeciesToAdd: "{{ _('Спершу оберіть вид, потім натисніть «+ ще вид».') }}",
         emptyAlone: "{{ _('«Пусто» не можна поєднувати з іншими видами.') }}",
         removeEntry: "{{ _('Прибрати') }}",
         editEntry: "{{ _('Повернути у форму, щоб змінити') }}",
         quantityShort: "{{ _('ос.') }}",
         saveError: "{{ _('Помилка збереження:') }}",
+        pageStale: "{{ _('Сторінка надто довго була відкрита без дій, і сервер її вже не приймає. Відповідь не збережено. Перезавантажте сторінку, будь ласка. Перезавантажити зараз?') }}",
         loadError: "{{ _('Не вдалося завантажити дані.') }}",
         congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
         noReviewSeries: "{{ _('Немає серій для перегляду, які б відповідали критеріям.') }}",
@@ -485,6 +486,31 @@ $(document).ready(function() {
         rightsGeneric: "{{ _('© Фото належать установі, яка веде спостереження. Копіювання і поширення заборонене.') }}",
         seeAllFrames: "{{ _('Спершу перегляньте всі фото серії (стрілки або автопрокрутка). Не переглянуто:') }}"
     };
+
+    // A page left open for long goes stale: its CSRF token expires (400) or the
+    // login ends (redirect to the login page). Both answer with HTML, which used
+    // to surface as "Unexpected token '<' ... is not valid JSON".
+    function isStaleResponse(response) {
+        return response.status === 400 || response.status === 401 || response.status === 403
+            || (response.redirected && response.url.includes('/login'));
+    }
+
+    function readJson(response) {
+        const type = response.headers.get('Content-Type') || '';
+        if (!type.includes('application/json')) {
+            if (isStaleResponse(response)) return Promise.reject({stale: true});
+            return Promise.reject({message: translations.loadError + ' (HTTP ' + response.status + ')'});
+        }
+        return response.json().then(data => {
+            if (response.ok) return data;
+            if (data && data.code === 'csrf_expired') data.stale = true;
+            return Promise.reject(data);
+        });
+    }
+
+    function showStalePage() {
+        if (confirm(translations.pageStale)) window.location.reload();
+    }
 
     // Render the "Залишилось вам: N (M)" counter from the current state.
     function renderCounter() {
@@ -1028,13 +1054,7 @@ $(document).ready(function() {
         let nextPrefetch = null;  // {key, excludeId, at, promise, images}
 
         function fetchObservation(query) {
-            return fetch(nextObservationUrl + (query ? '?' + query : ''))
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => Promise.reject(err));
-                    }
-                    return response.json();
-                });
+            return fetch(nextObservationUrl + (query ? '?' + query : '')).then(readJson);
         }
 
         function prefetchNextObservation() {
@@ -1157,6 +1177,7 @@ $(document).ready(function() {
                 requestAnimationFrame(function () { window.scrollTo(0, _savedScrollY); });
             })
             .catch(error => {
+                if (error && error.stale) { showStalePage(); return; }
                 wrapper.hide();
                 let message;
                 if (reviewMode && error.message && error.message.includes('критеріям')) {
@@ -1629,7 +1650,10 @@ $(document).ready(function() {
             credentials: 'same-origin',
             headers: { 'X-CSRFToken': token }
         }).then(r => {
-            if (r.ok) loadNextObservation();
+            // The route redirects back to a page, so a success is any OK answer
+            // that is not the login page.
+            if (isStaleResponse(r)) showStalePage();
+            else if (r.ok) loadNextObservation();
             else alert("{{ _('Помилка позначення серії.') }}");
         }).catch(() => alert("{{ _('Помилка позначення серії.') }}"));
     });
@@ -1679,12 +1703,7 @@ $(document).ready(function() {
             },
             body: JSON.stringify(identificationData)
         })
-        .then(response => {
-            if (response.ok) {
-                return response.json();
-            }
-            return response.json().then(err => Promise.reject(err));
-        })
+        .then(readJson)
         .then(data => {
             // Виправлена серія вже була пораховена; нова потрапляє в історію «Назад».
             if (!wasEditing) rememberSubmitted(submittedObsId);
@@ -1701,6 +1720,7 @@ $(document).ready(function() {
             loadNextObservation();
         })
         .catch(error => {
+            if (error && error.stale) { showStalePage(); return; }
             alert(translations.saveError + " " + (error.error || error.message));
         });
     });
