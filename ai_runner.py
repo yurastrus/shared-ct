@@ -330,7 +330,36 @@ def get_species_with_ai_predictions(
     scope_institution_id: Optional[int] = None,
     scope_institution_ids: Optional[list] = None,
 ) -> list:
-    """Return [(species_id, display_name)] for species that have **pending for
+    """The species items of get_ai_filter_options (see there)."""
+    return get_ai_filter_options(
+        lang_code=lang_code, user_id=user_id, user_inst_ids=user_inst_ids,
+        is_admin=is_admin, scope_institution_id=scope_institution_id,
+        scope_institution_ids=scope_institution_ids,
+    )['items']
+
+
+def _no_ai_options() -> dict:
+    return {'items': [], 'group_counts': {}}
+
+
+def get_ai_filter_options(
+    lang_code: str = 'uk',
+    user_id: Optional[int] = None,
+    user_inst_ids: Optional[list] = None,
+    is_admin: bool = False,
+    scope_institution_id: Optional[int] = None,
+    scope_institution_ids: Optional[list] = None,
+) -> dict:
+    """{'items': [...], 'group_counts': {...}} for the /identify AI filter.
+
+    ``group_counts`` gives the same pending counts for the options that are not
+    a single species (added 03.11.2026, they used to show no number):
+    ``''`` ("any") — every candidate series, with or without a prediction;
+    ``not_empty`` / ``animals`` — summed over the species items by the rules of
+    observations_subq_for_ai_group. Each series has one winning prediction, so
+    the sums count every series once.
+
+    ``items``: [{id, text}] for species that have **pending for
     this user** AI predictions from the active model. That is:
       - observation.status='pending'
       - the user has not yet identified any photo in this series
@@ -362,7 +391,7 @@ def get_species_with_ai_predictions(
     # MDR beats the server DF+MDS where both exist). If no model exists —
     # AI is not yet configured.
     if sess.query(AIModel.id).first() is None:
-        return []
+        return _no_ai_options()
 
     # Build the access clause (same logic as next_observation_for_identification).
     if is_admin:
@@ -410,13 +439,13 @@ def get_species_with_ai_predictions(
             scope_params = {'scope_inst_id': scope_institution_id}
         else:
             # User has no access to this institution — return empty.
-            return []
+            return _no_ai_options()
     elif scope_institution_ids is not None:
         # Pre-resolved, access-checked list of institutions (e.g. an ecoregion
         # expanded to its institutions by the caller). An empty list means no
         # accessible institution matched → no results.
         if not scope_institution_ids:
-            return []
+            return _no_ai_options()
         scope_clause = """
             AND EXISTS (
                 SELECT 1 FROM location_institutions li_sc
@@ -461,10 +490,12 @@ def get_species_with_ai_predictions(
                s.common_name_ua,
                s.common_name_en,
                s.scientific_name,
-               COUNT(DISTINCT win.observation_id) AS pending_count
+               s.kingdom,
+               COUNT(DISTINCT win.observation_id) AS pending_count,
+               (SELECT COUNT(*) FROM cand) AS cand_total
         FROM win
         JOIN species s ON s.id = win.prediction_species_id
-        GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name
+        GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name, s.kingdom
         HAVING COUNT(DISTINCT win.observation_id) > 0
         ORDER BY s.common_name_ua
     """)
@@ -485,7 +516,14 @@ def get_species_with_ai_predictions(
     }).fetchall()
 
     result = []
+    group_counts = {'': 0, AI_GROUP_NOT_EMPTY: 0, AI_GROUP_ANIMALS: 0}
     for s in rows:
+        if isinstance(s.cand_total, int):
+            group_counts[''] = s.cand_total
+        if s.scientific_name != AI_EMPTY_SCIENTIFIC_NAME:
+            group_counts[AI_GROUP_NOT_EMPTY] += s.pending_count
+            if s.kingdom == 'Animalia' and s.scientific_name != AI_NON_ANIMAL_SCIENTIFIC_NAME:
+                group_counts[AI_GROUP_ANIMALS] += s.pending_count
         if lang_code == 'en':
             name = s.common_name_en or s.common_name_ua or s.scientific_name
         else:
@@ -495,7 +533,7 @@ def get_species_with_ai_predictions(
         # Append the pending count in parentheses.
         name = f"{name} ({s.pending_count})"
         result.append({'id': s.id, 'text': name})
-    return result
+    return {'items': result, 'group_counts': group_counts if result else {}}
 
 
 def get_observation_ai_prediction(

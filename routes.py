@@ -2346,18 +2346,21 @@ def identify(lang_code):
         # AI filter: list of species with AI predictions (only if AI is available).
         # Takes into account the user's access to locations and already-made
         # identifications — counts in brackets ("(42)") shrink as work progresses.
-        from .ai_runner import is_ai_available, get_species_with_ai_predictions
+        from .ai_runner import is_ai_available, get_ai_filter_options
         ai_available = is_ai_available()
         ai_species_list = []
+        ai_group_counts = {}
         if ai_available:
             try:
                 user_inst_ids_list = ct_access.allowed_institution_ids(current_user)
-                ai_species_list = get_species_with_ai_predictions(
+                ai_options = get_ai_filter_options(
                     lang_code=g.lang_code,
                     user_id=current_user.id,
                     user_inst_ids=user_inst_ids_list,
                     is_admin=is_admin,
                 )
+                ai_species_list = ai_options['items']
+                ai_group_counts = ai_options['group_counts']
             except Exception as e:
                 current_app.logger.warning(f"AI: cannot load species list: {e}")
 
@@ -2374,6 +2377,7 @@ def identify(lang_code):
                              ecoregions=ecoregions,
                              ai_available=ai_available,
                              ai_species_list=ai_species_list,
+                             ai_group_counts=ai_group_counts,
                              start_obs_id=start_obs_id,
                              behavior_hotkeys=behavior_hotkeys)
     finally:
@@ -2410,7 +2414,7 @@ def identify_ai_species_list(lang_code):
             if scope_institution_id not in user_inst_ids:
                 return jsonify({'ai_available': True, 'items': []}), 200
 
-        from .ai_runner import is_ai_available, get_species_with_ai_predictions
+        from .ai_runner import is_ai_available, get_ai_filter_options
         ai_available = is_ai_available()
         if not ai_available:
             return jsonify({'ai_available': False, 'items': []}), 200
@@ -2432,7 +2436,7 @@ def identify_ai_species_list(lang_code):
             scope_institution_ids = eco_inst_ids
 
         try:
-            items = get_species_with_ai_predictions(
+            options = get_ai_filter_options(
                 lang_code=g.lang_code,
                 user_id=current_user.id,
                 user_inst_ids=user_inst_ids,
@@ -2442,9 +2446,9 @@ def identify_ai_species_list(lang_code):
             )
         except Exception as e:
             current_app.logger.warning(f"AI: cannot load species list: {e}")
-            items = []
+            options = {'items': [], 'group_counts': {}}
 
-        return jsonify({'ai_available': True, 'items': items}), 200
+        return jsonify({'ai_available': True, **options}), 200
     finally:
         close_ct_session()
 

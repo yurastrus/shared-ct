@@ -43,15 +43,17 @@
                 data-mobile-placeholder="{{ _('Будь-який AI вид') }}"
                 data-desktop-placeholder="{{ _('Будь-який') }}"
                 {% if not ai_species_list %}disabled title="{{ _('AI ще не виконував класифікацію — список порожній.') }}"{% endif %}>
-            <option value="">{{ _('Будь-який') }}</option>
+            {# Counts for the non-species options (ai_group_counts, keyed by value). #}
+            {% macro group_count(key) %}{% if key in ai_group_counts %} ({{ ai_group_counts[key] }}){% endif %}{% endmacro %}
+            <option value="" data-suffix="{{ group_count('') }}">{{ _('Будь-який') }}{{ group_count('') }}</option>
             {# Group filters. Values are strings, not ids, so the backend can
                tell them apart from a species selection. #}
-            <option value="not_empty">{{ _('Не пусто (будь-яке визначення)') }}</option>
+            <option value="not_empty">{{ _('Не пусто (будь-яке визначення)') }}{{ group_count('not_empty') }}</option>
             {# "Empty" (-1) right after "not empty", the rest alphabetical. #}
             {% for s in ai_species_list if s.id == -1 %}
             <option value="{{ s.id }}">{{ s.text }}</option>
             {% endfor %}
-            <option value="animals">{{ _('Лише тварини') }}</option>
+            <option value="animals">{{ _('Лише тварини') }}{{ group_count('animals') }}</option>
             {% for s in ai_species_list if s.id != -1 %}
             <option value="{{ s.id }}">{{ s.text }}</option>
             {% endfor %}
@@ -429,7 +431,8 @@ $(document).ready(function() {
             const text = mobile ? $sel.data('mobile-placeholder')
                                 : $sel.data('desktop-placeholder');
             if (!text) return;
-            $sel.find('option[value=""]').first().text(text);
+            const $opt = $sel.find('option[value=""]').first();
+            $opt.text(text + ($opt.attr('data-suffix') || ''));
             if ($sel.data('select2')) $sel.trigger('change.select2');
         });
     }
@@ -680,13 +683,17 @@ $(document).ready(function() {
             .then(r => r.ok ? r.json() : Promise.reject(r))
             .then(data => {
                 const items = data && data.items || [];
+                const counts = data && data.group_counts || {};
+                const withCount = (text, key) => key in counts ? text + ' (' + counts[key] + ')' : text;
                 // Rebuild the options.
                 $sel.empty();
-                $sel.append($('<option>', {value: '', text: aiAnyLabel}));
+                const anyOpt = $('<option>', {value: '', text: withCount(aiAnyLabel, '')});
+                anyOpt.attr('data-suffix', withCount('', ''));
+                $sel.append(anyOpt);
                 // "Empty" (-1) right after "not empty", as in the template.
                 const addSpecies = s => $sel.append($('<option>', {value: s.id, text: s.text}));
                 aiGroupOptions.forEach(g => {
-                    $sel.append($('<option>', {value: g.value, text: g.text}));
+                    $sel.append($('<option>', {value: g.value, text: withCount(g.text, g.value)}));
                     if (g.value === 'not_empty') items.filter(s => String(s.id) === '-1').forEach(addSpecies);
                 });
                 items.filter(s => String(s.id) !== '-1').forEach(addSpecies);
