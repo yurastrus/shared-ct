@@ -240,7 +240,7 @@
                         <div class="buttons-and-theme">
                             <div class="main-buttons">
                                 <button type="button" id="back-btn" class="btn btn-secondary" disabled title="{{ _('Повернутися до попередньої серії, щоб виправити відповідь') }} (Shift+←)">&lt;</button>
-                                <button type="submit" id="submit-btn" class="btn btn-primary" title="Ctrl+Enter">{{ _('Надіслати') }}<span id="unseen-count"></span></button>
+                                <button type="submit" id="submit-btn" class="btn btn-primary" title="Ctrl+Enter"><span id="submit-label">{{ _('Надіслати') }}</span><span id="unseen-count"></span></button>
                                 <button type="button" id="skip-btn" class="btn btn-secondary" title="Shift+→">{{ _('Пропустити') }}</button>
                                 <button type="button" id="flag-btn" class="btn btn-outline-warning" title="{{ _('Позначити серію на повторний розгляд') }}">🚩</button>
                             </div>
@@ -824,7 +824,9 @@ $(document).ready(function() {
         submitBtn.toggleClass('submit-gated', left > 0)
             .attr('aria-disabled', left > 0 ? 'true' : null)
             .attr('title', left > 0 ? `${translations.seeAllFrames} ${left}` : 'Ctrl+Enter');
-        $('#unseen-count').text(left > 0 ? ` ${seenPhotos.size}/${n}` : '');
+        // While counting, the count alone: "Надіслати 136/216" overflowed the button.
+        $('#submit-label').prop('hidden', left > 0);
+        $('#unseen-count').text(left > 0 ? `${seenPhotos.size}/${n}` : '');
         if (left === 0) $('#unseen-warning').prop('hidden', true);
     }
 
