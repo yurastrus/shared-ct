@@ -11,11 +11,12 @@
    The cutting happens in this browser (static/js/video_slice.js) — nothing but
    the frames is ever uploaded. /upload and /upload-fast are untouched.
 
-   The one thing video frames cannot bring with them is a capture time. There is
-   no EXIF in them and, in the one MP4 family checked, the container's own
-   creation date was nine years wrong. The time is therefore read back from the
-   pixels the camera burns into the image, which is why this page asks which
-   camera took the footage and what date format it prints.
+   The one thing video frames cannot bring with them is a capture time. Most
+   MOV/MP4 clips carry it in the container header, but its meaning (start or
+   end of the clip) differs between makes and on one Cuddeback it was nine
+   years wrong, so it is shown next to the first frame for a person to confirm.
+   A clip without it gets its start typed in from that frame. Reading the
+   burned-in strip with a calibrated camera remains as a second option.
    ────────────────────────────────────────────────────────────────────────── #}
 
 {% block title %}{{ _('Завантаження відео фотопасток') }}{% endblock %}
@@ -55,6 +56,16 @@
                 gap: 8px 12px; }
   .calib-block { border-top: 1px solid var(--border-color); margin-top: 10px;
                  padding-top: 10px; }
+  /* The first frame of each clip, so the time printed on it can be compared
+     with the start time beside it. Click opens it full size. */
+  .clip-thumb { width: 160px; max-width: 100%; cursor: zoom-in;
+                border: 1px solid var(--border-color); border-radius: 3px; }
+  #clips-table .clip-start { min-width: 200px; }
+  #frame-viewer { position: fixed; inset: 0; z-index: 2000; cursor: zoom-out;
+                  background: rgba(0, 0, 0, 0.85); display: flex;
+                  align-items: center; justify-content: center; }
+  #frame-viewer.d-none { display: none !important; }
+  #frame-viewer img { max-width: 96vw; max-height: 94vh; }
 </style>
 {% endblock %}
 
@@ -108,22 +119,121 @@
         </div>
       </div>
 
-      {# ── Step 2: which camera ────────────────────────────────────────── #}
+      {# ── Step 2: where the capture time comes from ───────────────────── #}
+      {# Most clips carry their capture time in the container header, written
+         by the camera's own clock (video_metadata.py). Whether that time marks
+         the start or the end of the clip differs between makes, and it can be
+         plainly wrong, so it is shown next to the first frame and confirmed by
+         a person. A clip without it gets its time typed in from that frame.
+         Reading the burned-in strip by a calibrated camera stays available for
+         the makes it works on. #}
       <div class="step-card">
-        <div class="step-title"><span class="step-num">2</span>{{ _('Камера і формат дати') }}</div>
+        <div class="step-title"><span class="step-num">2</span>{{ _('Час зйомки') }}</div>
 
         <div class="field-row">
-          <label for="profile-select">{{ _('Модель камери') }}</label>
-          <select id="profile-select" class="form-select">
-            <option value="">{{ _('-- Нова камера (потрібне калібрування) --') }}</option>
-            {% for p in camera_profiles %}
-              <option value="{{ p.id }}">{{ p.name }}</option>
-            {% endfor %}
-          </select>
-          <div class="video-hint">
-            {{ _('Камеру калібрують один раз. Далі всі папки з неї читаються без питань.') }}
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="time-source"
+                   id="time-source-metadata" value="metadata" checked>
+            <label class="form-check-label" for="time-source-metadata">
+              {{ _('З метаданих відео, а де їх нема, вписати вручну') }}
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="time-source"
+                   id="time-source-overlay" value="overlay">
+            <label class="form-check-label" for="time-source-overlay">
+              {{ _('Прочитати з кадру (відкалібрована камера)') }}
+            </label>
           </div>
         </div>
+
+        <div id="metadata-panel" class="calib-block">
+          <div class="field-row">
+            <label for="metadata-marks">{{ _('Час у метаданих позначає') }}</label>
+            <select id="metadata-marks" class="form-select">
+              <option value="start" selected>{{ _('початок запису') }}</option>
+              <option value="end">{{ _('кінець запису') }}</option>
+            </select>
+            <div class="video-hint">
+              {{ _('Залежить від марки камери. Порівняйте з часом на першому кадрі: якщо час у таблиці пізніший на тривалість відео, оберіть «кінець запису».') }}
+            </div>
+          </div>
+        </div>
+
+        <div id="overlay-panel" class="calib-block d-none">
+          <div class="field-row">
+            <label for="profile-select">{{ _('Модель камери') }}</label>
+            <select id="profile-select" class="form-select">
+              <option value="">{{ _('-- Нова камера (потрібне калібрування) --') }}</option>
+              {% for p in camera_profiles %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+            <div class="video-hint">
+              {{ _('Камеру калібрують один раз. Далі всі папки з неї читаються без питань.') }}
+            </div>
+          </div>
+
+          {# The format selector is not a convenience. Read with a two-digit year,
+             "2001/07/2014:02:33" also spells a perfectly plausible 2020-01-07
+             20:14:02, and that ghost advances one second per frame exactly like
+             the real reading — no cross-check can expose it. Only a declared
+             format can. #}
+          <div id="calibration-panel">
+            <div class="field-grid">
+              <div class="field-row">
+                <label for="date-order">{{ _('Порядок дати') }}</label>
+                <select id="date-order" class="form-select">
+                  <option value="ymd" selected>{{ _('РРРР / ММ / ДД') }}</option>
+                  <option value="dmy">{{ _('ДД / ММ / РРРР') }}</option>
+                  <option value="mdy">{{ _('ММ / ДД / РРРР') }}</option>
+                  <option value="ydm">{{ _('РРРР / ДД / ММ') }}</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <label for="year-width">{{ _('Рік') }}</label>
+                <select id="year-width" class="form-select">
+                  <option value="4" selected>{{ _('4 цифри (2026)') }}</option>
+                  <option value="2">{{ _('2 цифри (26)') }}</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <label for="hour-format">{{ _('Час') }}</label>
+                <select id="hour-format" class="form-select">
+                  <option value="24" selected>{{ _('24 год') }}</option>
+                  <option value="12">{{ _('12 год') }}</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <label for="camera-name">{{ _('Назва камери') }}</label>
+                <input type="text" id="camera-name" class="form-control"
+                       placeholder="{{ _('напр. Fujifilm AVI') }}">
+              </div>
+            </div>
+
+            <div class="field-row mt-2">
+              <label for="calib-files">{{ _('Виберіть 2–3 відео цієї камери для калібрування') }}</label>
+              <input type="file" id="calib-files" class="form-control" multiple accept="video/*">
+            </div>
+
+            <div id="calib-prompt" class="d-none mt-2">
+              <p class="video-hint mb-2">
+                {{ _('Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди — визначиться саме.') }}
+              </p>
+              <div id="calib-rows"></div>
+              <button type="button" id="calib-run" class="btn btn-primary btn-sm mt-2">
+                {{ _('Відкалібрувати') }}
+              </button>
+            </div>
+
+            <div id="calib-result" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Step 3: the clips ───────────────────────────────────────────── #}
+      <div class="step-card">
+        <div class="step-title"><span class="step-num">3</span>{{ _('Відео') }}</div>
 
         <div class="field-grid">
           <div class="field-row">
@@ -134,87 +244,31 @@
               <option value="5">{{ _('1 кадр / 5 с') }}</option>
             </select>
           </div>
+          {# Thumbnails by default: a frame cut from video is a still of footage
+             that is not kept anywhere, and the full-size copy of every second
+             of every clip is what fills the disk. #}
           <div class="field-row">
             <label for="save-original">{{ _('Оригінали') }}</label>
             <select id="save-original" class="form-select">
-              <option value="true" selected>{{ _('Зберігати') }}</option>
-              <option value="false">{{ _('Лише мініатюри') }}</option>
+              <option value="false" selected>{{ _('Лише мініатюри') }}</option>
+              <option value="true">{{ _('Зберігати') }}</option>
             </select>
           </div>
         </div>
-
-        {# The format selector is not a convenience. Read with a two-digit year,
-           "2001/07/2014:02:33" also spells a perfectly plausible 2020-01-07
-           20:14:02, and that ghost advances one second per frame exactly like
-           the real reading — no cross-check can expose it. Only a declared
-           format can. #}
-        <div id="calibration-panel" class="calib-block">
-          <div class="field-grid">
-            <div class="field-row">
-              <label for="date-order">{{ _('Порядок дати') }}</label>
-              <select id="date-order" class="form-select">
-                <option value="ymd" selected>{{ _('РРРР / ММ / ДД') }}</option>
-                <option value="dmy">{{ _('ДД / ММ / РРРР') }}</option>
-                <option value="mdy">{{ _('ММ / ДД / РРРР') }}</option>
-                <option value="ydm">{{ _('РРРР / ДД / ММ') }}</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <label for="year-width">{{ _('Рік') }}</label>
-              <select id="year-width" class="form-select">
-                <option value="4" selected>{{ _('4 цифри (2026)') }}</option>
-                <option value="2">{{ _('2 цифри (26)') }}</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <label for="hour-format">{{ _('Час') }}</label>
-              <select id="hour-format" class="form-select">
-                <option value="24" selected>{{ _('24 год') }}</option>
-                <option value="12">{{ _('12 год') }}</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <label for="camera-name">{{ _('Назва камери') }}</label>
-              <input type="text" id="camera-name" class="form-control"
-                     placeholder="{{ _('напр. Fujifilm AVI') }}">
-            </div>
-          </div>
-
-          <div class="field-row mt-2">
-            <label for="calib-files">{{ _('Виберіть 2–3 відео цієї камери для калібрування') }}</label>
-            <input type="file" id="calib-files" class="form-control" multiple accept="video/*">
-          </div>
-
-          <div id="calib-prompt" class="d-none mt-2">
-            <p class="video-hint mb-2">
-              {{ _('Впишіть дату й час так, як вони показані на кадрі. Це єдине питання: усе інше — які цифри як виглядають, чи є ведучі нулі, чи друкуються секунди — визначиться саме.') }}
-            </p>
-            <div id="calib-rows"></div>
-            <button type="button" id="calib-run" class="btn btn-primary btn-sm mt-2">
-              {{ _('Відкалібрувати') }}
-            </button>
-          </div>
-
-          <div id="calib-result" class="mt-2"></div>
-        </div>
-      </div>
-
-      {# ── Step 3: the clips ───────────────────────────────────────────── #}
-      <div class="step-card">
-        <div class="step-title"><span class="step-num">3</span>{{ _('Відео') }}</div>
 
         <div class="field-row">
           <input type="file" id="video-files" class="form-control" multiple accept="video/*">
         </div>
 
         <div class="d-flex gap-2 flex-wrap">
-          <button type="button" id="video-read-btn" class="btn btn-outline-primary btn-sm" disabled>
+          <button type="button" id="video-read-btn" class="btn btn-outline-primary btn-sm d-none" disabled>
             {{ _('Прочитати час зйомки') }}
           </button>
           <button type="button" id="video-upload-btn" class="btn btn-success btn-sm" disabled>
             {{ _('Завантажити кадри') }}
           </button>
         </div>
+        <div id="video-missing-text" class="video-hint"></div>
 
         <div class="progress mt-2" style="height:20px;">
           <div id="video-progress-bar" class="progress-bar" style="width:0%"></div>
@@ -228,17 +282,17 @@
     </div>
   </div>
 
-  {# Showing the strip of pixels the reading came from, next to the date it
-     produced, is what lets a human catch a wrong date order before anything
-     reaches the database. #}
+  {# The first frame sits next to the start time so the operator compares the
+     two by eye before anything reaches the database: most cameras print the
+     time on the picture. Click the frame to see it full size. #}
   <div class="table-responsive mt-3">
     <table class="table table-sm" id="clips-table">
       <thead>
         <tr>
           <th>{{ _('Файл') }}</th>
-          <th>{{ _('Що прочитано') }}</th>
-          <th>{{ _('Час зйомки') }}</th>
-          <th>{{ _('Кадрів') }}</th>
+          <th>{{ _('Перший кадр') }}</th>
+          <th>{{ _('Час початку') }}</th>
+          <th>{{ _('Тривалість') }}</th>
           <th>{{ _('Стан') }}</th>
         </tr>
       </thead>
@@ -246,6 +300,9 @@
     </table>
   </div>
 
+  <div id="frame-viewer" class="d-none" title="{{ _('Закрити') }}">
+    <img alt="">
+  </div>
 </div>
 {% endblock %}
 
@@ -255,7 +312,7 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/video_slice.js', lang_code=g.lang_code) }}?v=1"></script>
+<script src="{{ url_for('camera_traps.serve_ct_static', filename='js/video_slice.js', lang_code=g.lang_code) }}?v=2"></script>
 <script>
 $(function () {
     'use strict';
@@ -420,6 +477,75 @@ $(function () {
         refreshButtons();
     });
 
+    // ─── Where the time comes from ────────────────────────────────────────
+
+    const metadataUrl = `/${LANG}/camera-traps/api/video/metadata`;
+    const signClipUrl = `/${LANG}/camera-traps/api/video/sign-clip`;
+
+    const SOURCE_LABELS = {
+        metadata: {{ _('з метаданих') | tojson }},
+        manual:   {{ _('вручну') | tojson }},
+        overlay:  {{ _('з кадру') | tojson }}
+    };
+    const MSG_NO_METADATA = {{ _('У файлі немає дати. Впишіть час з першого кадру.') | tojson }};
+    const MSG_BAD_METADATA = {{ _('У метаданих неправдоподібна дата:') | tojson }};
+    const MSG_FILE_MODIFIED = {{ _('Файл змінено:') | tojson }};
+    const MSG_FILE_MODIFIED_NOTE = {{ _('(може бути часом копіювання)') | tojson }};
+
+    function timeSource() {
+        return $('input[name="time-source"]:checked').val();
+    }
+
+    $('input[name="time-source"]').on('change', function () {
+        const overlay = timeSource() === 'overlay';
+        $('#overlay-panel').toggleClass('d-none', !overlay);
+        $('#metadata-panel').toggleClass('d-none', overlay);
+        $('#video-read-btn').toggleClass('d-none', !overlay);
+        // Typed times survive a trip to the other mode and back; in overlay
+        // mode only times read off the strip count.
+        if (!overlay) { clips.forEach(applyMetadata); }
+        renderTable();
+        refreshButtons();
+    });
+
+    $('#metadata-marks').on('change', function () {
+        clips.forEach(function (clip) {
+            if (clip.source === 'metadata') { applyMetadata(clip); }
+        });
+        renderTable();
+        refreshButtons();
+    });
+
+    // Naive date arithmetic on "YYYY-MM-DDTHH:MM:SS" strings, in UTC so that a
+    // daylight-saving change in this browser's zone cannot move a camera clock.
+    function addSeconds(iso, seconds) {
+        const moment = new Date(iso + 'Z');
+        moment.setUTCSeconds(moment.getUTCSeconds() + seconds);
+        return moment.toISOString().slice(0, 19);
+    }
+
+    function localStamp(ms) {
+        const d = new Date(ms);
+        const pad = (n) => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+            ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+
+    /** Start time from the container header, unless the operator has typed one. */
+    function applyMetadata(clip) {
+        if (clip.source === 'manual') { return; }
+        const meta = clip.meta;
+        if (meta && meta.created && meta.plausible) {
+            const back = $('#metadata-marks').val() === 'end'
+                ? Math.round(meta.duration || 0) : 0;
+            clip.start = addSeconds(meta.created, -back);
+            clip.source = 'metadata';
+        } else {
+            clip.start = '';
+            clip.source = '';
+        }
+    }
+
     // ─── Calibration ──────────────────────────────────────────────────────
     // The operator reads the date off the frames; everything else follows from
     // the frames themselves.
@@ -512,48 +638,156 @@ $(function () {
         });
     });
 
-    // ─── Reading the clips ────────────────────────────────────────────────
+    // ─── Choosing the clips ───────────────────────────────────────────────
+    // As soon as clips are chosen, each one gets its first frame and whatever
+    // its header says about the time. Both are cheap: an AVI needs its first
+    // few megabytes, an MP4 a few kilobytes of moov and one seek.
 
-    $('#video-files').on('change', function () {
+    let selectionId = 0;
+
+    $('#video-files').on('change', async function () {
+        clips.forEach(function (clip) {
+            if (clip.thumbUrl) { URL.revokeObjectURL(clip.thumbUrl); }
+        });
         clips = Array.from(this.files || []).map(function (file) {
-            return { file: file, frames: null, reading: null, status: '' };
+            return { file: file, frames: null, reading: null, status: '',
+                     meta: null, thumbUrl: null, start: '', source: '',
+                     unsupported: false };
         });
         renderTable();
         refreshButtons();
+
+        const mine = ++selectionId;
+        for (let index = 0; index < clips.length; index += 1) {
+            if (mine !== selectionId) { return; }   // a newer selection took over
+            const clip = clips[index];
+            setProgress((index / clips.length) * 100,
+                {{ _('Переглядаю') | tojson }} + ' ' + clip.file.name);
+            await inspectClip(clip);
+            renderRow(index);
+            refreshButtons();
+        }
+        setProgress(0, '');
     });
+
+    async function inspectClip(clip) {
+        const frame = await CTVideoSlicer.firstFrame(clip.file);
+        if (frame) {
+            clip.thumbUrl = URL.createObjectURL(frame);
+        } else {
+            clip.unsupported = true;
+            clip.status = MSG_UNSUPPORTED;
+            return;
+        }
+
+        try {
+            const header = await CTVideoSlicer.containerHeader(clip.file);
+            if (header) {
+                const form = new FormData();
+                form.append('header', header, 'header.bin');
+                clip.meta = await $.ajax({
+                    url: metadataUrl, method: 'POST', data: form,
+                    processData: false, contentType: false,
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+            }
+        } catch (err) {
+            clip.meta = null;
+        }
+        if (timeSource() === 'metadata') { applyMetadata(clip); }
+    }
+
+    function clipHint(clip) {
+        if (clip.unsupported || timeSource() !== 'metadata') { return ''; }
+        const meta = clip.meta;
+        if (meta && meta.created && !meta.plausible) {
+            return MSG_BAD_METADATA + ' ' + meta.created.replace('T', ' ');
+        }
+        if (!meta || !meta.created) {
+            // The file's modification time is offered as a clue, never filled
+            // in: it is the copy time as often as the recording time.
+            return MSG_NO_METADATA + ' ' + MSG_FILE_MODIFIED + ' ' +
+                localStamp(clip.file.lastModified) + ' ' + MSG_FILE_MODIFIED_NOTE;
+        }
+        return '';
+    }
+
+    function buildRow(clip, index) {
+        const row = $('<tr></tr>').attr('data-index', index);
+        row.append($('<td></td>').text(clip.file.name));
+
+        const frame = $('<td></td>');
+        if (clip.thumbUrl) {
+            frame.append($('<img class="clip-thumb" alt="">').attr('src', clip.thumbUrl));
+        }
+        if (clip.reading && clip.reading.strip_png) {
+            frame.append($('<img class="clip-strip d-block mt-1" alt="">')
+                .attr('src', 'data:image/png;base64,' + clip.reading.strip_png));
+        }
+        row.append(frame);
+
+        const when = $('<td></td>');
+        const shown = timeSource() !== 'overlay' || clip.source === 'overlay';
+        if (!clip.unsupported) {
+            const input = $('<input type="datetime-local" step="1" ' +
+                            'class="form-control form-control-sm clip-start">')
+                .val(shown ? (clip.start || '') : '')
+                .prop('readonly', timeSource() === 'overlay');
+            when.append(input);
+            if (clip.source && shown) {
+                when.append($('<span class="badge bg-secondary mt-1"></span>')
+                    .text(SOURCE_LABELS[clip.source] || clip.source));
+            }
+            if (clip.reading && !clip.reading.confident) {
+                when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
+                    .text({{ _('перевірте') | tojson }}));
+            }
+            if (clip.reading && clip.reading.counter_matches === false) {
+                when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
+                    .text({{ _('номер не збігся') | tojson }}));
+            }
+            const hint = clipHint(clip);
+            if (hint) { when.append($('<div class="video-hint"></div>').text(hint)); }
+        }
+        row.append(when);
+
+        const duration = clip.meta && clip.meta.duration;
+        row.append($('<td></td>').text(duration ? Math.round(duration) + ' ' +
+            {{ _('с') | tojson }} : ''));
+        row.append($('<td class="small"></td>').text(clip.status));
+        return row;
+    }
 
     function renderTable() {
         const body = $('#clips-table tbody').empty();
-        clips.forEach(function (clip, index) {
-            const row = $('<tr></tr>');
-            row.append($('<td></td>').text(clip.file.name));
-
-            const strip = $('<td></td>');
-            if (clip.reading && clip.reading.strip_png) {
-                strip.append($('<img class="img-fluid border" style="max-height:34px">')
-                    .attr('src', 'data:image/png;base64,' + clip.reading.strip_png));
-            }
-            row.append(strip);
-
-            const when = $('<td></td>');
-            if (clip.reading) {
-                when.text(clip.reading.start.replace('T', ' '));
-                if (!clip.reading.confident) {
-                    when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
-                        .text({{ _('перевірте') | tojson }}));
-                }
-                if (clip.reading.counter_matches === false) {
-                    when.append($('<span class="badge bg-warning text-dark ms-1"></span>')
-                        .text({{ _('номер не збігся') | tojson }}));
-                }
-            }
-            row.append(when);
-
-            row.append($('<td></td>').text(clip.frames ? clip.frames.length : ''));
-            row.append($('<td class="small"></td>').text(clip.status));
-            body.append(row);
-        });
+        clips.forEach(function (clip, index) { body.append(buildRow(clip, index)); });
     }
+
+    function renderRow(index) {
+        $('#clips-table tbody tr[data-index="' + index + '"]')
+            .replaceWith(buildRow(clips[index], index));
+    }
+
+    // Typing a time makes it the operator's own: a later change of the
+    // start/end choice no longer touches it.
+    $('#clips-table').on('change', '.clip-start', function () {
+        const index = parseInt($(this).closest('tr').attr('data-index'), 10);
+        const clip = clips[index];
+        let value = $(this).val();
+        if (value && value.length === 16) { value += ':00'; }   // no seconds typed
+        clip.start = value;
+        clip.source = value ? 'manual' : '';
+        renderRow(index);
+        refreshButtons();
+    });
+
+    $('#clips-table').on('click', '.clip-thumb', function () {
+        $('#frame-viewer img').attr('src', $(this).attr('src'));
+        $('#frame-viewer').removeClass('d-none');
+    });
+    $('#frame-viewer').on('click', function () { $(this).addClass('d-none'); });
+
+    // ─── Reading the clips off a calibrated camera ────────────────────────
 
     $('#video-read-btn').on('click', async function () {
         const profileId = $('#profile-select').val();
@@ -562,6 +796,7 @@ $(function () {
 
         for (let index = 0; index < clips.length; index += 1) {
             const clip = clips[index];
+            if (clip.unsupported) { continue; }
             setProgress((index / clips.length) * 100,
                 {{ _('Нарізаю') | tojson }} + ' ' + clip.file.name);
 
@@ -569,7 +804,8 @@ $(function () {
                 clip.frames = await CTVideoSlicer.sliceVideo(clip.file, stepSeconds());
             } catch (err) {
                 clip.status = MSG_UNSUPPORTED;
-                renderTable();
+                clip.unsupported = true;
+                renderRow(index);
                 continue;
             }
 
@@ -590,11 +826,13 @@ $(function () {
                     processData: false, contentType: false,
                     headers: { 'X-CSRFToken': csrfToken }
                 });
+                clip.start = clip.reading.start;
+                clip.source = 'overlay';
                 clip.status = MSG_READY;
             } catch (xhr) {
                 clip.status = errorText(xhr, MSG_UNREADABLE);
             }
-            renderTable();
+            renderRow(index);
         }
 
         setProgress(100, {{ _('Час зйомки прочитано') | tojson }});
@@ -603,14 +841,58 @@ $(function () {
 
     // ─── Uploading ────────────────────────────────────────────────────────
 
+    function readyClips() {
+        const overlay = timeSource() === 'overlay';
+        return clips.filter(function (c) {
+            return !c.unsupported && c.start && (!overlay || c.source === 'overlay');
+        });
+    }
+
+    /** The signed timing for one clip of the real batch. */
+    async function clipTiming(clip, batchId) {
+        const form = new FormData();
+        form.append('batch_id', batchId);
+        form.append('filename', clip.file.name);
+        form.append('step_seconds', stepSeconds());
+
+        if (timeSource() === 'overlay') {
+            // The token was issued against the probe batch; re-read the clip
+            // against the real one so its frames cannot be attributed elsewhere.
+            form.append('profile_id', $('#profile-select').val());
+            clip.frames.slice(0, 12).forEach(function (blob) {
+                form.append('frames', blob, 'frame.jpg');
+            });
+            return $.ajax({
+                url: readClipUrl, method: 'POST', data: form,
+                processData: false, contentType: false,
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+        }
+
+        form.append('start', clip.start);
+        form.append('source', clip.source === 'metadata' ? 'metadata' : 'manual');
+        return $.ajax({
+            url: signClipUrl, method: 'POST', data: form,
+            processData: false, contentType: false,
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+    }
+
     $('#video-upload-btn').on('click', async function () {
         const locationId = $('#video-location-select').val();
-        const profileId = $('#profile-select').val();
-        const ready = clips.filter(function (c) { return c.reading && c.frames; });
+        const ready = readyClips();
         if (!ready.length) { return; }
 
-        $('#video-upload-btn, #video-read-btn').prop('disabled', true);
+        $('#video-upload-btn, #video-read-btn, #video-files').prop('disabled', true);
         setProgress(2, {{ _('Підготовка…') | tojson }});
+
+        // Clips are cut one at a time during the upload, so the exact count is
+        // not known yet; the batch only uses it for display.
+        const estimate = ready.reduce(function (n, c) {
+            if (c.frames) { return n + c.frames.length; }
+            const duration = (c.meta && c.meta.duration) || 10;
+            return n + Math.max(1, Math.ceil(duration / stepSeconds()));
+        }, 0);
 
         let batchId;
         try {
@@ -619,41 +901,39 @@ $(function () {
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                 data: JSON.stringify({
                     location_id: parseInt(locationId, 10),
-                    total_files: ready.reduce(function (n, c) { return n + c.frames.length; }, 0)
+                    total_files: estimate
                 })
             });
             batchId = created.batch_id;
         } catch (xhr) {
             setProgress(0, errorText(xhr, {{ _('Не вдалося створити batch') | tojson }}));
-            $('#video-upload-btn, #video-read-btn').prop('disabled', false);
+            $('#video-upload-btn, #video-read-btn, #video-files').prop('disabled', false);
             return;
         }
 
-        // The token was issued against the probe batch; re-read each clip
-        // against the real one so its frames cannot be attributed elsewhere.
         let done = 0;
-        const total = ready.reduce(function (n, c) { return n + c.frames.length; }, 0);
+        for (let position = 0; position < ready.length; position += 1) {
+            const clip = ready[position];
+            const index = clips.indexOf(clip);
 
-        for (const clip of ready) {
-            const form = new FormData();
-            form.append('batch_id', batchId);
-            form.append('filename', clip.file.name);
-            form.append('profile_id', profileId);
-            form.append('step_seconds', stepSeconds());
-            clip.frames.slice(0, 12).forEach(function (blob) {
-                form.append('frames', blob, 'frame.jpg');
-            });
+            if (!clip.frames) {
+                setProgress(5 + (position / ready.length) * 80,
+                    {{ _('Нарізаю') | tojson }} + ' ' + clip.file.name);
+                try {
+                    clip.frames = await CTVideoSlicer.sliceVideo(clip.file, stepSeconds());
+                } catch (err) {
+                    clip.status = MSG_UNSUPPORTED;
+                    renderRow(index);
+                    continue;
+                }
+            }
 
             let reading;
             try {
-                reading = await $.ajax({
-                    url: readClipUrl, method: 'POST', data: form,
-                    processData: false, contentType: false,
-                    headers: { 'X-CSRFToken': csrfToken }
-                });
+                reading = await clipTiming(clip, batchId);
             } catch (xhr) {
                 clip.status = errorText(xhr, MSG_UNREADABLE);
-                renderTable();
+                renderRow(index);
                 continue;
             }
 
@@ -668,6 +948,7 @@ $(function () {
                 jobs.push({ blob: blob, frameIndex: frameIndex });
             });
 
+            let failed = false;
             await runPool(jobs, PARALLEL, async function (job) {
                 const body = new FormData();
                 body.append('location_id', locationId);
@@ -685,17 +966,19 @@ $(function () {
                         headers: { 'X-CSRFToken': csrfToken }
                     });
                 } catch (xhr) {
+                    failed = true;
                     clip.status = errorText(xhr, {{ _('Помилка кадру') | tojson }});
                 }
                 done += 1;
-                setProgress(5 + (done / total) * 80,
-                    done + ' / ' + total + ' ' + {{ _('кадрів') | tojson }});
+                setProgress(5 + ((position + 1) / ready.length) * 80,
+                    done + ' ' + {{ _('кадрів') | tojson }});
             });
 
-            if (!clip.status || clip.status === MSG_READY) {
-                clip.status = MSG_UPLOADED;
-            }
-            renderTable();
+            if (!failed) { clip.status = MSG_UPLOADED; }
+            // Frames of an uploaded clip are not needed again; a folder of
+            // clips held in memory at once is what would exhaust the tab.
+            clip.frames = null;
+            renderRow(index);
         }
 
         setProgress(88, {{ _('Групування серій…') | tojson }});
@@ -710,7 +993,7 @@ $(function () {
         } catch (xhr) {
             setProgress(88, errorText(xhr, {{ _('Помилка завершення') | tojson }}));
         }
-        $('#video-read-btn').prop('disabled', false);
+        $('#video-read-btn, #video-files').prop('disabled', false);
     });
 
     /**
@@ -726,17 +1009,14 @@ $(function () {
      */
     function frameFileName(clip, reading, frameIndex) {
         const stem = clip.file.name.replace(/\.[^.]+$/, '');
-        const taken = new Date(reading.start);
         // The same offsets the server signed into the token, so the name and the
         // stored capture time can never disagree.
         const offsets = reading.offsets || [];
         const shift = frameIndex < offsets.length
             ? offsets[frameIndex]
             : Math.round(frameIndex * stepSeconds());
-        taken.setSeconds(taken.getSeconds() + shift);
-        const pad = (n) => String(n).padStart(2, '0');
-        return stem + '_' + pad(taken.getHours()) + pad(taken.getMinutes()) +
-            pad(taken.getSeconds()) + '.jpg';
+        const taken = addSeconds(reading.start, shift);
+        return stem + '_' + taken.slice(11, 19).replace(/:/g, '') + '.jpg';
     }
 
     /** Run `worker` over `items` with at most `size` in flight. */
@@ -781,13 +1061,21 @@ $(function () {
 
     function refreshButtons() {
         const hasLocation = !!$('#video-location-select').val();
+        const overlay = timeSource() === 'overlay';
         const hasProfile = !!$('#profile-select').val();
-        const hasFiles = clips.length > 0;
-        const hasReadings = clips.some(function (c) { return c.reading; });
+        const usable = clips.filter(function (c) { return !c.unsupported; });
+        const missing = usable.filter(function (c) { return !c.start; }).length;
 
-        $('#video-read-btn').prop('disabled', !(hasLocation && hasProfile && hasFiles));
+        $('#video-read-btn').prop('disabled',
+            !(overlay && hasLocation && hasProfile && usable.length));
+        // A clip without a start time would be skipped silently, so the
+        // button waits until every clip has one and says how many are left.
         $('#video-upload-btn').prop('disabled',
-            !(UPLOAD_ALLOWED && hasLocation && hasProfile && hasReadings));
+            !(UPLOAD_ALLOWED && hasLocation && usable.length
+              && (overlay ? (hasProfile && readyClips().length > 0) : missing === 0)));
+        $('#video-missing-text').text(missing && !overlay
+            ? {{ _('Без часу початку:') | tojson }} + ' ' + missing
+            : '');
     }
 
     $('#profile-select').trigger('change');

@@ -3176,6 +3176,76 @@ def video_read_clip(lang_code):
         close_ct_session()
 
 
+@camera_traps_bp.route('/api/video/metadata', methods=['POST'])
+@login_required
+@role_required('admin')
+def video_read_metadata(lang_code):
+    """What a clip's container header says about when it was taken.
+
+    The browser sends the header only (the moov box of an MP4/MOV, or the head
+    of an AVI). Nothing is written: the page shows the result next to the first
+    frame and the operator confirms or corrects it.
+    """
+    from .video_metadata import MAX_HEADER_BYTES, container_times
+
+    header = request.files.get('header')
+    if header is None:
+        return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
+    data = header.read(MAX_HEADER_BYTES + 1)
+    try:
+        return jsonify(container_times(data)), 200
+    except Exception:
+        current_app.logger.exception(
+            f"[ct-video] metadata FAILED user={getattr(current_user, 'id', '?')}")
+        return jsonify({'container': None, 'created': None, 'duration': None,
+                        'plausible': False}), 200
+
+
+@camera_traps_bp.route('/api/video/sign-clip', methods=['POST'])
+@login_required
+@role_required('admin')
+def video_sign_clip(lang_code):
+    """Sign a start time the operator confirmed (from metadata or typed in).
+
+    The counterpart of read-clip for clips whose time is not read off the
+    pixels. Frames are then dated start + k * step, exactly as for a clip read
+    from its strip.
+    """
+    from .video_upload import (CODE_IMPLAUSIBLE_START, START_SOURCES,
+                               VideoUploadError, issue_clip_token, operator_start)
+
+    try:
+        batch_id = request.form.get('batch_id')
+        filename = request.form.get('filename', '')
+        source = request.form.get('source', 'manual')
+        if not batch_id or not filename or source not in START_SOURCES:
+            return jsonify({'error': _('Відсутні обов\'язкові параметри')}), 400
+
+        step_seconds = float(request.form.get('step_seconds', 1.0))
+        start = operator_start(request.form.get('start', ''))
+
+        current_app.logger.info(
+            f"[ct-video] sign-clip user={current_user.id} batch={batch_id} "
+            f"file={filename!r} start={start.isoformat()} source={source}")
+
+        return jsonify({
+            'success': True,
+            'start': start.isoformat(timespec='seconds'),
+            'offsets': [],
+            'card_index': None,
+            'token': issue_clip_token(batch_id, filename, start, step_seconds, None),
+        }), 200
+
+    except VideoUploadError as e:
+        if getattr(e, 'code', None) == CODE_IMPLAUSIBLE_START:
+            return jsonify({'error': _(
+                'Неправдоподібний час початку: рік раніше 2005 або дата в '
+                'майбутньому. Перевірте годинник камери.')}), 400
+        return jsonify({'error': str(e)}), 400
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
 @camera_traps_bp.route('/api/video/process-frame', methods=['POST'])
 @login_required
 @role_required('admin')

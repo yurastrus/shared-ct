@@ -77,6 +77,8 @@
             // video, which we step over.
             if (kind === 'dc' && size > 4) {
                 const start = cursor + 8;
+                // A buffer holding only the head of the file ends mid-stream.
+                if (start + 2 > buffer.byteLength) { break; }
                 // Only a JPEG is usable as a frame on its own. A non-MJPG AVI
                 // reaches this point and is correctly rejected here.
                 if (view.getUint8(start) === 0xFF && view.getUint8(start + 1) === 0xD8) {
@@ -250,8 +252,83 @@
         return frames;
     }
 
+    /** Bytes of the first part of an AVI read to find its first frame. */
+    const AVI_HEAD_BYTES = 4 * 1024 * 1024;
+
+    /** A moov box bigger than this is not worth sending for a date. */
+    const MAX_HEADER_BYTES = 16 * 1024 * 1024;
+
+    async function peek(file, offset) {
+        const buf = await file.slice(offset, offset + 16).arrayBuffer();
+        return new DataView(buf);
+    }
+
+    /**
+     * The part of the container that may carry a capture time, or null.
+     *
+     * MP4/MOV: the moov box, found by stepping over top-level boxes, so only a
+     * few 16-byte reads touch the file before the box itself (a few KB for a
+     * camera-trap clip). AVI: the head of the file, where the header list sits.
+     * The server parses it (video_metadata.py); the video itself never leaves.
+     */
+    async function containerHeader(file) {
+        const first = await peek(file, 0);
+        if (first.byteLength >= 12 && readAsciiTag(first, 0) === 'RIFF') {
+            return file.slice(0, Math.min(file.size, 256 * 1024));
+        }
+
+        let offset = 0;
+        while (offset + 8 <= file.size) {
+            const view = await peek(file, offset);
+            if (view.byteLength < 8) { return null; }
+            let size = view.getUint32(0, false);
+            const kind = readAsciiTag(view, 4);
+            if (size === 1) {
+                if (view.byteLength < 16) { return null; }
+                size = view.getUint32(8, false) * 4294967296 + view.getUint32(12, false);
+            } else if (size === 0) {
+                size = file.size - offset;
+            }
+            if (size < 8) { return null; }
+            if (kind === 'moov') {
+                return size <= MAX_HEADER_BYTES ? file.slice(offset, offset + size) : null;
+            }
+            offset += size;
+        }
+        return null;
+    }
+
+    /**
+     * The first frame as a JPEG blob, for the operator to read the date off.
+     *
+     * Cheap on purpose, because it runs for every clip as soon as it is chosen:
+     * an AVI needs only its first few megabytes, anything else one seek.
+     */
+    async function firstFrame(file) {
+        try {
+            const head = await file.slice(0, Math.min(file.size, AVI_HEAD_BYTES)).arrayBuffer();
+            const frames = parseAviFrames(head);
+            if (frames && frames[0].start + frames[0].length <= head.byteLength) {
+                return new Blob([new Uint8Array(head, frames[0].start, frames[0].length)],
+                    { type: 'image/jpeg' });
+            }
+        } catch (err) {
+            // Not an AVI, or a truncated one: fall through to the browser.
+        }
+        try {
+            // A step longer than any clip yields exactly frame 0.
+            const frames = await sliceWithVideoElement(file, 1e9);
+            if (frames && frames.length) { return frames[0]; }
+        } catch (err) {
+            // Unsupported: the caller shows that.
+        }
+        return null;
+    }
+
     global.CTVideoSlicer = {
         sliceVideo: sliceVideo,
+        containerHeader: containerHeader,
+        firstFrame: firstFrame,
         // Exposed for the console and for tests; not used by the page itself.
         parseAviFrames: parseAviFrames,
         parseAviFrameRate: parseAviFrameRate

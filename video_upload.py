@@ -71,6 +71,34 @@ class VideoUploadError(Exception):
 #: This camera paints the time onto the picture instead of onto a strip.
 CODE_OVERLAY_UNSUPPORTED = 'overlay_unsupported'
 
+#: A start time typed or confirmed by the operator that cannot be a capture time.
+CODE_IMPLAUSIBLE_START = 'implausible_start'
+
+#: Where a clip's start time came from, kept in the log next to the upload.
+START_SOURCES = ('metadata', 'manual')
+
+
+def operator_start(raw: str, now: datetime | None = None) -> datetime:
+    """A clip's start time as confirmed on the page, checked for plausibility.
+
+    Most clips carry no burned-in strip this module can read, so their time
+    comes from the container header or from the operator's own eyes on the
+    first frame. Either way a person has looked at it, and the server cannot do
+    better than refuse what is impossible: a factory-default year or the future.
+    """
+    from .video_metadata import is_plausible
+
+    try:
+        start = datetime.fromisoformat((raw or '').strip())
+    except ValueError:
+        raise VideoUploadError('the start time is not a date and time')
+    if start.tzinfo is not None:
+        start = start.replace(tzinfo=None)
+    if not is_plausible(start, now):
+        raise VideoUploadError('the start time cannot be a capture time',
+                               code=CODE_IMPLAUSIBLE_START)
+    return start
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Clip tokens
