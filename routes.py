@@ -28,7 +28,8 @@ from . import access as ct_access
 from .data_export import get_ct_occurrence_data, _build_qc_exclusion_cond
 from .daily_analytics import fetch_raw_daily_data, calculate_activity_curve, generate_csv_export, calculate_overlap_matrix
 from .activity_heatmap import fetch_heatmap_data, fetch_date_range
-from .validity import valid_location_id_subquery, VALID_LOCATION_SQL
+from .validity import (valid_location_id_subquery, VALID_LOCATION_SQL,
+                       MIN_VALID_CAPTURE_YEAR, plausible_years)
 from .consensus import consensus_ctes, tally_votes, accepted_species
 
 #
@@ -1782,7 +1783,9 @@ def species_dashboard(lang_code):
         all_years = ct_session.query(SpeciesYearlyTrend.year)\
             .filter(SpeciesYearlyTrend.scope_type == 'global')\
             .distinct().order_by(SpeciesYearlyTrend.year).all()
-        available_years = [y[0] for y in all_years]
+        # plausible_years: a stale analytics table may still hold a 1900 row
+        # from photos without EXIF (the recalculation now drops them).
+        available_years = plausible_years(y[0] for y in all_years)
         start_year = available_years[0] if available_years else date.today().year - 5
         end_year = available_years[-1] if available_years else date.today().year
 
@@ -3859,6 +3862,8 @@ def api_species_dynamics(lang_code):
 
         if not all([species_id, start_year, end_year]):
             return jsonify({'error': 'Species ID, start year, and end year are required'}), 400
+        # Never chart placeholder years (1900 = photo without EXIF).
+        start_year = max(start_year, MIN_VALID_CAPTURE_YEAR)
 
         is_admin = current_user.is_authenticated and current_user.has_role('admin')
         user_inst_ids = ct_access.allowed_institution_ids(current_user)

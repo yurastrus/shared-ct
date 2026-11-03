@@ -17,7 +17,7 @@ from .models import (
     LocationMonthlyActivity, CalculationLog, SpeciesYearlyTrend,
     SpeciesTrendTest, location_institutions
 )
-from .validity import valid_location_id_subquery
+from .validity import valid_capture_time_clause, valid_location_id_subquery
 
 # Configure logging so progress is visible during execution.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -56,7 +56,8 @@ def _calculate_monthly_activity(exclude_invalid_locations=True):
             extract('month', Photo.captured_at).label('month'),
             func.count(func.distinct(func.date(Photo.captured_at))).label('trap_days')
         ).join(Photo, Observation.id == Photo.observation_id)\
-        .filter(Observation.status.in_(['completed', 'archived']))
+        .filter(Observation.status.in_(['completed', 'archived']),
+                valid_capture_time_clause(Photo.captured_at))
         if valid_subq is not None:
             trap_days_q = trap_days_q.filter(Observation.location_id.in_(valid_subq))
         trap_days_query = trap_days_q\
@@ -83,7 +84,8 @@ def _calculate_monthly_activity(exclude_invalid_locations=True):
         .filter(
             Observation.status.in_(['completed', 'archived']),
             Identification.species_id.isnot(None),
-            Identification.species_id > 0
+            Identification.species_id > 0,
+            valid_capture_time_clause(Photo.captured_at)
         )
         if valid_subq is not None:
             detection_q = detection_q.filter(Observation.location_id.in_(valid_location_id_subquery()))
