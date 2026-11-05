@@ -4424,7 +4424,7 @@ msgstr ""
 
 #: app/camera_traps/templates/identification.html:262
 msgid "ще вид"
-msgstr "another species"
+msgstr "species"
 
 #: app/camera_traps/templates/identification.html:280
 msgid "Пошук виду…"
@@ -4457,7 +4457,7 @@ msgstr "Please select a species, or the \"Empty\" option."
 
 #: app/camera_traps/templates/identification.html:475
 msgid "Спершу оберіть вид, потім натисніть «+ ще вид»."
-msgstr "Select a species first, then click \"+ another species\"."
+msgstr "Select a species first, then click \"+ species\"."
 
 #: app/camera_traps/templates/identification.html:477
 msgid "Прибрати"

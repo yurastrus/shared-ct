@@ -266,7 +266,11 @@ a {
 /* ── Identification: 2-column grid ── */
 .identification-layout {
     display: grid;
-    grid-template-columns: 3.3fr 1fr; /* species column ~23% (widened a couple % so the quantity row fits one line on tablets) */
+    /* Species column ~23% on wide screens, but never narrower than the
+       quantity row ("Особин | У вибране | + ще вид", ~310px) or the four action
+       buttons: as a bare 1fr it fell to 224px on a 1024px tablet and both rows
+       broke ("+ ще вид" dropped to its own line, "Пропустити" overflowed). */
+    grid-template-columns: minmax(0, 3.3fr) minmax(320px, 1fr);
     gap: 25px;
     align-items: flex-start;
 }
@@ -1669,6 +1673,11 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
 .quantity-panel input.form-control { max-width: 48px; }
 .quantity-panel .form-check-input  { margin: 0; cursor: pointer; }
 .quantity-panel .add-species-btn   { margin-left: auto; padding: 1px 8px; font-size: 0.8rem; white-space: nowrap; }
+/* Smallest phones (320px): the row needs ~310px and cannot fit; rather than a
+   ragged half-wrap, give "+ ще вид" a full-width second row of its own. */
+@media (max-width: 400px) {
+    .quantity-panel .add-species-btn { flex: 1 1 100%; margin-left: 0; padding: 4px 8px; }
+}
 
 /* Species already added to this answer (several species in one series). */
 .species-entries {
@@ -2305,7 +2314,10 @@ body.dark-theme .message-container.error {
        wanted order anyway, so the card moves as one unit.
 
        Desktop (>992px) keeps the grid untouched. */
-    .identification-layout    { display: flex; flex-direction: column; gap: 15px; }
+    /* align-items: stretch, not the grid's flex-start: inherited as a flex
+       column, flex-start shrank the buttons and quantity row to content width
+       (~310px) on a tablet, leaving most of the row empty. */
+    .identification-layout    { display: flex; flex-direction: column; gap: 15px; align-items: stretch; }
     .viewer-and-form,
     .right-column             { display: contents; }
 
