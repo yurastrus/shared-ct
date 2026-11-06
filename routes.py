@@ -2595,7 +2595,7 @@ def _location_manage_error(location_id):
 def create_batch(lang_code):
     """Create a new batch for file upload."""
     try:
-        data = request.json
+        data = request.get_json(silent=True) or {}
         location_id = data.get('location_id')
         total_files = data.get('total_files', 0)
 
@@ -4981,6 +4981,21 @@ def create_location(lang_code):
                 f"name={name!r} lat={lat!r} lon={lon!r}")
             return jsonify({'success': False, 'message': _('Назва та координати є обов\'язковими.')}), 400
 
+        if institution_id in (None, ''):
+            current_app.logger.warning(
+                f"[ct-upload] create-location rejected (no institution) user={current_user.id} "
+                f"name={name!r}")
+            return jsonify({'success': False,
+                            'message': _('Оберіть установу або проєкт для нового місця.')}), 400
+        try:
+            institution_id = int(institution_id)
+        except (TypeError, ValueError):
+            return jsonify({'success': False,
+                            'message': _('Обрана установа або проєкт не існує.')}), 400
+        if Institution.query.filter_by(id=institution_id).first() is None:
+            return jsonify({'success': False,
+                            'message': _('Обрана установа або проєкт не існує.')}), 400
+
         try:
             lat_f, lon_f = float(lat), float(lon)
         except (TypeError, ValueError):
@@ -4991,13 +5006,9 @@ def create_location(lang_code):
                             'message': _('Координати мають бути числами (напр. 49.85 / 23.65).')}), 400
 
         # Called from the upload pages: the new place must belong to an
-        # institution the user manages (an admin may pick any, or none).
+        # institution the user manages (an admin may pick any existing one).
         if not current_user.has_role('admin'):
-            try:
-                inst_ok = institution_id and ct_access.can_manage_institutions(
-                    current_user, [int(institution_id)])
-            except (TypeError, ValueError):
-                inst_ok = False
+            inst_ok = ct_access.can_manage_institutions(current_user, [institution_id])
             if not inst_ok:
                 current_app.logger.warning(
                     f"[ct-upload] create-location refused user={current_user.id} "
@@ -5025,13 +5036,12 @@ def create_location(lang_code):
         ct_session.add(new_location)
         ct_session.flush()
 
-        if institution_id:
-            ct_session.execute(
-                location_institutions.insert().values(
-                    location_id=new_location.id,
-                    institution_id=int(institution_id)
-                )
+        ct_session.execute(
+            location_institutions.insert().values(
+                location_id=new_location.id,
+                institution_id=institution_id
             )
+        )
 
         ct_session.commit()
         current_app.logger.info(

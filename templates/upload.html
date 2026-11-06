@@ -60,6 +60,7 @@
                 <!-- New location form (collapsed, shown when value=0) -->
                 <div id="new-location-fields" style="display:none;">
                     <div class="panel-title">{{ _('Нове місце зйомки') }}</div>
+                    <div class="small text-muted mb-2">{{ _('Спочатку виберіть установу або проєкт вище. Це обов’язково для нового місця.') }}</div>
                     <div class="mb-2">
                         <label class="form-label">{{ _('Назва') }} *</label>
                         <input type="text" class="form-control" id="new-loc-name"
@@ -433,9 +434,14 @@ $(document).ready(function () {
         const descr     = $('#new-loc-description').val().trim();
         const latitude  = $('#new-loc-lat').val();
         const longitude = $('#new-loc-lon').val();
+        const institutionId = $('#institution-select').val();
 
         if (!name || !latitude || !longitude) {
             return alert('{{ _("Назва та координати є обов\'язковими.") }}');
+        }
+        if (!institutionId) {
+            $('#institution-select').select2('open');
+            return alert({{ _('Оберіть установу або проєкт для нового місця.') | tojson }});
         }
 
         $.ajax({
@@ -447,7 +453,7 @@ $(document).ready(function () {
                 description: descr,
                 latitude,
                 longitude,
-                institution_id: $('#institution-select').val() || null
+                institution_id: institutionId
             }),
             success: function (data) {
                 $('#location-feedback')
