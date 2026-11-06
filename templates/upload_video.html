@@ -526,9 +526,21 @@ $(function () {
             return;
         }
 
+        const loc = locationsData.find(function (l) { return String(l.id) === String(value); });
+        // Reverse half of the cascade: choosing an existing location (also via
+        // a map marker, whose click changes this select) chooses one of its
+        // institutions. Keep the current institution when it already owns the
+        // location; this avoids needless jumps for shared locations.
+        if (loc && loc.institution_ids && loc.institution_ids.length) {
+            const currentInstitution = parseInt($('#institution-select').val(), 10);
+            if (!loc.institution_ids.includes(currentInstitution)) {
+                $('#institution-select').val(String(loc.institution_ids[0]))
+                    .trigger('change');
+            }
+        }
+
         markSelected(value || null);
 
-        const loc = locationsData.find(function (l) { return String(l.id) === String(value); });
         if (loc && loc.latitude !== null && loc.longitude !== null) {
             $('#location-coords-text').text(
                 Number(loc.latitude).toFixed(5) + ', ' + Number(loc.longitude).toFixed(5));
