@@ -142,6 +142,115 @@ def avi_times(data: bytes):
     return created, duration
 
 
+_AVI_STRUCTURAL_CHUNKS = {b'avih', b'strh', b'strf', b'indx', b'dmlh'}
+
+
+def _iter_avi_chunks(data: bytes, start: int = 12, end: int | None = None):
+    """Yield metadata-like RIFF chunks before ``movi``.
+
+    AVI has no single universal capture-time field. Cameras commonly put
+    private data in ``strd`` or INFO children, so the useful general rule is to
+    inspect non-structural header chunks without ever scanning compressed video
+    or audio payloads.
+    """
+    end = len(data) if end is None else min(end, len(data))
+    offset = start
+    while offset + 8 <= end:
+        kind = data[offset:offset + 4]
+        size = struct.unpack('<I', data[offset + 4:offset + 8])[0]
+        payload = offset + 8
+        chunk_end = min(end, payload + size)
+        if kind == b'LIST' and payload + 4 <= chunk_end:
+            list_kind = data[payload:payload + 4]
+            if list_kind == b'movi':
+                return
+            yield from _iter_avi_chunks(data, payload + 4, chunk_end)
+        elif kind not in _AVI_STRUCTURAL_CHUNKS:
+            yield kind.decode('latin-1', errors='replace'), payload, chunk_end
+        offset = payload + size + (size & 1)
+
+
+_TEXT_DATE_RE = re.compile(
+    r'(?P<date>(?:19|20)\d{2}[-:/.]\d{1,2}[-:/.]\d{1,2})'
+    r'[^\d]{0,12}'
+    r'(?P<time>\d{1,2}:\d{2}(?::\d{2})?)')
+
+
+def _text_datetimes(payload: bytes):
+    """Date/time strings embedded in an opaque metadata chunk."""
+    text = payload.decode('latin-1', errors='ignore').replace('\x00', ' ')
+    for match in _TEXT_DATE_RE.finditer(text):
+        raw = match.group('date') + ' ' + match.group('time')
+        normalized = re.sub(r'[-/.]', '-', raw, count=2)
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+            try:
+                yield match.start(), datetime.strptime(normalized, fmt)
+                break
+            except ValueError:
+                continue
+
+
+def _binary_component_datetimes(payload: bytes):
+    """Six adjacent numeric bytes: YY, month, day, hour, minute, second.
+
+    This is deliberately camera-agnostic. Private camera headers frequently
+    store a small date struct without a tag. Returning candidates instead of
+    choosing one keeps accidental numeric runs visible and harmless.
+    """
+    for offset in range(max(0, len(payload) - 5)):
+        year, month, day, hour, minute, second = payload[offset:offset + 6]
+        year += 2000
+        try:
+            moment = datetime(year, month, day, hour, minute, second)
+        except ValueError:
+            continue
+        yield offset, moment
+
+
+def avi_datetime_candidates(data: bytes, now: datetime | None = None) -> list[dict]:
+    """Plausible dates found in AVI header metadata, with their provenance."""
+    now = now or datetime.now()
+    found = []
+    seen = set()
+    scan_budget = 64 * 1024
+
+    def add(moment, kind, chunk, offset, recommended=False):
+        if not is_plausible(moment, now):
+            return
+        key = (moment, kind, chunk, offset)
+        if key in seen:
+            return
+        seen.add(key)
+        found.append({
+            'id': f'avi:{chunk}:{kind}:{offset}',
+            'source': f'avi:{chunk}:{kind}',
+            'created': moment.isoformat(timespec='seconds'),
+            'kind': kind,
+            'chunk': chunk,
+            'offset': offset,
+            'recommended': bool(recommended),
+        })
+
+    for chunk, start, end in _iter_avi_chunks(data):
+        if scan_budget <= 0:
+            break
+        # Private chunks are normally tiny. Bound opaque scanning separately
+        # from the overall header limit so a crafted JUNK block cannot turn
+        # one metadata request into millions of candidate objects.
+        payload = data[start:min(end, start + 16 * 1024, start + scan_budget)]
+        scan_budget -= len(payload)
+        for offset, moment in _text_datetimes(payload):
+            add(moment, 'text', chunk, offset, chunk == 'IDIT')
+        for offset, moment in _binary_component_datetimes(payload):
+            add(moment, 'binary6', chunk, offset)
+
+    found.sort(key=lambda item: (
+        not item['recommended'],
+        abs(datetime.fromisoformat(item['created']).year - now.year),
+        item['chunk'], item['offset']))
+    return found[:12]
+
+
 def is_plausible(moment: datetime | None, now: datetime | None = None) -> bool:
     """Could this be a real capture time? Not a factory default, not the future."""
     if moment is None:
@@ -163,13 +272,29 @@ def container_times(header: bytes, now: datetime | None = None) -> dict:
     if header[:4] == b'RIFF':
         created, duration = avi_times(header)
         kind = 'avi'
+        candidates = avi_datetime_candidates(header, now)
     else:
         created, duration = quicktime_times(header)
         kind = 'quicktime'
+        candidates = []
+
+    if created and is_plausible(created, now):
+        standard = {
+            'id': f'{kind}:container',
+            'source': f'{kind}:container',
+            'created': created.isoformat(timespec='seconds'),
+            'kind': 'container',
+            'chunk': 'mvhd' if kind == 'quicktime' else 'IDIT',
+            'offset': None,
+            'recommended': True,
+        }
+        candidates = [standard] + [c for c in candidates
+                                   if c['created'] != standard['created']]
 
     return {
         'container': kind,
         'created': created.isoformat(timespec='seconds') if created else None,
         'duration': round(duration, 3) if duration else None,
         'plausible': is_plausible(created, now),
+        'candidates': candidates,
     }

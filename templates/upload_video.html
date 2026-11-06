@@ -60,7 +60,9 @@
      with the start time beside it. Click opens it full size. */
   .clip-thumb { width: 160px; max-width: 100%; cursor: zoom-in;
                 border: 1px solid var(--border-color); border-radius: 3px; }
-  #clips-table .clip-start { min-width: 200px; }
+  #clips-table .clip-start { width: 12.5rem; flex: 0 0 12.5rem; }
+  #clips-table .clip-date-source { width: min(25rem, 100%); }
+  .clip-time-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   #frame-viewer { position: fixed; inset: 0; z-index: 2000; cursor: zoom-out;
                   background: rgba(0, 0, 0, 0.85); display: flex;
                   align-items: center; justify-content: center; }
@@ -321,7 +323,15 @@
   {# The first frame sits next to the start time so the operator compares the
      two by eye before anything reaches the database: most cameras print the
      time on the picture. Click the frame to see it full size. #}
-  <div class="table-responsive mt-3">
+  <div id="bulk-date-tools" class="d-none mt-3 align-items-center gap-2 flex-wrap">
+    <label for="bulk-date-source" class="small mb-0">{{ _('Джерело дати для всіх файлів') }}</label>
+    <select id="bulk-date-source" class="form-select form-select-sm" style="width:auto;max-width:28rem;"></select>
+    <button type="button" id="apply-date-source-all" class="btn btn-outline-primary btn-sm">
+      {{ _('Застосувати до всіх') }}
+    </button>
+    <span id="bulk-date-result" class="video-hint mt-0"></span>
+  </div>
+  <div class="table-responsive mt-2">
     <table class="table table-sm" id="clips-table">
       <thead>
         <tr>
@@ -597,15 +607,22 @@ $(function () {
 
     const SOURCE_LABELS = {
         metadata: {{ _('з метаданих') | tojson }},
+        file_metadata_candidate: {{ _('з вибраного поля файла') | tojson }},
         file_modified: {{ _('з дати зміни файла') | tojson }},
         manual:   {{ _('вручну') | tojson }},
         overlay:  {{ _('з кадру') | tojson }}
     };
     const MSG_NO_METADATA = {{ _('У файлі немає дати. Впишіть час з першого кадру.') | tojson }};
+    const MSG_ONLY_CANDIDATES = {{ _('Стандартної дати немає. Виберіть знайдений варіант або введіть час вручну.') | tojson }};
     const MSG_BAD_METADATA = {{ _('У метаданих неправдоподібна дата:') | tojson }};
     const MSG_FILE_MODIFIED = {{ _('Файл змінено:') | tojson }};
     const MSG_FILE_MODIFIED_NOTE = {{ _('(може бути часом копіювання)') | tojson }};
-    const MSG_USE_FILE_MODIFIED = {{ _('Використати цей час') | tojson }};
+    const MSG_MANUAL = {{ _('Ввести вручну') | tojson }};
+    const MSG_CONTAINER_DATE = {{ _('Стандартна дата контейнера') | tojson }};
+    const MSG_TEXT_DATE = {{ _('Текстова дата') | tojson }};
+    const MSG_BINARY_DATE = {{ _('Бінарна дата (6 компонентів)') | tojson }};
+    const MSG_APPLIED_TO = {{ _('Застосовано до файлів:') | tojson }};
+    const MSG_MISSING_IN = {{ _('немає такого джерела у файлах:') | tojson }};
 
     function timeSource() {
         return $('input[name="time-source"]:checked').val();
@@ -620,12 +637,18 @@ $(function () {
         // mode only times read off the strip count.
         if (!overlay) { clips.forEach(applyMetadata); }
         renderTable();
+        refreshBulkDateSources();
         refreshButtons();
     });
 
     $('#metadata-marks').on('change', function () {
         clips.forEach(function (clip) {
-            if (clip.source === 'metadata') { applyMetadata(clip); }
+            if (clip.source === 'metadata' || clip.source === 'file_metadata_candidate') {
+                const candidate = (clip.dateCandidates || []).find(function (item) {
+                    return item.id === clip.candidateId;
+                });
+                applyCandidate(clip, candidate);
+            }
         });
         renderTable();
         refreshButtons();
@@ -646,18 +669,51 @@ $(function () {
             ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     }
 
-    /** Start time from the container header, unless the operator chose another. */
+    function candidateLabel(candidate, withValue) {
+        let label = candidate.label;
+        if (!label) {
+            if (candidate.kind === 'container') { label = MSG_CONTAINER_DATE; }
+            else if (candidate.kind === 'text') { label = MSG_TEXT_DATE; }
+            else if (candidate.kind === 'binary6') { label = MSG_BINARY_DATE; }
+            else if (candidate.kind === 'file_modified') { label = MSG_FILE_MODIFIED; }
+            else { label = candidate.source; }
+            if (candidate.chunk) { label += ' · ' + candidate.chunk; }
+        }
+        return withValue && candidate.created
+            ? label + ' — ' + candidate.created.replace('T', ' ') : label;
+    }
+
+    function prepareCandidates(clip) {
+        clip.dateCandidates = ((clip.meta && clip.meta.candidates) || []).slice();
+        clip.dateCandidates.push({
+            id: 'file_modified', source: 'file_modified', kind: 'file_modified',
+            created: localStamp(clip.file.lastModified).replace(' ', 'T'),
+            recommended: false
+        });
+    }
+
+    function applyCandidate(clip, candidate) {
+        if (!candidate) { return false; }
+        const back = candidate.kind !== 'file_modified' &&
+            $('#metadata-marks').val() === 'end' ? Math.round((clip.meta || {}).duration || 0) : 0;
+        clip.start = addSeconds(candidate.created, -back);
+        clip.candidateId = candidate.id;
+        clip.source = candidate.kind === 'container' ? 'metadata' :
+            (candidate.kind === 'file_modified' ? 'file_modified' : 'file_metadata_candidate');
+        return true;
+    }
+
+    /** Recommended standard header time, unless the operator chose another. */
     function applyMetadata(clip) {
-        if (clip.source === 'manual' || clip.source === 'file_modified') { return; }
-        const meta = clip.meta;
-        if (meta && meta.created && meta.plausible) {
-            const back = $('#metadata-marks').val() === 'end'
-                ? Math.round(meta.duration || 0) : 0;
-            clip.start = addSeconds(meta.created, -back);
-            clip.source = 'metadata';
-        } else {
+        if (clip.source === 'manual' || clip.source === 'file_modified' ||
+                clip.source === 'file_metadata_candidate') { return; }
+        const recommended = (clip.dateCandidates || []).find(function (candidate) {
+            return candidate.recommended;
+        });
+        if (!applyCandidate(clip, recommended)) {
             clip.start = '';
             clip.source = '';
+            clip.candidateId = 'manual';
         }
     }
 
@@ -766,7 +822,8 @@ $(function () {
         });
         clips = Array.from(this.files || []).map(function (file) {
             return { file: file, frames: null, reading: null, status: '',
-                     meta: null, thumbUrl: null, start: '', source: '',
+                     meta: null, thumbUrl: null, start: '', source: '', candidateId: 'manual',
+                     dateCandidates: [],
                      unsupported: false };
         });
         renderTable();
@@ -809,7 +866,9 @@ $(function () {
         } catch (err) {
             clip.meta = null;
         }
+        prepareCandidates(clip);
         if (timeSource() === 'metadata') { applyMetadata(clip); }
+        refreshBulkDateSources();
     }
 
     function clipHint(clip) {
@@ -823,7 +882,11 @@ $(function () {
             // in: it is the copy time as often as the recording time.
             const modified = MSG_FILE_MODIFIED + ' ' +
                 localStamp(clip.file.lastModified) + ' ' + MSG_FILE_MODIFIED_NOTE;
-            return (clip.source === 'file_modified' ? '' : MSG_NO_METADATA + ' ') + modified;
+            const hasFileCandidate = (clip.dateCandidates || []).some(function (candidate) {
+                return candidate.kind !== 'file_modified';
+            });
+            const prompt = hasFileCandidate ? MSG_ONLY_CANDIDATES : MSG_NO_METADATA;
+            return (clip.source === 'file_modified' ? '' : prompt + ' ') + modified;
         }
         return '';
     }
@@ -845,11 +908,23 @@ $(function () {
         const when = $('<td></td>');
         const shown = timeSource() !== 'overlay' || clip.source === 'overlay';
         if (!clip.unsupported) {
+            const controls = $('<div class="clip-time-controls"></div>');
             const input = $('<input type="datetime-local" step="1" ' +
                             'class="form-control form-control-sm clip-start">')
                 .val(shown ? (clip.start || '') : '')
                 .prop('readonly', timeSource() === 'overlay');
-            when.append(input);
+            controls.append(input);
+            if (timeSource() !== 'overlay') {
+                const sourceSelect = $('<select class="form-select form-select-sm clip-date-source"></select>');
+                sourceSelect.append($('<option></option>').val('manual').text(MSG_MANUAL));
+                (clip.dateCandidates || []).forEach(function (candidate) {
+                    sourceSelect.append($('<option></option>').val(candidate.id)
+                        .text(candidateLabel(candidate, true)));
+                });
+                sourceSelect.val(clip.candidateId || 'manual');
+                controls.append(sourceSelect);
+            }
+            when.append(controls);
             if (clip.source && shown) {
                 when.append($('<span class="badge bg-secondary mt-1"></span>')
                     .text(SOURCE_LABELS[clip.source] || clip.source));
@@ -864,14 +939,7 @@ $(function () {
             }
             const hint = clipHint(clip);
             if (hint) {
-                const hintBox = $('<div class="video-hint"></div>').text(hint);
-                const noContainerDate = !clip.meta || !clip.meta.created;
-                if (noContainerDate && clip.source !== 'file_modified') {
-                    hintBox.append($('<button type="button" ' +
-                        'class="btn btn-sm btn-outline-secondary ms-2 use-file-modified"></button>')
-                        .text(MSG_USE_FILE_MODIFIED));
-                }
-                when.append(hintBox);
+                when.append($('<div class="video-hint"></div>').text(hint));
             }
         }
         row.append(when);
@@ -902,18 +970,58 @@ $(function () {
         if (value && value.length === 16) { value += ':00'; }   // no seconds typed
         clip.start = value;
         clip.source = value ? 'manual' : '';
+        clip.candidateId = 'manual';
         renderRow(index);
         refreshButtons();
     });
 
-    // The filesystem timestamp is only a proposal: copying a file may replace
-    // it. The operator has the first frame beside it and explicitly accepts it.
-    $('#clips-table').on('click', '.use-file-modified', function () {
+    $('#clips-table').on('change', '.clip-date-source', function () {
         const index = parseInt($(this).closest('tr').attr('data-index'), 10);
         const clip = clips[index];
-        clip.start = localStamp(clip.file.lastModified).replace(' ', 'T');
-        clip.source = 'file_modified';
+        const id = $(this).val();
+        if (id === 'manual') {
+            clip.candidateId = 'manual';
+            clip.source = clip.start ? 'manual' : '';
+        } else {
+            applyCandidate(clip, (clip.dateCandidates || []).find(function (candidate) {
+                return candidate.id === id;
+            }));
+        }
         renderRow(index);
+        refreshButtons();
+    });
+
+    function refreshBulkDateSources() {
+        const select = $('#bulk-date-source');
+        const previous = select.val();
+        const sources = new Map();
+        clips.forEach(function (clip) {
+            (clip.dateCandidates || []).forEach(function (candidate) {
+                if (!sources.has(candidate.source)) { sources.set(candidate.source, candidate); }
+            });
+        });
+        select.empty();
+        sources.forEach(function (candidate, source) {
+            select.append($('<option></option>').val(source).text(candidateLabel(candidate, false)));
+        });
+        if (previous && sources.has(previous)) { select.val(previous); }
+        $('#bulk-date-tools').toggleClass('d-none', !clips.length || timeSource() === 'overlay')
+            .toggleClass('d-flex', !!clips.length && timeSource() !== 'overlay');
+    }
+
+    $('#apply-date-source-all').on('click', function () {
+        const source = $('#bulk-date-source').val();
+        let applied = 0;
+        let missing = 0;
+        clips.forEach(function (clip) {
+            const candidate = (clip.dateCandidates || []).find(function (item) {
+                return item.source === source;
+            });
+            if (applyCandidate(clip, candidate)) { applied += 1; } else { missing += 1; }
+        });
+        $('#bulk-date-result').text(MSG_APPLIED_TO + ' ' + applied +
+            (missing ? '; ' + MSG_MISSING_IN + ' ' + missing : ''));
+        renderTable();
         refreshButtons();
     });
 

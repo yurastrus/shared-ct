@@ -75,7 +75,7 @@ CODE_OVERLAY_UNSUPPORTED = 'overlay_unsupported'
 CODE_IMPLAUSIBLE_START = 'implausible_start'
 
 #: Where a clip's start time came from, kept in the log next to the upload.
-START_SOURCES = ('metadata', 'file_modified', 'manual')
+START_SOURCES = ('metadata', 'file_metadata_candidate', 'file_modified', 'manual')
 
 
 def operator_start(raw: str, now: datetime | None = None) -> datetime:
