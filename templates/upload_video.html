@@ -114,8 +114,44 @@
             {% for loc in locations_data %}
               <option value="{{ loc.id }}">{{ loc.name }}</option>
             {% endfor %}
+            <option value="0">{{ _('*** СТВОРИТИ НОВЕ МІСЦЕ ***') }}</option>
           </select>
           <div class="video-hint" id="location-coords-text"></div>
+        </div>
+
+        <div id="new-location-fields" class="calib-block" style="display:none;">
+          <div class="panel-title">{{ _('Нове місце зйомки') }}</div>
+          <div class="field-row">
+            <label for="new-loc-name">{{ _('Назва') }} *</label>
+            <input type="text" class="form-control" id="new-loc-name"
+                   placeholder="{{ _('напр. Яворівський НПП — точка 1') }}">
+          </div>
+          <div class="field-row">
+            <label for="new-loc-description">{{ _('Опис') }}</label>
+            <input type="text" class="form-control" id="new-loc-description"
+                   placeholder="{{ _('Коротка характеристика') }}">
+          </div>
+          <div class="field-grid">
+            <div class="field-row">
+              <label for="new-loc-lat">{{ _('Широта') }} *</label>
+              <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?"
+                     class="form-control" id="new-loc-lat" placeholder="49.85000">
+            </div>
+            <div class="field-row">
+              <label for="new-loc-lon">{{ _('Довгота') }} *</label>
+              <input type="text" inputmode="decimal" pattern="-?\d+([.,]\d+)?"
+                     class="form-control" id="new-loc-lon" placeholder="23.65000">
+            </div>
+          </div>
+          <div id="location-feedback" class="mb-2"></div>
+          <div class="d-flex gap-2">
+            <button type="button" id="create-location-btn" class="btn btn-primary flex-fill">
+              {{ _('Створити та вибрати місце') }}
+            </button>
+            <button type="button" id="cancel-create-loc" class="btn btn-outline-secondary">
+              {{ _('Скасувати') }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -135,7 +171,7 @@
             <input class="form-check-input" type="radio" name="time-source"
                    id="time-source-metadata" value="metadata" checked>
             <label class="form-check-label" for="time-source-metadata">
-              {{ _('З метаданих відео, а де їх нема, вписати вручну') }}
+              {{ _('З метаданих відео; якщо їх нема — дата зміни файла або вручну') }}
             </label>
           </div>
           <div class="form-check">
@@ -320,6 +356,7 @@ $(function () {
     const LANG = '{{ g.lang_code }}';
     const csrfToken = $('#csrf-field').val();
     const createBatchUrl = `/${LANG}/camera-traps/api/create-batch`;
+    const createLocationUrl = `/${LANG}/camera-traps/api/create-location`;
     const calibrateUrl   = `/${LANG}/camera-traps/api/video/calibrate`;
     const readClipUrl    = `/${LANG}/camera-traps/api/video/read-clip`;
     const processUrl     = `/${LANG}/camera-traps/api/video/process-frame`;
@@ -451,6 +488,7 @@ $(function () {
                 (loc.institution_ids || []).includes(parseInt(instId, 10));
             if (belongs) { select.append(new Option(loc.name, loc.id)); }
         });
+        select.append(new Option({{ _('*** СТВОРИТИ НОВЕ МІСЦЕ ***') | tojson }}, '0'));
 
         applyInstitutionFilter(true);
 
@@ -465,6 +503,18 @@ $(function () {
 
     $('#video-location-select').on('change', function () {
         const value = $(this).val();
+        $('#new-location-fields').hide();
+        $('#location-coords-text').text('');
+
+        if (value === '0') {
+            $('#new-location-fields').show();
+            $('#new-loc-name,#new-loc-description,#new-loc-lat,#new-loc-lon').val('');
+            $('#location-feedback').empty();
+            markSelected(null);
+            refreshButtons();
+            return;
+        }
+
         markSelected(value || null);
 
         const loc = locationsData.find(function (l) { return String(l.id) === String(value); });
@@ -477,6 +527,69 @@ $(function () {
         refreshButtons();
     });
 
+    // Same inline create-and-select flow as the photo upload pages.
+    $('#new-loc-lat,#new-loc-lon').on('input', function () {
+        if (this.value.includes(',')) { this.value = this.value.replace(/,/g, '.'); }
+    });
+
+    $('#cancel-create-loc').on('click', function () {
+        $('#video-location-select').val('').trigger('change');
+    });
+
+    $('#create-location-btn').on('click', function () {
+        const name = $('#new-loc-name').val().trim();
+        const latitude = $('#new-loc-lat').val();
+        const longitude = $('#new-loc-lon').val();
+        if (!name || !latitude || !longitude) {
+            return alert({{ _("Назва та координати є обов'язковими.") | tojson }});
+        }
+
+        $.ajax({
+            url: createLocationUrl, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            data: JSON.stringify({
+                name: name,
+                description: $('#new-loc-description').val().trim(),
+                latitude: latitude,
+                longitude: longitude,
+                institution_id: $('#institution-select').val() || null
+            }),
+            success: function (data) {
+                $('#location-feedback').removeClass('alert-danger')
+                    .addClass('alert alert-success').text(data.message);
+                if (data.location) {
+                    const institutionId = parseInt($('#institution-select').val(), 10);
+                    const newLocation = {
+                        id: data.location.id,
+                        name: data.location.name,
+                        latitude: parseFloat(latitude),
+                        longitude: parseFloat(longitude),
+                        institution_ids: isNaN(institutionId) ? [] : [institutionId]
+                    };
+                    locationsData.push(newLocation);
+                    const marker = L.marker(
+                        [newLocation.latitude, newLocation.longitude], { icon: defaultIcon });
+                    marker.bindTooltip(newLocation.name, { direction: 'top', offset: [0, -30] });
+                    marker.on('click', function () {
+                        $('#video-location-select').val(String(newLocation.id)).trigger('change');
+                    });
+                    markers[newLocation.id] = marker;
+                    marker.addTo(map);
+                    const newOption = new Option(
+                        data.location.name, String(data.location.id), true, true);
+                    $('#video-location-select').append(newOption).trigger('change');
+                }
+            },
+            error: function (xhr) {
+                const body = xhr && xhr.responseJSON;
+                const message = (body && (body.message || body.error)) ||
+                    {{ _('Помилка створення місця') | tojson }};
+                $('#location-feedback').removeClass('alert-success')
+                    .addClass('alert alert-danger').text(message);
+            }
+        });
+    });
+
     // ─── Where the time comes from ────────────────────────────────────────
 
     const metadataUrl = `/${LANG}/camera-traps/api/video/metadata`;
@@ -484,6 +597,7 @@ $(function () {
 
     const SOURCE_LABELS = {
         metadata: {{ _('з метаданих') | tojson }},
+        file_modified: {{ _('з дати зміни файла') | tojson }},
         manual:   {{ _('вручну') | tojson }},
         overlay:  {{ _('з кадру') | tojson }}
     };
@@ -491,6 +605,7 @@ $(function () {
     const MSG_BAD_METADATA = {{ _('У метаданих неправдоподібна дата:') | tojson }};
     const MSG_FILE_MODIFIED = {{ _('Файл змінено:') | tojson }};
     const MSG_FILE_MODIFIED_NOTE = {{ _('(може бути часом копіювання)') | tojson }};
+    const MSG_USE_FILE_MODIFIED = {{ _('Використати цей час') | tojson }};
 
     function timeSource() {
         return $('input[name="time-source"]:checked').val();
@@ -531,9 +646,9 @@ $(function () {
             ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     }
 
-    /** Start time from the container header, unless the operator has typed one. */
+    /** Start time from the container header, unless the operator chose another. */
     function applyMetadata(clip) {
-        if (clip.source === 'manual') { return; }
+        if (clip.source === 'manual' || clip.source === 'file_modified') { return; }
         const meta = clip.meta;
         if (meta && meta.created && meta.plausible) {
             const back = $('#metadata-marks').val() === 'end'
@@ -706,8 +821,9 @@ $(function () {
         if (!meta || !meta.created) {
             // The file's modification time is offered as a clue, never filled
             // in: it is the copy time as often as the recording time.
-            return MSG_NO_METADATA + ' ' + MSG_FILE_MODIFIED + ' ' +
+            const modified = MSG_FILE_MODIFIED + ' ' +
                 localStamp(clip.file.lastModified) + ' ' + MSG_FILE_MODIFIED_NOTE;
+            return (clip.source === 'file_modified' ? '' : MSG_NO_METADATA + ' ') + modified;
         }
         return '';
     }
@@ -747,7 +863,16 @@ $(function () {
                     .text({{ _('номер не збігся') | tojson }}));
             }
             const hint = clipHint(clip);
-            if (hint) { when.append($('<div class="video-hint"></div>').text(hint)); }
+            if (hint) {
+                const hintBox = $('<div class="video-hint"></div>').text(hint);
+                const noContainerDate = !clip.meta || !clip.meta.created;
+                if (noContainerDate && clip.source !== 'file_modified') {
+                    hintBox.append($('<button type="button" ' +
+                        'class="btn btn-sm btn-outline-secondary ms-2 use-file-modified"></button>')
+                        .text(MSG_USE_FILE_MODIFIED));
+                }
+                when.append(hintBox);
+            }
         }
         row.append(when);
 
@@ -777,6 +902,17 @@ $(function () {
         if (value && value.length === 16) { value += ':00'; }   // no seconds typed
         clip.start = value;
         clip.source = value ? 'manual' : '';
+        renderRow(index);
+        refreshButtons();
+    });
+
+    // The filesystem timestamp is only a proposal: copying a file may replace
+    // it. The operator has the first frame beside it and explicitly accepts it.
+    $('#clips-table').on('click', '.use-file-modified', function () {
+        const index = parseInt($(this).closest('tr').attr('data-index'), 10);
+        const clip = clips[index];
+        clip.start = localStamp(clip.file.lastModified).replace(' ', 'T');
+        clip.source = 'file_modified';
         renderRow(index);
         refreshButtons();
     });
@@ -870,7 +1006,8 @@ $(function () {
         }
 
         form.append('start', clip.start);
-        form.append('source', clip.source === 'metadata' ? 'metadata' : 'manual');
+        form.append('source', clip.source === 'metadata' ? 'metadata' :
+            (clip.source === 'file_modified' ? 'file_modified' : 'manual'));
         return $.ajax({
             url: signClipUrl, method: 'POST', data: form,
             processData: false, contentType: false,
@@ -1060,7 +1197,8 @@ $(function () {
     }
 
     function refreshButtons() {
-        const hasLocation = !!$('#video-location-select').val();
+        const locationValue = $('#video-location-select').val();
+        const hasLocation = !!locationValue && locationValue !== '0';
         const overlay = timeSource() === 'overlay';
         const hasProfile = !!$('#profile-select').val();
         const usable = clips.filter(function (c) { return !c.unsupported; });

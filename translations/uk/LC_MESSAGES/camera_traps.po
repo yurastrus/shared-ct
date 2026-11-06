@@ -6205,7 +6205,7 @@ msgid "Час зйомки"
 msgstr ""
 
 #: app/camera_traps/templates/upload_video.html:138
-msgid "З метаданих відео, а де їх нема, вписати вручну"
+msgid "З метаданих відео; якщо їх нема — дата зміни файла або вручну"
 msgstr ""
 
 #: app/camera_traps/templates/upload_video.html:145
@@ -6366,6 +6366,10 @@ msgstr ""
 msgid "з метаданих"
 msgstr ""
 
+#: app/camera_traps/templates/upload_video.html
+msgid "з дати зміни файла"
+msgstr ""
+
 #: app/camera_traps/templates/upload_video.html:487
 msgid "вручну"
 msgstr ""
@@ -6388,6 +6392,10 @@ msgstr ""
 
 #: app/camera_traps/templates/upload_video.html:493
 msgid "(може бути часом копіювання)"
+msgstr ""
+
+#: app/camera_traps/templates/upload_video.html
+msgid "Використати цей час"
 msgstr ""
 
 #: app/camera_traps/templates/upload_video.html:596

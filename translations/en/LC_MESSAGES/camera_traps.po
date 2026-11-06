@@ -6458,8 +6458,8 @@ msgid "Час зйомки"
 msgstr "Capture time"
 
 #: app/camera_traps/templates/upload_video.html:138
-msgid "З метаданих відео, а де їх нема, вписати вручну"
-msgstr "From the video metadata, typed in by hand where there is none"
+msgid "З метаданих відео; якщо їх нема — дата зміни файла або вручну"
+msgstr "From video metadata; if absent, use the file modification time or type it in"
 
 #: app/camera_traps/templates/upload_video.html:145
 msgid "Прочитати з кадру (відкалібрована камера)"
@@ -6627,6 +6627,10 @@ msgstr "Done"
 msgid "з метаданих"
 msgstr "from metadata"
 
+#: app/camera_traps/templates/upload_video.html
+msgid "з дати зміни файла"
+msgstr "from file modification time"
+
 #: app/camera_traps/templates/upload_video.html:487
 msgid "вручну"
 msgstr "typed in"
@@ -6650,6 +6654,10 @@ msgstr "File modified:"
 #: app/camera_traps/templates/upload_video.html:493
 msgid "(може бути часом копіювання)"
 msgstr "(may be the time it was copied)"
+
+#: app/camera_traps/templates/upload_video.html
+msgid "Використати цей час"
+msgstr "Use this time"
 
 #: app/camera_traps/templates/upload_video.html:596
 msgid "Заповніть дату й час для кожного відео"
