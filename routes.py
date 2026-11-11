@@ -8,6 +8,7 @@ from sqlalchemy import func, distinct, extract, select, text, or_, case, cast, D
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import io
 import csv
+import json
 import os
 from functools import lru_cache
 
@@ -178,6 +179,25 @@ def admin_ai_pause_status(lang_code):
         return jsonify({'paused': False, 'reason': None, 'seconds_left': None}), 200
 
 
+# Store the author in a header inside the existing flag_note text column.
+_FLAG_AUTHOR_PREFIX = 'ct-flag-author-v1:'
+
+
+def _split_flag_note(value):
+    """Read the author and comment, including older plain-text comments."""
+    if value and value.startswith(_FLAG_AUTHOR_PREFIX):
+        header, separator, note = value.partition('\n')
+        if separator:
+            try:
+                author = json.loads(header.removeprefix(_FLAG_AUTHOR_PREFIX))
+            except ValueError:
+                pass
+            else:
+                if isinstance(author, str) and author:
+                    return author, note or None
+    return None, value
+
+
 @camera_traps_bp.route('/observation/<int:obs_id>/flag', methods=['POST'])
 @login_required
 @role_required('ct_verifier')
@@ -190,7 +210,9 @@ def flag_observation(lang_code, obs_id):
             flash(_('Серію не знайдено.'), 'danger')
         else:
             obs.flagged = True
-            obs.flag_note = (request.form.get('note') or '').strip() or None
+            note = (request.form.get('note') or '').strip()
+            author = json.dumps(current_user.username, ensure_ascii=False)
+            obs.flag_note = f'{_FLAG_AUTHOR_PREFIX}{author}\n{note}'
             ct_session.commit()
             flash(_('Серію позначено на повторний розгляд.'), 'success')
     except Exception as e:
@@ -243,6 +265,7 @@ def admin_flagged_list(lang_code):
         )
         items = []
         for obs in flagged:
+            author, note = _split_flag_note(obs.flag_note)
             first_photo = (
                 ct_session.query(Photo)
                 .filter(Photo.observation_id == obs.id)
@@ -253,7 +276,8 @@ def admin_flagged_list(lang_code):
                 'id': obs.id,
                 'location_name': obs.location.name if obs.location else '',
                 'series_start_time': obs.series_start_time,
-                'flag_note': obs.flag_note,
+                'flag_note': note,
+                'flag_author': author,
                 'thumb': first_photo.system_filename if first_photo else None,
             })
         return render_template('flagged_list.html', items=items)

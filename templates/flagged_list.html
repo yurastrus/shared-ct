@@ -30,6 +30,13 @@
                     <span class="flagged-loc">{{ it.location_name }}</span>
                     <span class="flagged-time">{{ it.series_start_time.strftime('%d.%m.%Y %H:%M') }}</span>
                 </div>
+                <p class="flagged-note">
+                    {% if it.flag_author %}
+                    {{ _('Позначив користувач') }} <strong>{{ it.flag_author }}</strong>
+                    {% else %}
+                    {{ _('Автор невідомий') }}
+                    {% endif %}
+                </p>
                 {% if it.flag_note %}
                 <p class="flagged-note">{{ it.flag_note }}</p>
                 {% else %}

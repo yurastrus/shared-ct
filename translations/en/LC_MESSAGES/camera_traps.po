@@ -6936,3 +6936,10 @@ msgstr "Without a start time:"
 #~ msgid "Використати цей час"
 #~ msgstr "Use this time"
 
+#: app/camera_traps/templates/flagged_list.html:35
+msgid "Позначив користувач"
+msgstr "Flagged by"
+
+#: app/camera_traps/templates/flagged_list.html:37
+msgid "Автор невідомий"
+msgstr "Unknown flag author"

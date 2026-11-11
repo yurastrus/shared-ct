@@ -6534,3 +6534,10 @@ msgstr ""
 msgid "Без часу початку:"
 msgstr ""
 
+#: app/camera_traps/templates/flagged_list.html:35
+msgid "Позначив користувач"
+msgstr ""
+
+#: app/camera_traps/templates/flagged_list.html:37
+msgid "Автор невідомий"
+msgstr ""
