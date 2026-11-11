@@ -427,16 +427,18 @@ $(document).ready(function() {
         locationsData.forEach(loc => {
             const marker = L.marker([loc.latitude, loc.longitude], { icon: getStatusIcon(loc) });
             marker.locationId = loc.id;
-            marker.on('click', () => selectLocation(loc.id));
+            marker.on('click', () => toggleMapLocation(loc.id));
             markers[loc.id] = marker;
             markersGroup.addLayer(marker);
         });
         markersGroup.addTo(map);
         if (markersGroup.getBounds().isValid()) map.fitBounds(markersGroup.getBounds().pad(0.1));
 
-        // Map click — set coordinates when creating a location.
         map.on('click', function(e) {
-            if (mode !== 'create') return;
+            if (mode !== 'create') {
+                if (activeLocationId !== null) deselectAll();
+                return;
+            }
             const lat = parseFloat(e.latlng.lat.toFixed(5));
             const lng = parseFloat(e.latlng.lng.toFixed(5));
             $('#location-lat').val(lat);
@@ -518,6 +520,14 @@ $(document).ready(function() {
         selectLocation($(this).data('location-id'));
     });
 
+    function toggleMapLocation(locationId) {
+        if (activeLocationId === locationId) {
+            deselectAll();
+        } else {
+            selectLocation(locationId);
+        }
+    }
+
     function selectLocation(locationId) {
         if (mode === 'create') deselectAll();
         if (activeLocationId === locationId) return;
@@ -546,7 +556,9 @@ $(document).ready(function() {
         {% if can_edit %}
         fetch(`/{{ g.lang_code }}/camera-traps/api/location/${locationId}`)
             .then(r => r.json())
-            .then(data => { if (!data.error) populateEditForm(data); })
+            .then(data => {
+                if (activeLocationId === locationId && !data.error) populateEditForm(data);
+            })
             .catch(() => {});
         {% endif %}
 
@@ -726,7 +738,7 @@ $(document).ready(function() {
                 $('.locations-list').append(listItem);
                 const marker = L.marker([lat, lon], { icon: getStatusIcon(newLoc) });
                 marker.locationId = response.location_id;
-                marker.on('click', () => selectLocation(response.location_id));
+                marker.on('click', () => toggleMapLocation(response.location_id));
                 markers[response.location_id] = marker;
                 markersGroup.addLayer(marker);
                 deselectAll();
@@ -769,6 +781,7 @@ $(document).ready(function() {
         fetch(`/{{ g.lang_code }}/camera-traps/api/location/${locationId}/service-history`)
             .then(r => r.json())
             .then(data => {
+                if (activeLocationId != locationId) return;
                 $('#history-content').empty();
                 if (!data.length) { $('#history-placeholder').show(); return; }
                 data.forEach(v => {
@@ -805,6 +818,7 @@ $(document).ready(function() {
                 });
             })
             .catch(() => {
+                if (activeLocationId != locationId) return;
                 $('#history-content').html('<div class="alert alert-danger small py-1">{{ _("Помилка завантаження.") }}</div>');
             });
     }
