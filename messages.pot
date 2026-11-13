@@ -2313,6 +2313,25 @@ msgstr ""
 msgid "Сьогодні"
 msgstr ""
 
+#: app/camera_traps/templates/contributors.html:86
+msgid "У вибраній установі або екорегіоні немає серій, що очікують верифікації."
+msgstr ""
+
+#: app/camera_traps/templates/contributors.html:88
+#, python-format
+msgid ""
+"Серій у черзі: %(remaining)s. За останні 7 повних днів немає завершених "
+"серій для оцінки строку."
+msgstr ""
+
+#: app/camera_traps/templates/contributors.html:90
+#, python-format
+msgid ""
+"Оцінка для поточної черги: %(days)s дн. без нових надходжень. У черзі "
+"%(remaining)s серій, за останні 7 повних днів завершено приблизно "
+"%(completed)s. Усі види у вибраній установі або екорегіоні."
+msgstr ""
+
 #: app/camera_traps/templates/contributors.html:79
 #: app/camera_traps/templates/institution_stats.html:73
 #: app/camera_traps/templates/upload_stats.html:76

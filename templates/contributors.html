@@ -81,7 +81,16 @@
                             {{ _('Сьогодні') }}
                         </th>
                         <th data-type="num" class="sorted-desc">
-                            <span class="period-total">+{{ contributors | sum(attribute='d_week') }}</span>
+                            {% if forecast %}
+                                {% if forecast.remaining == 0 %}
+                                    {% set forecast_title = _('У вибраній установі або екорегіоні немає серій, що очікують верифікації.') %}
+                                {% elif forecast.days is none %}
+                                    {% set forecast_title = _('Серій у черзі: %(remaining)s. За останні 7 повних днів немає завершених серій для оцінки строку.', remaining=forecast.remaining) %}
+                                {% else %}
+                                    {% set forecast_title = _('Оцінка для поточної черги: %(days)s дн. без нових надходжень. У черзі %(remaining)s серій, за останні 7 повних днів завершено приблизно %(completed)s. Усі види у вибраній установі або екорегіоні.', days=forecast.days, remaining=forecast.remaining, completed=forecast.completed) %}
+                                {% endif %}
+                            {% endif %}
+                            <span class="period-total"{% if forecast %} title="{{ forecast_title }}" aria-label="{{ '+' ~ (contributors | sum(attribute='d_week')) }}. {{ forecast_title }}"{% endif %}>+{{ contributors | sum(attribute='d_week') }}</span>
                             {{ _('Тиждень') }}
                         </th>
                         <th data-type="num">

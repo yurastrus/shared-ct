@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from flask import render_template, g, flash, redirect, url_for, jsonify, request, current_app, send_from_directory, abort, Response
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from app.camera_traps.domain import _, _l
@@ -723,6 +724,39 @@ def query_contributor_stats(ct_session, today, inst_condition_orm, inst_params,
         .all()
 
 
+def query_verification_forecast(ct_session, inst_condition_orm, inst_params, today):
+    """Estimate days to clear the visible queue using seven complete Kyiv days."""
+    kyiv = ZoneInfo('Europe/Kyiv')
+    start, end = (
+        datetime.combine(day, datetime.min.time(), kyiv)
+        .astimezone(timezone.utc).replace(tzinfo=None)
+        for day in (today - timedelta(days=7), today)
+    )
+    visible = (
+        ct_session.query(Observation.id, Observation.status)
+        .join(Location)
+        .filter(inst_condition_orm, Location.id.in_(valid_location_id_subquery()))
+        .params(**inst_params)
+        .subquery()
+    )
+    remaining = ct_session.query(func.count()).select_from(visible).filter(
+        visible.c.status == 'pending'
+    ).scalar()
+    last_votes = (
+        ct_session.query(Photo.observation_id, func.max(Identification.created_at).label('last_vote'))
+        .join(Photo, Photo.id == Identification.photo_id)
+        .join(visible, visible.c.id == Photo.observation_id)
+        .filter(visible.c.status.in_(('completed', 'archived')), Identification.created_at >= start)
+        .group_by(Photo.observation_id)
+        .subquery()
+    )
+    completed = ct_session.query(func.count()).select_from(last_votes).filter(
+        last_votes.c.last_vote < end
+    ).scalar()
+    days = (remaining * 7 + completed - 1) // completed if completed else None
+    return {'remaining': remaining, 'completed': completed, 'days': days}
+
+
 @camera_traps_bp.route('/contributors')
 def contributors(lang_code):
     """
@@ -805,9 +839,14 @@ def contributors(lang_code):
                     'total': r.total or 0,
                 })
 
+        forecast = query_verification_forecast(
+            ct_session, inst_condition_orm, inst_params, datetime.now(ZoneInfo('Europe/Kyiv')).date(),
+        ) if contributors else None
+
         return render_template(
             'contributors.html',
             contributors=contributors,
+            forecast=forecast,
             institutions=accessible_institutions,
             ecoregions=ecoregions,
             selected_scope=selected_scope,
