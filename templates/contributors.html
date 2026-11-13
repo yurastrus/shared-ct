@@ -11,7 +11,8 @@
     }
     .contributors-table th:nth-child(2), .contributors-table td:nth-child(2),
     .contributors-table th:first-child, .contributors-table td:first-child { text-align: left; }
-    .contributors-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .contributors-table th { cursor: pointer; user-select: none; white-space: nowrap; vertical-align: bottom; }
+    .contributors-table .period-total { display: block; color: #198754; margin-bottom: 4px; }
     .contributors-table th.sorted-asc::after { content: " \25B2"; }
     .contributors-table th.sorted-desc::after { content: " \25BC"; }
     .contributors-table tbody tr:hover { background: #f6f8fa; }
@@ -75,10 +76,22 @@
                     <tr>
                         <th data-type="text">#</th>
                         <th data-type="text">{{ _('Учасник') if show_full_name else _('Нікнейм') }}</th>
-                        <th data-type="num">{{ _('Сьогодні') }}</th>
-                        <th data-type="num" class="sorted-desc">{{ _('Тиждень') }}</th>
-                        <th data-type="num">{{ _('Місяць') }}</th>
-                        <th data-type="num">{{ _('Рік') }}</th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ contributors | sum(attribute='d_today') }}</span>
+                            {{ _('Сьогодні') }}
+                        </th>
+                        <th data-type="num" class="sorted-desc">
+                            <span class="period-total">+{{ contributors | sum(attribute='d_week') }}</span>
+                            {{ _('Тиждень') }}
+                        </th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ contributors | sum(attribute='d_month') }}</span>
+                            {{ _('Місяць') }}
+                        </th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ contributors | sum(attribute='d_year') }}</span>
+                            {{ _('Рік') }}
+                        </th>
                         <th data-type="num">{{ _('Усього') }}</th>
                     </tr>
                 </thead>
