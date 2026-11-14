@@ -7419,7 +7419,8 @@ def api_get_service_history(lang_code, location_id):
     ct_session = get_ct_session()
     try:
         # Access check: admin sees all; manager sees only their own institutions.
-        if not current_user.has_role('admin'):
+        is_admin = current_user.has_role('admin')
+        if not is_admin:
             user_inst_ids = ct_access.manage_institution_ids(current_user)
             if not user_inst_ids:
                 return jsonify({'error': _('Немає доступу.')}), 403
@@ -7456,7 +7457,8 @@ def api_get_service_history(lang_code, location_id):
                 'sd_card_changed': v.sd_card_changed,
                 'photos_on_card': v.photos_on_card,
                 'comments': v.comments,
-                'is_own': v.user_id == current_user.id
+                'is_own': v.user_id == current_user.id,
+                'can_edit': is_admin or v.user_id == current_user.id
             })
         
         return jsonify(history_data)
@@ -7551,11 +7553,13 @@ def api_create_service_visit(lang_code):
     finally:
         close_ct_session()
 
+@camera_traps_bp.route('/api/service-visit/<int:visit_id>/delete', methods=['POST'],
+                       endpoint='api_delete_service_visit', defaults={'delete': True})
 @camera_traps_bp.route('/api/service-visit/<int:visit_id>/update', methods=['POST'])
 @login_required
 @role_required('manager')
-def api_update_service_visit(lang_code, visit_id):
-    """Edit an existing service-visit record."""
+def api_update_service_visit(lang_code, visit_id, delete=False):
+    """Edit or delete an existing service-visit record."""
     ct_session = get_ct_session()
     try:
         visit = ct_session.query(ServiceVisit).get(visit_id)
@@ -7580,6 +7584,12 @@ def api_update_service_visit(lang_code, visit_id):
             ).fetchone()
             if not access:
                 return jsonify({'success': False, 'error': _('Немає доступу до цієї локації.')}), 403
+
+        if delete:
+            ct_session.delete(visit)
+            ct_session.commit()
+            current_app.logger.info("User %s deleted CT service visit %s", current_user.username, visit_id)
+            return jsonify({'success': True})
 
         data = request.json
         visit_datetime_str = data.get('visit_datetime')
@@ -7618,7 +7628,7 @@ def api_update_service_visit(lang_code, visit_id):
         return jsonify({'success': False, 'error': _('Некоректні дані.')}), 400
     except Exception as e:
         ct_session.rollback()
-        current_app.logger.error(f"Error updating CT service visit {visit_id}: {e}", exc_info=True)
+        current_app.logger.error("Error changing CT service visit %s: %s", visit_id, e, exc_info=True)
         return jsonify({'success': False, 'error': _('Помилка сервера.')}), 500
     finally:
         close_ct_session()

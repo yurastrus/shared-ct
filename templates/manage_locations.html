@@ -291,7 +291,6 @@ $(document).ready(function() {
     let mapMode = 'data';     // 'data' | 'service'
     let serviceStatus = {};   // location_id -> status string
 
-    const canEdit = {{ 'true' if can_edit else 'false' }};
     const isAdmin = {{ 'true' if is_admin else 'false' }};
     {% if not is_admin and user_institutions|length == 1 %}
     const singleInstitutionId = {{ user_institutions[0].id }};
@@ -794,9 +793,11 @@ $(document).ready(function() {
                         ? '<span class="badge bg-info text-dark">{{ _("Замінено") }}</span>'
                         : '<span class="badge bg-light text-dark border">{{ _("Ні") }}</span>';
                     const photosInfo = v.photos_on_card ? ` | {{ _('Фото:') }} ${v.photos_on_card}` : '';
-                    const editBtn = (canEdit || v.is_own)
+                    const visitActions = v.can_edit
                         ? `<button type="button" class="edit-visit-btn visit-edit-btn"
                             data-visit='${JSON.stringify(v).replace(/'/g, "&#39;")}'>&#9998;</button>`
+                          + `<button type="button" class="delete-visit-btn visit-edit-btn"
+                            data-visit-id="${v.id}">{{ _('Видалити') }}</button>`
                         : '';
                     const item = `
                         <div class="history-item">
@@ -804,7 +805,7 @@ $(document).ready(function() {
                                 <strong class="small">${v.purpose}</strong>
                                 <span class="history-meta d-flex align-items-center gap-1">
                                     ${v.visit_datetime}<br><em>${v.user}</em>
-                                    ${editBtn}
+                                    ${visitActions}
                                 </span>
                             </div>
                             <div class="small mt-1">
@@ -843,6 +844,32 @@ $(document).ready(function() {
         $('#service-form-placeholder').hide();
         const scrollTo = $('#service-form-title').offset().top - $('#panel-content').offset().top + $('#panel-content').scrollTop();
         $('#panel-content').animate({ scrollTop: scrollTo }, 300);
+    });
+
+    $('#history-content').on('click', '.delete-visit-btn', async function() {
+        const confirmation = {{ _('Видалити цей запис журналу? Дію не можна скасувати.') | tojson }};
+        if (!confirm(confirmation)) return;
+
+        const locationId = activeLocationId;
+        const visitId = this.dataset.visitId;
+        this.disabled = true;
+        try {
+            const response = await fetch(`/{{ g.lang_code }}/camera-traps/api/service-visit/${visitId}/delete`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+            if (activeLocationId === locationId) {
+                if ($('#service-visit-id').val() === visitId) resetServiceForm();
+                loadHistory(locationId);
+            }
+            if (mapMode === 'service') loadServiceStatus();
+        } catch (err) {
+            alert(`{{ _('Помилка:') }} ${err.message}`);
+        } finally {
+            this.disabled = false;
+        }
     });
 
     $('#service-cancel-edit-btn').on('click', resetServiceForm);
