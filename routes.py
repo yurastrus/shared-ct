@@ -33,6 +33,8 @@ from .activity_heatmap import fetch_heatmap_data, fetch_date_range
 from .validity import (valid_location_id_subquery, VALID_LOCATION_SQL,
                        MIN_VALID_CAPTURE_YEAR, plausible_years)
 from .consensus import consensus_ctes, tally_votes, accepted_species
+from .service_forecast import forecast_service, INACTIVE_PURPOSE_IDS
+from .service_plan import load_service_plan as load_ct_service_plan
 
 #
 # --- MODULE STATIC FILES ---
@@ -7304,6 +7306,26 @@ def service_log(lang_code):
     """Redirect to the combined location-management page."""
     return redirect(url_for('camera_traps.manage_locations', lang_code=lang_code))
 
+
+@camera_traps_bp.route('/service-plan')
+@login_required
+@role_required('manager')
+def service_plan(lang_code):
+    """Field map and visit list for the current manager's institutions."""
+    today = date.today()
+    managed_ids = None if ct_access.is_admin(current_user) else ct_access.manage_institution_ids(current_user)
+    try:
+        items = load_ct_service_plan(get_ct_session(), lang_code, today, managed_ids=managed_ids)
+    finally:
+        close_ct_session()
+    used_ids = {inst_id for item in items for inst_id in item['inst_ids']}
+    institutions = Institution.query.filter(Institution.id.in_(used_ids)).order_by(Institution.name_uk).all()
+    inst_list = [{'id': inst.id, 'name': (inst.name_en if lang_code == 'en' else None) or inst.name_uk}
+                 for inst in institutions]
+    return render_template('ct_service_plan.html', items=items, institutions=inst_list,
+                           today=today.isoformat())
+
+
 @camera_traps_bp.route('/api/locations-with-status')
 @login_required
 @role_required('manager')
@@ -7315,15 +7337,6 @@ def api_get_locations_with_status(lang_code):
     """
     ct_session = get_ct_session()
     try:
-        INACTIVE_PURPOSE_IDS = {3, 4}
-        TIME_WARNING_DAYS = 180
-        TIME_CRITICAL_DAYS = 300
-        PHOTO_WARNING_COUNT = 5000
-        PHOTO_CRITICAL_COUNT = 10000
-
-        # Map status values to severity weights for worst-case comparison.
-        status_severity = {'ok': 0, 'warning': 1, 'critical': 2}
-
         is_admin = current_user.has_role('admin')
         user_inst_ids = ct_access.manage_institution_ids(current_user)
 
@@ -7359,36 +7372,15 @@ def api_get_locations_with_status(lang_code):
                     days_since_visit = (datetime.now().date() - last_visit.visit_datetime.date()).days
                 
                 else:
-                    # Camera is active — proceed with forecasting.
-                    days_since_visit = (datetime.now().date() - last_visit.visit_datetime.date()).days
-                    stats = loc.stats
-                    
-                    # Worst-case scenario: compute time-based and photo-based status, then pick the worse one.
-
-                    # 1. Time-based status.
-                    time_status = 'ok'
-                    if days_since_visit >= TIME_CRITICAL_DAYS:
-                        time_status = 'critical'
-                    elif days_since_visit >= TIME_WARNING_DAYS:
-                        time_status = 'warning'
-
-                    # 2. Photo-count-based status (if data is available).
-                    photo_status = 'ok'  # Default.
-                    if stats and stats.avg_photos_per_day > 0:
-                        predicted_photos = int(days_since_visit * float(stats.avg_photos_per_day))
-                        if predicted_photos >= PHOTO_CRITICAL_COUNT:
-                            photo_status = 'critical'
-                        elif predicted_photos >= PHOTO_WARNING_COUNT:
-                            photo_status = 'warning'
-
-                    # 3. Pick the worst of the two statuses.
-                    if status_severity[photo_status] > status_severity[time_status]:
-                        # Photo-count status is worse — use it.
-                        status = photo_status
+                    rate = loc.stats.avg_photos_per_day if loc.stats else None
+                    forecast = forecast_service(last_visit.visit_datetime.date(), date.today(),
+                                                rate if rate and rate > 0 else None)
+                    days_since_visit = forecast['days_since_visit']
+                    predicted_photos = forecast['predicted_photos']
+                    status = forecast['status']
+                    if forecast['status_by_photos']:
                         status_reason = _("Прогноз за кількістю фото")
                     else:
-                        # Time status is worse or equal — use it.
-                        status = time_status
                         status_reason = _("Прогноз за часом")
 
             response_data.append({

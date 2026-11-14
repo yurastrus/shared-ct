@@ -1,0 +1,407 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('План обслуговування') }}{% endblock %}
+
+{% block ct_head_extra %}
+<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/ct_service_plan.css', lang_code=g.lang_code) }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+{% endblock %}
+
+{% block ct_content %}
+<div class="svp-plan-page">
+    <div class="svp-plan-head">
+        <h2>{{ _('План обслуговування') }}</h2>
+        <a class="svp-plan-link" href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}">
+            {{ _('Журнал обслуговування') }} &rarr;
+        </a>
+    </div>
+    <p class="svp-plan-note">
+        {{ _('Дата візиту враховує час після останнього візиту, очікувану кількість кадрів та дату завершення розгортання.') }}
+    </p>
+
+    {% if not items %}
+    <div class="svp-plan-empty">{{ _('Немає локацій в установах, якими ви керуєте.') }}</div>
+    {% else %}
+
+    <div class="svp-plan-filters">
+        {% if institutions|length > 1 %}
+        <select id="svp-inst" class="svp-select">
+            <option value="">{{ _('Усі мої установи') }}</option>
+            {% for inst in institutions %}
+            <option value="{{ inst.id }}">{{ inst.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <div class="svp-plan-groups" id="svp-groups">
+            <label><input type="checkbox" value="attention" checked> {{ _('Потребують візиту') }}</label>
+            <label><input type="checkbox" value="ok" checked> {{ _('OK') }}</label>
+            <label><input type="checkbox" value="other"> {{ _('Інше') }}</label>
+        </div>
+    </div>
+
+    <div id="svp-map" class="svp-plan-map"></div>
+
+    <div class="svp-plan-bulk">
+        <button type="button" class="svp-btn" id="svp-select-all">{{ _('Вибрати всі показані') }}</button>
+        <button type="button" class="svp-btn" id="svp-select-attention">{{ _('Лише ті, що потребують візиту') }}</button>
+        <button type="button" class="svp-btn" id="svp-locate">
+            ◎ {{ _('Де я') }}
+        </button>
+        <span class="svp-plan-count" id="svp-count"></span>
+    </div>
+
+    <div id="svp-list" class="svp-plan-list"></div>
+
+    <div class="svp-plan-actions" id="svp-actions">
+        <span id="svp-selected-count"></span>
+        <button type="button" class="svp-btn svp-btn-primary" id="svp-kml">⬇ KML</button>
+        <button type="button" class="svp-btn svp-btn-accent" id="svp-copy">⧉ {{ _('Координати') }}</button>
+        <button type="button" class="svp-btn" id="svp-clear" title="{{ _('Зняти вибір') }}" aria-label="{{ _('Зняти вибір') }}">✕</button>
+    </div>
+    <div class="svp-plan-toast" id="svp-toast" role="status"></div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if items %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function () {
+    const ITEMS = {{ items|tojson }};
+    const TODAY = {{ today|tojson }};
+    const T = {
+        labels: {
+            ok: {{ _('OK')|tojson }}, warning: {{ _('Увага')|tojson }},
+            critical: {{ _('Критично')|tojson }}, overdue: {{ _('Прострочено')|tojson }},
+            stopped: {{ _('Зупинився')|tojson }}, removed: {{ _('Демонтовано')|tojson }},
+            inactive: {{ _('Неактивна')|tojson }}, no_log: {{ _('Немає журналу')|tojson }},
+            unknown: {{ _('Невідомо')|tojson }}
+        },
+        visitBy: {{ _('Приїхати до')|tojson }},
+        device: {{ _('Прилад')|tojson }},
+        battery: {{ _('Батареї')|tojson }},
+        card: {{ _('SD-картка')|tojson }},
+        lastVisit: {{ _('Останній візит')|tojson }},
+        lastRecording: {{ _('Останнє завантажене фото')|tojson }},
+        since: {{ _('встановлено')|tojson }},
+        unknownVal: {{ _('невідомо')|tojson }},
+        km: {{ _('км')|tojson }},
+        m: {{ _('м')|tojson }},
+        copy: {{ _('Копіювати координати')|tojson }},
+        copyShort: {{ _('Копіювати')|tojson }},
+        navigate: {{ _('Навігатор')|tojson }},
+        onMap: {{ _('На карті')|tojson }},
+        copied: {{ _('Скопійовано')|tojson }},
+        copyFailed: {{ _('Не вдалося скопіювати')|tojson }},
+        selected: {{ _('Вибрано')|tojson }},
+        shown: {{ _('Показано')|tojson }},
+        noneShown: {{ _('Немає локацій у цій вибірці.')|tojson }},
+        noLocation: {{ _('Не вдалося визначити місцезнаходження')|tojson }},
+        statusReason: {{ _('Підстава')|tojson }},
+        predictedPhotos: {{ _('Очікувано кадрів після візиту')|tojson }},
+        photosOnCard: {{ _('Кадрів на картці під час візиту')|tojson }},
+        kmlName: {{ _('План обслуговування фотопасток')|tojson }}
+    };
+    const COLORS = {
+        ok: '#2aad27', warning: '#cac428', critical: '#cb8427', overdue: '#cb2b3e',
+        stopped: '#3d3d3d', no_log: '#9c2bcb', removed: '#9e9e9e', inactive: '#9e9e9e', unknown: '#9e9e9e'
+    };
+    const ATTENTION = ['warning', 'critical', 'overdue', 'stopped'];
+    const ACTIVE = ['ok'].concat(ATTENTION);
+    const byId = new Map(ITEMS.map(it => [it.key, it]));
+
+    // One selection drives both the list and the map.
+    const selected = new Set();
+    let visibleIds = [];
+    let here = null;   // [lat, lon] after "Where am I"
+
+    const group = st => ATTENTION.includes(st) ? 'attention' : (st === 'ok' ? 'ok' : 'other');
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const coordText = it => it.latitude.toFixed(6) + ', ' + it.longitude.toFixed(6);
+
+    // ── map ──────────────────────────────────────────────────────────────
+    // A view is needed before markers can be styled; render() then fits the points.
+    const map = L.map('svp-map', { tap: true }).setView([49.8, 23.6], 9);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }).addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+    L.control.layers({ {{ _('OSM')|tojson }}: osm, {{ _('Супутник')|tojson }}: sat }).addTo(map);
+
+    const markers = {};
+    ITEMS.forEach(it => {
+        const m = L.circleMarker([it.latitude, it.longitude], markerStyle(it, false));
+        m.bindTooltip(esc(it.name), { direction: 'top', offset: [0, -8] });
+        m.on('click', () => toggle(it.key, 'map'));
+        markers[it.key] = m;
+    });
+    let hereMarker = null;
+
+    function markerStyle(it, isSel) {
+        return {
+            radius: isSel ? 11 : 8,
+            fillColor: COLORS[it.status] || COLORS.unknown,
+            fillOpacity: ACTIVE.includes(it.status) ? 0.95 : 0.55,
+            color: isSel ? '#0d6efd' : '#ffffff',
+            weight: isSel ? 4 : 2
+        };
+    }
+
+    // ── filtering and list ───────────────────────────────────────────────
+    function currentFilter() {
+        const groups = Array.from(document.querySelectorAll('#svp-groups input:checked')).map(el => el.value);
+        const instEl = document.getElementById('svp-inst');
+        const inst = instEl && instEl.value ? Number(instEl.value) : null;
+        return it => groups.includes(group(it.status)) && (!inst || (it.inst_ids || []).includes(inst));
+    }
+
+    function sortItems(list) {
+        const rank = st => ACTIVE.includes(st) ? 0 : 1;
+        return list.sort((a, b) => rank(a.status) - rank(b.status)
+            || (a.visit_by_iso || '9999').localeCompare(b.visit_by_iso || '9999')
+            || String(a.name).localeCompare(String(b.name)));
+    }
+
+    function distanceText(it) {
+        if (!here) return '';
+        const d = map.distance(here, [it.latitude, it.longitude]);
+        return d < 1000 ? Math.round(d) + ' ' + T.m : (d / 1000).toFixed(1) + ' ' + T.km;
+    }
+
+    function detailRows(it) {
+        const rows = [];
+        const since = day => day ? ' · ' + T.since + ' ' + day : '';
+        if (it.visit_by) rows.push([T.visitBy, it.visit_by]);
+        if (it.status_reason) rows.push([T.statusReason, it.status_reason]);
+        rows.push([T.device, it.device || T.unknownVal]);
+        rows.push([T.battery, (it.battery || T.unknownVal) + since(it.battery_since)]);
+        rows.push([T.card, it.card_since ? T.since + ' ' + it.card_since : T.unknownVal]);
+        if (it.photos_on_card != null) {
+            rows.push([T.photosOnCard, it.photos_on_card + ' · ' + it.photos_on_card_date]);
+        }
+        if (it.predicted_photos != null) rows.push([T.predictedPhotos, it.predicted_photos]);
+        rows.push([T.lastVisit, it.last_visit_date || '—']);
+        if (it.last_recording) rows.push([T.lastRecording, it.last_recording]);
+        return rows;
+    }
+
+    function cardHtml(it) {
+        const rows = detailRows(it).map(([label, value]) =>
+            `<div class="svp-card-row"><span>${esc(label)}</span><span>${esc(value)}</span></div>`);
+        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${it.latitude},${it.longitude}`;
+        const geoUrl = `geo:${it.latitude},${it.longitude}?q=${it.latitude},${it.longitude}(${encodeURIComponent(it.name)})`;
+        const dist = distanceText(it);
+        return `
+            <div class="svp-card-head">
+                <input type="checkbox" class="svp-card-check" ${selected.has(it.key) ? 'checked' : ''} aria-label="${esc(it.name)}">
+                <div class="svp-card-title">
+                    <div class="svp-card-name">${esc(it.name)}</div>
+                    <span class="service-badge service-badge-${esc(it.status)}">${esc(T.labels[it.status] || it.status)}</span>
+                    ${dist ? `<span class="svp-card-dist">${esc(dist)}</span>` : ''}
+                </div>
+            </div>
+            <div class="svp-card-body">${rows.join('')}</div>
+            <div class="svp-card-coords">
+                <code>${esc(coordText(it))}</code>
+                <button type="button" class="svp-btn svp-copy-one" title="${esc(T.copy)}">⧉ ${esc(T.copyShort)}</button>
+                <button type="button" class="svp-btn svp-show" title="${esc(T.onMap)}">📍 ${esc(T.onMap)}</button>
+                <a class="svp-btn" href="${geoUrl}" title="${esc(T.navigate)}">🧭 ${esc(T.navigate)}</a>
+                <a class="svp-btn" href="${navUrl}" target="_blank" rel="noopener" title="Google Maps">Google</a>
+            </div>`;
+    }
+
+    function render(fit) {
+        const keep = currentFilter();
+        const shown = sortItems(ITEMS.filter(keep));
+        visibleIds = shown.map(it => it.key);
+        // A hidden point cannot stay selected: what is exported is what is seen.
+        Array.from(selected).forEach(id => { if (!visibleIds.includes(id)) selected.delete(id); });
+
+        ITEMS.forEach(it => {
+            const m = markers[it.key];
+            if (visibleIds.includes(it.key)) { m.addTo(map); m.setStyle(markerStyle(it, selected.has(it.key))); }
+            else m.remove();
+        });
+
+        const list = document.getElementById('svp-list');
+        list.innerHTML = '';
+        if (!shown.length) list.innerHTML = `<p class="svp-plan-note">${esc(T.noneShown)}</p>`;
+        shown.forEach(it => {
+            const div = document.createElement('div');
+            div.className = 'svp-card' + (selected.has(it.key) ? ' svp-card-selected' : '');
+            div.dataset.id = it.key;
+            div.innerHTML = cardHtml(it);
+            list.appendChild(div);
+        });
+        if (fit && shown.length) {
+            map.fitBounds(L.latLngBounds(shown.map(it => [it.latitude, it.longitude])), { padding: [24, 24], maxZoom: 14 });
+        }
+        updateCounts();
+    }
+
+    function updateCounts() {
+        document.getElementById('svp-count').textContent = `${T.shown}: ${visibleIds.length}`;
+        const n = selected.size;
+        document.getElementById('svp-selected-count').textContent = `${T.selected}: ${n}`;
+        document.getElementById('svp-actions').classList.toggle('svp-plan-actions-empty', n === 0);
+        ['svp-kml', 'svp-copy', 'svp-clear'].forEach(id => { document.getElementById(id).disabled = n === 0; });
+    }
+
+    function setSelected(id, on) {
+        on ? selected.add(id) : selected.delete(id);
+        const it = byId.get(id);
+        markers[id].setStyle(markerStyle(it, on));
+        if (on) markers[id].bringToFront();
+        const card = document.querySelector(`.svp-card[data-id="${id}"]`);
+        if (card) {
+            card.classList.toggle('svp-card-selected', on);
+            card.querySelector('.svp-card-check').checked = on;
+        }
+    }
+
+    function toggle(id, source) {
+        setSelected(id, !selected.has(id));
+        updateCounts();
+        // A tap on the map brings its card into view, so the two never drift apart.
+        if (source === 'map' && selected.has(id)) {
+            const card = document.querySelector(`.svp-card[data-id="${id}"]`);
+            if (card) {
+                card.classList.add('svp-card-flash');
+                setTimeout(() => card.classList.remove('svp-card-flash'), 900);
+            }
+        }
+    }
+
+    // ── list events ──────────────────────────────────────────────────────
+    document.getElementById('svp-list').addEventListener('click', e => {
+        const card = e.target.closest('.svp-card');
+        if (!card) return;
+        const id = card.dataset.id;
+        const it = byId.get(id);
+        if (e.target.closest('.svp-copy-one')) { copyText(coordText(it)); return; }
+        if (e.target.closest('.svp-show')) {
+            if (!selected.has(id)) toggle(id, 'list');
+            map.setView([it.latitude, it.longitude], Math.max(map.getZoom(), 14));
+            markers[id].openTooltip();
+            document.getElementById('svp-map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+        if (e.target.closest('a')) return;
+        if (e.target.closest('.svp-card-head') || e.target.closest('.svp-card-body')) {
+            toggle(id, 'list');
+        }
+    });
+
+    document.querySelectorAll('#svp-groups input').forEach(el => el.addEventListener('change', () => render(true)));
+    const instEl = document.getElementById('svp-inst');
+    if (instEl) instEl.addEventListener('change', () => render(true));
+
+    document.getElementById('svp-select-all').addEventListener('click', () => {
+        visibleIds.forEach(id => setSelected(id, true)); updateCounts();
+    });
+    document.getElementById('svp-select-attention').addEventListener('click', () => {
+        visibleIds.forEach(id => setSelected(id, ATTENTION.includes(byId.get(id).status))); updateCounts();
+    });
+    document.getElementById('svp-clear').addEventListener('click', () => {
+        Array.from(selected).forEach(id => setSelected(id, false)); updateCounts();
+    });
+
+    document.getElementById('svp-locate').addEventListener('click', () => {
+        if (!navigator.geolocation) { toast(T.noLocation); return; }
+        navigator.geolocation.getCurrentPosition(pos => {
+            here = [pos.coords.latitude, pos.coords.longitude];
+            if (hereMarker) hereMarker.remove();
+            hereMarker = L.circleMarker(here, { radius: 7, color: '#fff', weight: 3,
+                fillColor: '#0d6efd', fillOpacity: 1 }).addTo(map);
+            map.setView(here, Math.max(map.getZoom(), 12));
+            render(false);
+        }, () => toast(T.noLocation), { enableHighAccuracy: true, timeout: 15000 });
+    });
+
+    // ── export ───────────────────────────────────────────────────────────
+    function selectedItems() {
+        return visibleIds.filter(id => selected.has(id)).map(id => byId.get(id));
+    }
+
+    function plainDescription(it) {
+        return [T.labels[it.status] || it.status,
+            ...detailRows(it).map(([label, value]) => `${label}: ${value}`),
+            coordText(it)].join('\n');
+    }
+
+    // KML colours are aabbggrr.
+    const kmlColor = hex => 'ff' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3);
+    const xml = s => String(s).replace(/[<>&'"]/g,
+        c => ({'<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'}[c]));
+
+    function buildKml(items) {
+        const styles = Object.entries(COLORS).map(([st, hex]) => `
+    <Style id="st-${st}"><IconStyle><color>${kmlColor(hex)}</color><scale>1.1</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon></IconStyle></Style>`).join('');
+        const marks = items.map(it => `
+    <Placemark>
+      <name>${xml(it.name)}</name>
+      <description>${xml(plainDescription(it))}</description>
+      <styleUrl>#st-${xml(it.status)}</styleUrl>
+      <Point><coordinates>${it.longitude},${it.latitude},0</coordinates></Point>
+    </Placemark>`).join('');
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${xml(T.kmlName + ' ' + TODAY)}</name>${styles}${marks}
+  </Document>
+</kml>
+`;
+    }
+
+    document.getElementById('svp-kml').addEventListener('click', () => {
+        const items = selectedItems();
+        if (!items.length) return;
+        const blob = new Blob([buildKml(items)], { type: 'application/vnd.google-earth.kml+xml' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `ct_service_${TODAY}.kml`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+
+    document.getElementById('svp-copy').addEventListener('click', () => {
+        const items = selectedItems();
+        if (!items.length) return;
+        copyText(items.length === 1 ? coordText(items[0])
+            : items.map(it => `${it.name}\t${coordText(it)}`).join('\n'));
+    });
+
+    function copyText(text) {
+        const fallback = () => {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            ta.remove();
+            toast(ok ? T.copied : T.copyFailed);
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => toast(T.copied), fallback);
+        } else fallback();
+    }
+
+    let toastTimer = null;
+    function toast(msg) {
+        const el = document.getElementById('svp-toast');
+        el.textContent = msg;
+        el.classList.add('svp-plan-toast-on');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('svp-plan-toast-on'), 1800);
+    }
+
+    render(true);
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -139,6 +139,11 @@
             {% endif %}
 
             {% if can_manage %}
+            <a class="hub-card" href="{{ url_for('camera_traps.service_plan', lang_code=g.lang_code) }}">
+                <span class="hub-card__icon">🔋</span>
+                <span class="hub-card__title">{{ _('План обслуговування') }}</span>
+                <span class="hub-card__desc">{{ _('Які фотопастки пора обслуговувати: карта, дати візитів та експорт у KML.') }}</span>
+            </a>
             <a class="hub-card" href="{{ url_for('camera_traps.manage_locations', lang_code=g.lang_code) }}">
                 <span class="hub-card__icon">📍</span>
                 <span class="hub-card__title">{{ _('Локації') }}</span>

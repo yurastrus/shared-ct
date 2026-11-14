@@ -12,6 +12,8 @@
     <div class="page-header mb-2 d-flex justify-content-between align-items-center">
         <h2 style="font-size:1.4rem;">{{ _('Управління локаціями фотопасток') }}</h2>
         <div class="d-flex gap-2 align-items-center">
+            <a class="btn btn-outline-primary btn-sm"
+               href="{{ url_for('camera_traps.service_plan', lang_code=g.lang_code) }}">{{ _('План обслуговування') }}</a>
             {% if can_edit %}
             <button type="button" id="new-location-btn" class="btn btn-success btn-sm">
                 <i class="fas fa-plus me-1"></i>{{ _('Нова локація') }}

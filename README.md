@@ -272,6 +272,37 @@ venv/Scripts/pybabel compile -f -d app/camera_traps/translations -D camera_traps
 
 Replace `venv/Scripts/` with `venv/bin/` on Linux.
 
+## Field service plan
+
+`/<lang>/camera-traps/service-plan` shows the service map and a visit list
+with institution and status filters, navigation, coordinate copying and KML
+export. It uses the service map's existing thresholds (180/300 days or an
+estimated 5,000/10,000 photos), plus the deployment end date when earlier.
+An explicit non-operational visit is flagged for follow-up. Photo counts
+are estimates based on historical location statistics. Equipment details
+come from deployment and visit records, with battery and SD replacement
+dates carried through routine visits. CT does not estimate remaining battery
+days or SD capacity from these records.
+
+### Integrating CT and PAM service plans
+
+The host can concatenate rows from `camera_traps.service_plan.load_service_plan`
+and `pam.routes.load_pam_service_plan` using the same reporting date. The CT
+loader takes a CT SQLAlchemy session owned by the caller. Pass each module's
+manager institution IDs independently, an empty list for no scope, or
+`None` for an authorized administrator. The host must resolve permissions
+before calling the loaders.
+
+Both return JSON-serializable rows. Use `key` (`ct:<id>` or `pam:<id>`) for
+selection and `module` for display and module-specific detail. `id` is the
+module's local location ID, `inst_ids` contains main-app institution IDs,
+coordinates are decimal degrees, and `visit_by_iso` is a nullable ISO date
+for sorting. The shared statuses are `ok`, `warning`, `critical`, `overdue`,
+`stopped`, `removed`, `inactive`, `no_log` and `unknown`. Dates formatted
+for display use `DD.MM.YYYY`. Optional equipment fields may be null. The
+`last_recording` field holds the latest photo date for CT and the recording
+date reported by the forecast for PAM.
+
 ## Integration with biomon
 
 This repository is used as a Git submodule inside [biomon](https://github.com/yurastrus/biomon) at `app/camera_traps/`. The host application registers the blueprint and provides:
