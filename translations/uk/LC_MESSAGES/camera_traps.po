@@ -3458,9 +3458,8 @@ msgid "Позначив користувач"
 msgstr ""
 
 #: app/camera_traps/templates/flagged_list.html:37
-#, fuzzy
 msgid "Автор невідомий"
-msgstr "стан невідомий"
+msgstr ""
 
 #: app/camera_traps/templates/flagged_list.html:43
 msgid "(без коментаря)"
