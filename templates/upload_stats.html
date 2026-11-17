@@ -29,12 +29,11 @@
 
         <div class="page-header">
             <h1>{{ _('Статистика завантажень') }}</h1>
-            <h4>{{ _('Скільки фото кожен користувач завантажив за ковзні періоди.') }}</h4>
         </div>
 
-        <!-- Filter panel (scope only — no species filter) -->
         <form id="filters-form" method="GET" class="filters-panel">
             <input type="hidden" name="days" value="{{ days }}">
+            <input type="hidden" name="group" value="{{ group }}">
             <div class="filter-group filter-group-wide">
                 <label for="scope-select">{{ _('Установа / Екорегіон:') }}</label>
                 <select id="scope-select" name="scope" class="form-control">
@@ -59,19 +58,28 @@
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-end;">
                 <button type="submit" class="btn btn-primary">{{ _('Застосувати') }}</button>
-                <a href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
+                <a href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code, group=group, days=days) }}" class="btn btn-secondary">{{ _('Скинути') }}</a>
             </div>
         </form>
 
-        <!-- Per-user table -->
         <div class="dashboard-section" style="margin-top: 20px;">
+            <div class="chart-toolbar">
+                {% for mode, label in [('user', _('За користувачами')), ('institution', _('За установами / проєктами'))] %}
+                <a class="btn btn-sm {% if group == mode %}btn-primary active{% else %}btn-secondary{% endif %}"
+                   {% if group == mode %}aria-current="true"{% endif %}
+                   href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code, scope=selected_scope, days=days, group=mode) }}">{{ label }}</a>
+                {% endfor %}
+            </div>
             {% if uploaders %}
+            {% if group == 'institution' %}
+            <p>{{ _('Фото зі спільних локацій зараховуються кожній прив’язаній установі, а в денному підсумку рахуються один раз.') }}</p>
+            {% endif %}
             <div class="table-scroll">
             <table class="uploads-table" id="uploads-table">
                 <thead>
                     <tr>
                         <th data-type="text">#</th>
-                        <th data-type="text">{{ _('Користувач') }}</th>
+                        <th data-type="text">{{ _('Установа / проєкт') if group == 'institution' else _('Користувач') }}</th>
                         <th data-type="num">{{ _('Сьогодні') }}</th>
                         <th data-type="num">{{ _('Тиждень') }}</th>
                         <th data-type="num">{{ _('Місяць') }}</th>
@@ -101,12 +109,12 @@
 
         <!-- Daily totals bar chart -->
         <div class="dashboard-section chart-card">
-            <h3>{{ _('Завантажено фото по днях (усі користувачі)') }}</h3>
+            <h3>{{ _('Завантажено фото по днях') }}</h3>
             <div class="chart-toolbar">
                 <span>{{ _('Період:') }}</span>
                 {% for d in chart_day_options %}
                 <a class="btn btn-sm range-btn {% if days == d %}btn-primary active{% else %}btn-secondary{% endif %}"
-                   href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code, scope=selected_scope, days=d) }}">
+                   href="{{ url_for('camera_traps.upload_stats', lang_code=g.lang_code, scope=selected_scope, days=d, group=group) }}">
                     {{ _('%(n)s дн.', n=d) }}
                 </a>
                 {% endfor %}
@@ -163,7 +171,7 @@ $(document).ready(function() {
             data: {
                 labels: daily.map(function(d) { return d.day; }),
                 datasets: [{
-                    label: '{{ _('Завантажено фото') }}',
+                    label: {{ _('Завантажено фото') | tojson }},
                     data: daily.map(function(d) { return d.count; }),
                     backgroundColor: '#0d6efd',
                     borderWidth: 0,
@@ -172,7 +180,18 @@ $(document).ready(function() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(items) {
+                                return daily[items[0].dataIndex].breakdown.map(function(entry) {
+                                    return entry.name + ': ' + entry.count;
+                                });
+                            }
+                        }
+                    }
+                },
                 scales: {
                     x: { ticks: { maxRotation: 90, autoSkip: true, maxTicksLimit: 16 } },
                     y: { beginAtZero: true, ticks: { precision: 0 } }

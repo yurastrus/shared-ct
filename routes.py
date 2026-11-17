@@ -1660,16 +1660,19 @@ def _upload_base_query(ct_session, columns, inst_condition_orm, inst_params):
     )
 
 
-def query_upload_stats(ct_session, today, inst_condition_orm, inst_params):
-    """Number of PHOTOS uploaded per user with rolling windows anchored to
-    `today` (today / last 7 days / last month / last year / all time).
+def _join_upload_institutions(query, restrict_inst_ids):
+    institution_id = location_institutions.c.institution_id
+    query = query.outerjoin(location_institutions, location_institutions.c.location_id == Location.id)
+    if restrict_inst_ids is not None:
+        query = query.filter(institution_id.in_(restrict_inst_ids))
+    return query
 
-    Windows are counted by UPLOAD TIME (see _upload_event_exprs), NOT by photo
-    capture time. Access is filtered via inst_condition_orm/inst_params. Returns
-    a list of Rows (user_id, d_today, d_week, d_month, d_year, total) sorted by
-    total desc.
-    """
+
+def query_upload_stats(ct_session, today, inst_condition_orm, inst_params, *,
+                       by_institution=False, restrict_inst_ids=None):
+    """Count photos by upload time over the rolling periods for each group."""
     uploader, upload_time = _upload_event_exprs(ct_session)
+    group = location_institutions.c.institution_id if by_institution else uploader
     start_today = datetime.combine(today, datetime.min.time())
     start_week = datetime.combine(today - timedelta(days=6), datetime.min.time())
     start_month = datetime.combine(today - relativedelta(months=1), datetime.min.time())
@@ -1681,7 +1684,7 @@ def query_upload_stats(ct_session, today, inst_condition_orm, inst_params):
     query = _upload_base_query(
         ct_session,
         [
-            uploader.label('user_id'),
+            group.label('institution_id' if by_institution else 'user_id'),
             _window(start_today).label('d_today'),
             _window(start_week).label('d_week'),
             _window(start_month).label('d_month'),
@@ -1690,53 +1693,60 @@ def query_upload_stats(ct_session, today, inst_condition_orm, inst_params):
         ],
         inst_condition_orm, inst_params,
     )
-    return query.group_by(uploader)\
+    if by_institution:
+        query = _join_upload_institutions(query, restrict_inst_ids)
+    return query.group_by(group)\
         .order_by(func.count(Photo.id).desc())\
         .all()
 
 
-def query_upload_daily(ct_session, today, days, inst_condition_orm, inst_params):
-    """Total photos uploaded per calendar day (UTC) over the last `days` days,
-    summed across all users within scope. Returns a gap-filled list of
-    {'day': 'YYYY-MM-DD', 'count': n} (length == days), ready for charting."""
+def query_upload_daily(ct_session, today, days, inst_condition_orm, inst_params, *,
+                       by_institution=False, restrict_inst_ids=None):
+    """Return gap-filled daily photo totals and counts per group."""
     uploader, upload_time = _upload_event_exprs(ct_session)
     start_date = today - timedelta(days=days - 1)
     start_dt = datetime.combine(start_date, datetime.min.time())
     day_col = _upload_day_col(upload_time, ct_session)
-
-    rows = _upload_base_query(
+    group = location_institutions.c.institution_id if by_institution else uploader
+    query = _upload_base_query(
         ct_session,
-        [day_col.label('day'), func.count(Photo.id).label('count')],
+        [day_col.label('day'), group.label('group_id'), func.count(Photo.id).label('count')],
         inst_condition_orm, inst_params,
-    ).filter(upload_time >= start_dt)\
-        .group_by(day_col).order_by(day_col).all()
+    ).filter(upload_time >= start_dt)
+    if by_institution:
+        query = _join_upload_institutions(query, restrict_inst_ids)
 
-    # day_col is a date on PostgreSQL and a 'YYYY-MM-DD' string on SQLite —
-    # normalise to a plain date for gap-filling.
-    def _as_date(v):
-        if isinstance(v, date) and not isinstance(v, datetime):
-            return v
-        if isinstance(v, datetime):
-            return v.date()
-        return datetime.strptime(str(v)[:10], '%Y-%m-%d').date()
+    daily = {}
+    for i in range(days):
+        day = (start_date + timedelta(days=i)).isoformat()
+        daily[day] = {'day': day, 'count': 0, 'breakdown': []}
 
-    counts = {_as_date(r.day): r.count for r in rows}
-    return [
-        {
-            'day': (start_date + timedelta(days=i)).strftime('%Y-%m-%d'),
-            'count': counts.get(start_date + timedelta(days=i), 0),
-        }
-        for i in range(days)
-    ]
+    rows = query.group_by(day_col, group).order_by(func.count(Photo.id).desc(), group)
+    for row in rows:
+        bucket = daily.get(str(row.day))
+        if bucket is not None:
+            bucket['count'] += row.count
+            bucket['breakdown'].append({'group_id': row.group_id, 'count': row.count})
+
+    if by_institution:
+        # Shared locations contribute to each institution, but only once to the bar.
+        totals = _upload_base_query(
+            ct_session, [day_col.label('day'), func.count(Photo.id).label('count')],
+            inst_condition_orm, inst_params,
+        ).filter(upload_time >= start_dt).group_by(day_col)
+        for row in totals:
+            if str(row.day) in daily:
+                daily[str(row.day)]['count'] = row.count
+    return list(daily.values())
 
 
 @camera_traps_bp.route('/upload-stats')
 @login_required
 @role_required('admin')
 def upload_stats(lang_code):
-    """Admin page: how many photos each user uploaded over rolling periods,
-    plus a daily-totals bar chart (30 / 90 / 365 days). No species filter;
-    ecoregion/institution scope filter is kept (per task)."""
+    """Admin upload statistics grouped by user or institution."""
+    by_institution = request.args.get('group') == 'institution'
+    group = 'institution' if by_institution else 'user'
     ct_session = get_ct_session()
     try:
         today = date.today()
@@ -1760,31 +1770,56 @@ def upload_stats(lang_code):
         if days not in ALLOWED_UPLOAD_CHART_DAYS:
             days = 30
 
-        rows = query_upload_stats(ct_session, today, inst_condition_orm, inst_params)
+        grouping = {'by_institution': by_institution, 'restrict_inst_ids': selected_inst_ids}
+        rows = query_upload_stats(ct_session, today, inst_condition_orm, inst_params, **grouping)
+        daily = query_upload_daily(
+            ct_session, today, days, inst_condition_orm, inst_params, **grouping,
+        )
 
-        # --- Fetch names from the main database (admin page → full names) ---
-        uploaders = []
-        if rows:
-            user_ids = [r.user_id for r in rows]
+        id_field = 'institution_id' if by_institution else 'user_id'
+        if by_institution:
+            name_map = {
+                inst.id: (inst.name_en or inst.name_uk) if g.lang_code == 'en' else inst.name_uk
+                for inst in accessible_institutions
+            }
+        else:
+            user_ids = {r.user_id for r in rows}
+            user_ids.update(entry['group_id'] for day in daily for entry in day['breakdown'])
             users = User.query.filter(User.id.in_(user_ids)).all()
             name_map = {u.id: (u.full_name or u.username) for u in users}
-            for r in rows:
-                uploaders.append({
-                    'name': name_map.get(r.user_id, f"Користувач (ID: {r.user_id})"),
-                    'd_today': r.d_today or 0,
-                    'd_week': r.d_week or 0,
-                    'd_month': r.d_month or 0,
-                    'd_year': r.d_year or 0,
-                    'total': r.total or 0,
-                })
 
-        daily = query_upload_daily(ct_session, today, days, inst_condition_orm, inst_params)
+        def group_name(group_id):
+            if group_id in name_map:
+                return name_map[group_id]
+            if by_institution:
+                if group_id is None:
+                    return _('Без установи')
+                return _('Установа (ID: %(id)s)', id=group_id)
+            if group_id is None:
+                return _('Невідомий користувач')
+            return _('Користувач (ID: %(id)s)', id=group_id)
+
+        uploaders = [
+            {
+                'name': group_name(getattr(r, id_field)),
+                'd_today': r.d_today or 0,
+                'd_week': r.d_week or 0,
+                'd_month': r.d_month or 0,
+                'd_year': r.d_year or 0,
+                'total': r.total or 0,
+            }
+            for r in rows
+        ]
+        for day in daily:
+            for entry in day['breakdown']:
+                entry['name'] = group_name(entry.pop('group_id'))
 
         return render_template(
             'upload_stats.html',
             uploaders=uploaders,
             daily=daily,
             days=days,
+            group=group,
             chart_day_options=ALLOWED_UPLOAD_CHART_DAYS,
             institutions=accessible_institutions,
             ecoregions=ecoregions,
@@ -1795,7 +1830,7 @@ def upload_stats(lang_code):
         current_app.logger.error(f"Error in upload_stats: {str(e)}")
         flash(_('Помилка завантаження статистики завантажень.'), 'warning')
         return render_template(
-            'upload_stats.html', uploaders=[], daily=[], days=30,
+            'upload_stats.html', uploaders=[], daily=[], days=30, group=group,
             chart_day_options=ALLOWED_UPLOAD_CHART_DAYS,
             institutions=[], ecoregions={}, selected_scope='global:', is_admin=True,
         )
