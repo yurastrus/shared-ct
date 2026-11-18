@@ -3,7 +3,7 @@
 {% block title %}{{ _('План обслуговування') }}{% endblock %}
 
 {% block ct_head_extra %}
-<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/ct_service_plan.css', lang_code=g.lang_code) }}">
+<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/ct_service_plan.css', lang_code=g.lang_code) }}?v=2">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 {% endblock %}
 
@@ -113,6 +113,8 @@
 
     // One selection drives both the list and the map.
     const selected = new Set();
+    const list = document.getElementById('svp-list');
+    const cards = new Map();
     let visibleIds = [];
     let here = null;   // [lat, lon] after "Where am I"
 
@@ -225,23 +227,35 @@
             else m.remove();
         });
 
-        const list = document.getElementById('svp-list');
         list.innerHTML = '';
+        cards.clear();
         if (!shown.length) list.innerHTML = `<p class="svp-plan-note">${esc(T.noneShown)}</p>`;
         shown.forEach(it => {
             const div = document.createElement('div');
             div.className = 'svp-card' + (selected.has(it.key) ? ' svp-card-selected' : '');
             div.dataset.id = it.key;
             div.innerHTML = cardHtml(it);
+            cards.set(it.key, div);
             list.appendChild(div);
         });
         if (fit && shown.length) {
             map.fitBounds(L.latLngBounds(shown.map(it => [it.latitude, it.longitude])), { padding: [24, 24], maxZoom: 14 });
         }
-        updateCounts();
+        updateSelection();
     }
 
-    function updateCounts() {
+    function updateSelection() {
+        const focused = document.activeElement;
+        const orderedIds = visibleIds.filter(id => selected.has(id))
+            .concat(visibleIds.filter(id => !selected.has(id)));
+        let nextCard = list.firstElementChild;
+        for (const id of orderedIds) {
+            const card = cards.get(id);
+            if (card === nextCard) nextCard = nextCard.nextElementSibling;
+            else list.insertBefore(card, nextCard);
+        }
+        if (document.activeElement !== focused && list.contains(focused)) focused.focus({ preventScroll: true });
+
         document.getElementById('svp-count').textContent = `${T.shown}: ${visibleIds.length}`;
         const n = selected.size;
         document.getElementById('svp-selected-count').textContent = `${T.selected}: ${n}`;
@@ -254,7 +268,7 @@
         const it = byId.get(id);
         markers[id].setStyle(markerStyle(it, on));
         if (on) markers[id].bringToFront();
-        const card = document.querySelector(`.svp-card[data-id="${id}"]`);
+        const card = cards.get(id);
         if (card) {
             card.classList.toggle('svp-card-selected', on);
             card.querySelector('.svp-card-check').checked = on;
@@ -263,10 +277,10 @@
 
     function toggle(id, source) {
         setSelected(id, !selected.has(id));
-        updateCounts();
+        updateSelection();
         // A tap on the map brings its card into view, so the two never drift apart.
         if (source === 'map' && selected.has(id)) {
-            const card = document.querySelector(`.svp-card[data-id="${id}"]`);
+            const card = cards.get(id);
             if (card) {
                 card.classList.add('svp-card-flash');
                 setTimeout(() => card.classList.remove('svp-card-flash'), 900);
@@ -275,7 +289,7 @@
     }
 
     // ── list events ──────────────────────────────────────────────────────
-    document.getElementById('svp-list').addEventListener('click', e => {
+    list.addEventListener('click', e => {
         const card = e.target.closest('.svp-card');
         if (!card) return;
         const id = card.dataset.id;
@@ -299,13 +313,13 @@
     if (instEl) instEl.addEventListener('change', () => render(true));
 
     document.getElementById('svp-select-all').addEventListener('click', () => {
-        visibleIds.forEach(id => setSelected(id, true)); updateCounts();
+        visibleIds.forEach(id => setSelected(id, true)); updateSelection();
     });
     document.getElementById('svp-select-attention').addEventListener('click', () => {
-        visibleIds.forEach(id => setSelected(id, ATTENTION.includes(byId.get(id).status))); updateCounts();
+        visibleIds.forEach(id => setSelected(id, ATTENTION.includes(byId.get(id).status))); updateSelection();
     });
     document.getElementById('svp-clear').addEventListener('click', () => {
-        Array.from(selected).forEach(id => setSelected(id, false)); updateCounts();
+        Array.from(selected).forEach(id => setSelected(id, false)); updateSelection();
     });
 
     document.getElementById('svp-locate').addEventListener('click', () => {

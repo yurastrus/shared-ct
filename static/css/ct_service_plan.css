@@ -43,11 +43,11 @@
 @media (min-width: 760px) { .svp-plan-list { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 1080px) { .svp-plan-list { grid-template-columns: 1fr 1fr 1fr; } }
 .svp-card {
-    border: 1px solid var(--border-color, #ccc); border-left: 4px solid transparent; border-radius: 8px;
+    border: 1px solid var(--border-color, #ccc); border-radius: 8px;
     background: var(--card-bg, #fff); padding: 10px 12px; transition: box-shadow .2s, border-color .2s;
 }
-.svp-card-selected { border-color: #0d6efd; border-left-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,.25); }
-.svp-card-flash { box-shadow: 0 0 0 4px rgba(13,110,253,.5); }
+.svp-card-selected { border-color: #0d6efd; box-shadow: inset 3px 0 #0d6efd, 0 0 0 2px rgba(13,110,253,.25); }
+.svp-card-flash { box-shadow: inset 3px 0 #0d6efd, 0 0 0 4px rgba(13,110,253,.5); }
 .svp-card-head { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .svp-card-check { width: 22px; height: 22px; margin-top: 2px; flex-shrink: 0; }
 .svp-card-title { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
