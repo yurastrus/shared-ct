@@ -3,7 +3,7 @@
 {% block title %}{{ _('План обслуговування') }}{% endblock %}
 
 {% block ct_head_extra %}
-<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/ct_service_plan.css', lang_code=g.lang_code) }}?v=2">
+<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/ct_service_plan.css', lang_code=g.lang_code) }}?v=3">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 {% endblock %}
 
@@ -207,9 +207,9 @@
             <div class="svp-card-body">${rows.join('')}</div>
             <div class="svp-card-coords">
                 <code>${esc(coordText(it))}</code>
-                <button type="button" class="svp-btn svp-copy-one" title="${esc(T.copy)}">⧉ ${esc(T.copyShort)}</button>
-                <button type="button" class="svp-btn svp-show" title="${esc(T.onMap)}">📍 ${esc(T.onMap)}</button>
-                <a class="svp-btn" href="${geoUrl}" title="${esc(T.navigate)}">🧭 ${esc(T.navigate)}</a>
+                <button type="button" class="svp-btn svp-copy-one" title="${esc(T.copy)}" aria-label="${esc(T.copyShort)}"><span aria-hidden="true">⧉</span></button>
+                <button type="button" class="svp-btn svp-show" title="${esc(T.onMap)}" aria-label="${esc(T.onMap)}"><span aria-hidden="true">📍</span></button>
+                <a class="svp-btn" href="${geoUrl}" title="${esc(T.navigate)}" aria-label="${esc(T.navigate)}"><span aria-hidden="true">🧭</span></a>
                 <a class="svp-btn" href="${navUrl}" target="_blank" rel="noopener" title="Google Maps">Google</a>
             </div>`;
     }

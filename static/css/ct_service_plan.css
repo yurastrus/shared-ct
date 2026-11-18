@@ -57,9 +57,13 @@
 .svp-card-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; border-bottom: 1px dashed #e3e6ea; }
 .svp-card-row > span:first-child { color: var(--text-secondary, #666); }
 .svp-card-row > span:last-child { text-align: right; }
-.svp-card-coords { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.svp-card-coords code { flex-basis: 100%; font-size: .9rem; user-select: all; }
-.svp-card-coords .svp-btn { flex: 1 1 auto; padding: 4px 8px; font-size: .85rem; }
+.svp-card-coords {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(4rem, 1.5fr);
+    gap: 6px;
+}
+.svp-card-coords code { grid-column: 1 / -1; font-size: .9rem; user-select: all; }
+.svp-card-coords .svp-btn { box-sizing: border-box; min-width: 0; padding: 4px 6px; font-size: .85rem; }
 .svp-plan-actions {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
     display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; justify-content: center;
