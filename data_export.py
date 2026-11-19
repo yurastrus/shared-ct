@@ -248,26 +248,39 @@ def get_ct_occurrence_data(filters, limit=None):
 
             # Producer A — AI-only series (no human identification at all), exported
             # with the prediction from the highest-ranked model that resolved a species.
-            ai_pick_cte = """
-                , AIPick AS (
+            # Series-level AI answer by the shared rule (ai_runner.SERIES_PICK_ORDER_SQL):
+            # species on the most frames of the best model, 'empty' only if every
+            # frame is. Until 2026-11-19 the single highest-scoring frame won, so a
+            # series with 14 bear frames (0.99) and an empty frame (1.0) was
+            # exported as empty.
+            from .ai_runner import SERIES_PICK_ORDER_SQL
+            ai_pick_cte = f"""
+                , AIAgg AS (
                     SELECT
-                        ap.observation_id,
-                        ap.prediction_species_id,
-                        ap.prediction_score,
-                        COALESCE(ap.animal_count, 1) as animal_count,
-                        am.name as model_name, am.version as model_version,
-                        lvl.code as level_code,
-                        ROW_NUMBER() OVER(
-                            PARTITION BY ap.observation_id
-                            ORDER BY COALESCE(lvl.accuracy_rank, 0) DESC,
-                                     ap.prediction_score DESC NULLS LAST,
-                                     ap.id  -- deterministic tie-break
-                        ) as rn
+                        ap.observation_id, ap.model_id, ap.prediction_species_id,
+                        COUNT(*) as n_frames,
+                        MAX(ap.prediction_score) as best_score,
+                        COALESCE(MAX(ap.animal_count), 1) as animal_count
                     FROM ai_predictions ap
                     JOIN ScopedObs so ON so.observation_id = ap.observation_id
-                    JOIN ai_models am ON ap.model_id = am.id
-                    LEFT JOIN ai_model_levels lvl ON am.level_id = lvl.id
                     WHERE ap.prediction_species_id IS NOT NULL
+                    GROUP BY ap.observation_id, ap.model_id, ap.prediction_species_id
+                )
+                , AIPick AS (
+                    SELECT
+                        agg.observation_id,
+                        agg.prediction_species_id,
+                        agg.best_score as prediction_score,
+                        agg.animal_count,
+                        m.name as model_name, m.version as model_version,
+                        lvl.code as level_code,
+                        ROW_NUMBER() OVER(
+                            PARTITION BY agg.observation_id
+                            ORDER BY {SERIES_PICK_ORDER_SQL}
+                        ) as rn
+                    FROM AIAgg agg
+                    JOIN ai_models m ON agg.model_id = m.id
+                    LEFT JOIN ai_model_levels lvl ON m.level_id = lvl.id
                 )
             """
             producer_ai = f"""

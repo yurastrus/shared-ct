@@ -455,9 +455,9 @@ def get_ai_filter_options(
         """
         scope_params = {'scope_inst_ids': tuple(scope_institution_ids)}
 
-    # win — one winning row per observation: prediction from the model with the
-    # highest accuracy_rank (tie-break: newer model.id). COALESCE(...,0) —
-    # models without a level are treated as the lowest rank.
+    # win — one answer per observation by SERIES_PICK_ORDER_SQL: the model with
+    # the highest accuracy_rank (tie-break: newer model.id; no level = lowest),
+    # then the species on the most frames, 'empty' only if every frame is.
     # PERF: the candidate series are selected FIRST, and the winning-prediction
     # pass then reads only their rows. The previous shape built `win` over every
     # pending prediction in the database (~0.6M rows, a DISTINCT ON that spilled
@@ -476,27 +476,41 @@ def get_ai_filter_options(
               {access_clause}
               {scope_clause}
         ),
-        win AS (
-            SELECT DISTINCT ON (ap.observation_id)
-                   ap.observation_id,
-                   ap.prediction_species_id
+        agg AS (
+            SELECT ap.observation_id, ap.model_id, ap.prediction_species_id,
+                   COUNT(*) AS n_frames, MAX(ap.prediction_score) AS best_score
             FROM ai_predictions ap
-            JOIN ai_models m ON m.id = ap.model_id
-            LEFT JOIN ai_model_levels lvl ON lvl.id = m.level_id
             WHERE ap.observation_id = ANY(ARRAY(SELECT id FROM cand))
-            ORDER BY ap.observation_id, COALESCE(lvl.accuracy_rank, 0) DESC, m.id DESC
+            GROUP BY ap.observation_id, ap.model_id, ap.prediction_species_id
+        ),
+        win AS (
+            SELECT DISTINCT ON (agg.observation_id)
+                   agg.observation_id,
+                   agg.prediction_species_id
+            FROM agg
+            JOIN ai_models m ON m.id = agg.model_id
+            LEFT JOIN ai_model_levels lvl ON lvl.id = m.level_id
+            ORDER BY agg.observation_id, {SERIES_PICK_ORDER_SQL}
+        ),
+        -- PERF: count per species BEFORE joining species. The planner expects
+        -- ~300 prediction rows here and gets ~400k, and with species joined to
+        -- `win` directly it picked a nested loop that re-read all ~52k series
+        -- once per species (~+130 ms on prod, 2026-11-19). `win` is one row
+        -- per series, so COUNT(*) equals the old COUNT(DISTINCT observation_id).
+        per_species AS (
+            SELECT prediction_species_id, COUNT(*) AS pending_count
+            FROM win
+            GROUP BY prediction_species_id
         )
         SELECT s.id,
                s.common_name_ua,
                s.common_name_en,
                s.scientific_name,
                s.kingdom,
-               COUNT(DISTINCT win.observation_id) AS pending_count,
+               per_species.pending_count,
                (SELECT COUNT(*) FROM cand) AS cand_total
-        FROM win
-        JOIN species s ON s.id = win.prediction_species_id
-        GROUP BY s.id, s.common_name_ua, s.common_name_en, s.scientific_name, s.kingdom
-        HAVING COUNT(DISTINCT win.observation_id) > 0
+        FROM per_species
+        JOIN species s ON s.id = per_species.prediction_species_id
         ORDER BY s.common_name_ua
     """)
 
@@ -536,15 +550,76 @@ def get_ai_filter_options(
     return {'items': result, 'group_counts': group_counts if result else {}}
 
 
+#: species.id of DeepFaune's "empty" label.
+AI_EMPTY_SPECIES_ID = -1
+
+#: The ONE rule for "what did the AI say about this series" (2026-11-19).
+#: Predictions are per photo, and a series mixes frames with the animal and
+#: empty frames before and after it. Within the most accurate model (highest
+#: accuracy_rank, then newer model id) the series is 'empty' only when EVERY
+#: frame is empty; otherwise it is the species on the most frames, ties broken
+#: by the best single-frame score, then by species id.
+#:
+#: Before, the hint took the single highest-scoring frame, so an empty frame
+#: (score 1.0) beat 14 bear frames (0.99) and the hint said "Empty" on 1393
+#: series with an animal; the filter took an arbitrary frame of the winning
+#: model, so the same series could land under the bear or under "empty"; the
+#: export used the hint's rule and wrote such series out as empty.
+#:
+#: SQL form: ORDER BY of a DISTINCT ON / ROW_NUMBER over rows aggregated per
+#: (observation, model, species) with columns n_frames and best_score, the
+#: model joined as ``m`` and its level as ``lvl``. Keep in step with
+#: pick_series_prediction() and _winning_prediction_subq().
+SERIES_PICK_ORDER_SQL = f"""
+    COALESCE(lvl.accuracy_rank, 0) DESC, m.id DESC,
+    (COALESCE(agg.prediction_species_id, 0) = {AI_EMPTY_SPECIES_ID}),
+    agg.n_frames DESC, agg.best_score DESC NULLS LAST,
+    agg.prediction_species_id DESC NULLS LAST"""
+
+
+def pick_series_prediction(rows):
+    """Python form of SERIES_PICK_ORDER_SQL for one series.
+
+    ``rows``: (prediction, accuracy_rank) pairs, a prediction having
+    model_id, prediction_species_id, prediction_score. Returns the
+    best-scoring frame of the chosen species, or None for no rows.
+    """
+    rows = list(rows)
+    if not rows:
+        return None
+
+    def model_key(pair):
+        pred, rank = pair
+        return (rank or 0, pred.model_id)
+
+    best_model = max(model_key(pair) for pair in rows)
+    groups = {}
+    for pair in rows:
+        if model_key(pair) == best_model:
+            groups.setdefault(pair[0].prediction_species_id, []).append(pair[0])
+
+    def score(pred):
+        return pred.prediction_score if pred.prediction_score is not None else -1.0
+
+    def group_key(item):
+        species_id, preds = item
+        return (species_id != AI_EMPTY_SPECIES_ID, len(preds),
+                max(score(p) for p in preds),
+                species_id is not None, species_id or 0)
+
+    _species, preds = max(groups.items(), key=group_key)
+    return max(preds, key=score)
+
+
 def get_observation_ai_prediction(
     observation_id: int,
     lang_code: str = 'uk',
 ) -> Optional[dict]:
     """Return the best AI prediction for an observation, or None.
 
-    If there are predictions from multiple models for the series (e.g. server
-    DF+MDS and imported MDR), we pick the one from the model with the HIGHEST
-    accuracy_rank; within a model — the row with the highest score. If
+    The species is chosen by pick_series_prediction (see SERIES_PICK_ORDER_SQL):
+    most accurate model, then the species on the most frames, 'empty' only when
+    every frame is empty. The score is that species' best frame. If
     prediction_species_id IS NULL, the label is looked up in ai_label_map
     (the mapping may be newer than the prediction); still no mapping → return
     only the raw label.
@@ -565,16 +640,12 @@ def get_observation_ai_prediction(
 
     sess = get_ct_session()
 
-    row = (
-        sess.query(AIPrediction)
+    row = pick_series_prediction(
+        sess.query(AIPrediction, func.coalesce(AIModelLevel.accuracy_rank, 0))
         .join(AIModel, AIModel.id == AIPrediction.model_id)
         .outerjoin(AIModelLevel, AIModelLevel.id == AIModel.level_id)
         .filter(AIPrediction.observation_id == observation_id)
-        .order_by(
-            func.coalesce(AIModelLevel.accuracy_rank, 0).desc(),
-            AIPrediction.prediction_score.desc().nullslast(),
-        )
-        .first()
+        .all()
     )
     if row is None:
         return None
@@ -660,18 +731,34 @@ def _winning_prediction_subq():
     from sqlalchemy import select, func
     from .models import AIPrediction
 
-    return (
+    # Same rule as SERIES_PICK_ORDER_SQL: frames counted per species first,
+    # so a series is not 'empty' because one arbitrary frame was.
+    agg = (
         select(
             AIPrediction.observation_id.label('observation_id'),
+            AIPrediction.model_id.label('model_id'),
             AIPrediction.prediction_species_id.label('species_id'),
+            func.count().label('n_frames'),
+            func.max(AIPrediction.prediction_score).label('best_score'),
         )
-        .join(AIModel, AIModel.id == AIPrediction.model_id)
+        .group_by(AIPrediction.observation_id, AIPrediction.model_id,
+                  AIPrediction.prediction_species_id)
+        .subquery()
+    )
+    return (
+        select(agg.c.observation_id, agg.c.species_id)
+        .select_from(agg)
+        .join(AIModel, AIModel.id == agg.c.model_id)
         .outerjoin(AIModelLevel, AIModelLevel.id == AIModel.level_id)
-        .distinct(AIPrediction.observation_id)
+        .distinct(agg.c.observation_id)
         .order_by(
-            AIPrediction.observation_id,
+            agg.c.observation_id,
             func.coalesce(AIModelLevel.accuracy_rank, 0).desc(),
             AIModel.id.desc(),
+            (func.coalesce(agg.c.species_id, 0) == AI_EMPTY_SPECIES_ID).asc(),
+            agg.c.n_frames.desc(),
+            agg.c.best_score.desc().nullslast(),
+            agg.c.species_id.desc().nullslast(),
         )
         .subquery()
     )
