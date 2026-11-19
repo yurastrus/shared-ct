@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/camera_traps.css', lang_code=g.lang_code) }}?v=52">
+<link rel="stylesheet" href="{{ url_for('camera_traps.serve_ct_static', filename='css/camera_traps.css', lang_code=g.lang_code) }}?v=53">
 {% block ct_head_extra %}{% endblock %}
 {% endblock %}
 
 {# Shared layout for all CT pages: hub back-link + content block. #}
 {# Child templates use {% block ct_content %} instead of {% block content %}. #}
 {% block content %}
+    {% block ct_navigation %}
     {% if request.endpoint != 'camera_traps.overview' %}
     <a href="{{ url_for('camera_traps.overview', lang_code=g.lang_code) }}" class="ct-back-link">
         ← {{ _('До розділів') }}
     </a>
     {% endif %}
+    {% endblock %}
     {% block ct_content %}{% endblock %}
 {% endblock %}

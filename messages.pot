@@ -4278,8 +4278,8 @@ msgstr ""
 msgid "Сортування:"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:66
-msgid "Пріоритет визначених (за замовчуванням)"
+#: app/camera_traps/templates/identification.html:72
+msgid "Пріоритет визначених"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:67
@@ -4300,6 +4300,11 @@ msgstr ""
 
 #: app/camera_traps/templates/identification.html:71
 msgid "К-ть фото (спочатку менше)"
+msgstr ""
+
+#: app/camera_traps/templates/identification.html:84
+#: app/camera_traps/templates/identification.html:85
+msgid "Мої ідентифікації сьогодні за місцевим часом"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:89
@@ -4541,8 +4546,8 @@ msgid ""
 "Перезавантажити зараз?"
 msgstr ""
 
-#: app/camera_traps/templates/identification.html:485
-msgid "Залишилось вам:"
+#: app/camera_traps/templates/identification.html:507
+msgid "Залишилось:"
 msgstr ""
 
 #: app/camera_traps/templates/identification.html:486

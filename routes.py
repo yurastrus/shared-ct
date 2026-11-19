@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from flask import render_template, g, flash, redirect, url_for, jsonify, request, current_app, send_from_directory, abort, Response
 from datetime import datetime, date, timedelta, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dateutil.relativedelta import relativedelta
 from flask_login import login_required, current_user
 from app.camera_traps.domain import _, _l
@@ -4576,9 +4576,15 @@ def submit_identification(lang_code):
             moderator_override=moderator_override,
             moderator_user_id=current_user.id,
         )
-                
+
+        identified_today = _count_identified_series_today(
+            ct_session, current_user.id, data.get('time_zone'))
         ct_session.commit()
-        return jsonify({'success': True, 'message': _('Ідентифікацію для серії успішно збережено!')}), 201
+        return jsonify({
+            'success': True,
+            'message': _('Ідентифікацію для серії успішно збережено!'),
+            'identified_today': identified_today,
+        }), 201
     except Exception as e:
         ct_session.rollback()
         current_app.logger.error(f"Error saving series identification: {e}")
@@ -7236,13 +7242,36 @@ def api_ct_data_download(lang_code):
         current_app.logger.error(f"Error downloading CT data: {e}", exc_info=True)
         return "Помилка на сервері при генерації файлу.", 500
     
+def _count_identified_series_today(ct_session, user_id, time_zone):
+    """Count the user's series since local midnight, with UTC as the fallback."""
+    zone = timezone.utc
+    if isinstance(time_zone, str) and time_zone:
+        try:
+            zone = ZoneInfo(time_zone)
+        except (ValueError, ZoneInfoNotFoundError):
+            pass
+    today = datetime.now(zone).date()
+    midnight = datetime.combine(today, datetime.min.time(), tzinfo=zone)
+    since = midnight.astimezone(timezone.utc).replace(tzinfo=None)
+    return ct_session.query(func.count(distinct(Photo.observation_id)))\
+        .select_from(Identification)\
+        .join(Photo, Photo.id == Identification.photo_id)\
+        .filter(Identification.user_id == user_id, Identification.created_at >= since)\
+        .scalar()
+
+
 @camera_traps_bp.route('/api/identification-stats')
 @login_required
 @role_required('ct_verifier')
 def api_get_identification_stats(lang_code):
-    """Return the number of observation series still pending identification by the current user."""
+    """Return the current user's remaining queue and personal activity."""
     ct_session = get_ct_session()
     try:
+        identified_today = _count_identified_series_today(
+            ct_session, current_user.id, request.args.get('time_zone'))
+        if request.args.get('activity_only') == '1':
+            return jsonify({'identified_today': identified_today})
+
         scope_institution_id = request.args.get('scope_institution_id', type=int)
         scope_ecoregion = request.args.get('scope_ecoregion', '')
         ai_filter = request.args.get('ai_species_id') or None
@@ -7329,6 +7358,7 @@ def api_get_identification_stats(lang_code):
         return jsonify({
             'remaining_count': remaining_count,
             'already_identified_count': already_identified_count,
+            'identified_today': identified_today,
         })
 
     except Exception as e:

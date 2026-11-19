@@ -7,6 +7,12 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 {% endblock %}
 
+{% block ct_navigation %}
+<div class="identification-navigation container">
+    {{ super() }}
+</div>
+{% endblock %}
+
 {% block ct_content %}
 <div class="container mt-4 identification-container">
     <div class="scope-filter-bar">
@@ -62,8 +68,8 @@
 
         {# ── Sort order — available to every user, in both normal and review mode ── #}
         <label for="sort-select" class="scope-filter-label">{{ _('Сортування:') }}</label>
-        <select id="sort-select" class="scope-filter-select form-control form-control-sm">
-            <option value="priority_random">{{ _('Пріоритет визначених (за замовчуванням)') }}</option>
+        <select id="sort-select" class="scope-filter-select scope-sort-select form-control form-control-sm">
+            <option value="priority_random">{{ _('Пріоритет визначених') }}</option>
             <option value="random">{{ _('Випадково') }}</option>
             <option value="date_desc">{{ _('Дата (спочатку нові)') }}</option>
             <option value="date_asc">{{ _('Дата (спочатку старі)') }}</option>
@@ -72,9 +78,15 @@
         </select>
 
         <div class="scope-bar-right">
-            <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 0.95rem;"></span>
+            <div class="identification-counts">
+                <span id="identification-counter" class="badge bg-secondary" style="display: none; font-size: 0.95rem;"></span>
+                <span id="identification-activity" role="status"
+                      title="{{ _('Мої ідентифікації сьогодні за місцевим часом') }}">
+                    <span class="identification-activity-label">{{ _('Мої ідентифікації сьогодні за місцевим часом') }} </span>
+                    <span id="identification-activity-count"></span>
+                </span>
+            </div>
 
-            <!-- Theme toggle + view mode (moved from right column) -->
             <div class="theme-and-review-toggle">
                 <div class="theme-toggle-option active" data-theme="light">
                     <span class="theme-icon">☀️</span>
@@ -406,6 +418,9 @@ $(document).ready(function() {
     const existingIdentificationsBlock = $('#existing-identifications');
     const existingIdentificationsList = $('#existing-identifications-list');
     let remainingIdentificationsCount = 0;
+    let counterRequest;
+    let activityRevision = 0;
+    const activityTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     let alreadyIdentifiedCount = 0;  // subset of the above already identified by others
 
     let currentObservation = null;
@@ -459,12 +474,19 @@ $(document).ready(function() {
         });
     }
 
-    applyFilterPlaceholders();
+    function applyResponsiveToolbar() {
+        const toggle = document.querySelector('.theme-and-review-toggle');
+        const destination = narrowScreen.matches ? '.identification-navigation' : '.scope-bar-right';
+        document.querySelector(destination).append(toggle);
+        applyFilterPlaceholders();
+    }
+
+    applyResponsiveToolbar();
     // addListener: Safari < 14 has no addEventListener on MediaQueryList.
     if (narrowScreen.addEventListener) {
-        narrowScreen.addEventListener('change', applyFilterPlaceholders);
+        narrowScreen.addEventListener('change', applyResponsiveToolbar);
     } else if (narrowScreen.addListener) {
-        narrowScreen.addListener(applyFilterPlaceholders);
+        narrowScreen.addListener(applyResponsiveToolbar);
     }
 
     const translations = {
@@ -482,7 +504,7 @@ $(document).ready(function() {
         loadError: "{{ _('Не вдалося завантажити дані.') }}",
         congratulations: "{{ _('Вітаємо! Ви ідентифікували всі доступні серії фотографій.') }}",
         noReviewSeries: "{{ _('Немає серій для перегляду, які б відповідали критеріям.') }}",
-        counterText: "{{ _('Залишилось вам:') }}",
+        counterText: "{{ _('Залишилось:') }}",
         alreadyIdentifiedTitle: "{{ _('У дужках — серії, які вже хтось ідентифікував; ви теж можете додати свою думку.') }}",
         rightsPrefix: "{{ _('© Фото належать') }}",
         rightsSuffix: "{{ _('Копіювання і поширення заборонене.') }}",
@@ -515,7 +537,7 @@ $(document).ready(function() {
         if (confirm(translations.pageStale)) window.location.reload();
     }
 
-    // Render the "Залишилось вам: N (M)" counter from the current state.
+    // Render the remaining count and, when available, the already identified count.
     function renderCounter() {
         const counterElement = $('#identification-counter');
         if (reviewMode || remainingIdentificationsCount <= 0) {
@@ -532,16 +554,21 @@ $(document).ready(function() {
         counterElement.text(text).show();
     }
 
-    function loadAndDisplayCounter() {
-        const counterElement = $('#identification-counter');
-
-        // Do not show the counter in review mode.
-        if (reviewMode) {
-            counterElement.hide();
-            return;
+    function renderActivity(count) {
+        if (Number.isInteger(count)) {
+            $('#identification-activity-count').text(`+${count}`);
         }
+    }
+
+    function loadAndDisplayCounter() {
+        if (reviewMode) renderCounter();
+        counterRequest?.abort();
+        counterRequest = new AbortController();
+        const revision = activityRevision;
 
         const params = new URLSearchParams();
+        if (activityTimeZone) params.set('time_zone', activityTimeZone);
+        if (reviewMode) params.set('activity_only', '1');
         const scopeVal = $('#scope-select').val() || '';
         if (scopeVal.startsWith('institution:')) {
             params.set('scope_institution_id', scopeVal.split(':')[1]);
@@ -555,19 +582,23 @@ $(document).ready(function() {
         const statsUrl = "{{ url_for('camera_traps.api_get_identification_stats', lang_code=g.lang_code) }}" +
             (params.toString() ? '?' + params.toString() : '');
 
-        fetch(statsUrl)
+        fetch(statsUrl, {signal: counterRequest.signal})
             .then(response => {
                 if (!response.ok) return Promise.reject('Failed to fetch count');
                 return response.json();
             })
             .then(data => {
-                remainingIdentificationsCount = data.remaining_count;
-                alreadyIdentifiedCount = data.already_identified_count || 0;
-                renderCounter();
+                if (revision === activityRevision) renderActivity(data.identified_today);
+                if (!reviewMode) {
+                    remainingIdentificationsCount = data.remaining_count;
+                    alreadyIdentifiedCount = data.already_identified_count || 0;
+                    renderCounter();
+                }
             })
             .catch(error => {
+                if (error.name === 'AbortError') return;
                 console.error('Could not load identification counter:', error);
-                counterElement.hide();
+                $('#identification-counter').hide();
             });
     }
 
@@ -1699,6 +1730,7 @@ $(document).ready(function() {
             current_photo_index: currentPhotoIndex, // current photo index.
             comment: $('#{{ form.comment.id }}').val(),  // #47
             replace: editingSubmitted,
+            time_zone: activityTimeZone,
             csrf_token: $('input[name="csrf_token"]').val()
         };
         const submittedObsId = parseInt(identificationData.observation_id);
@@ -1714,6 +1746,8 @@ $(document).ready(function() {
         })
         .then(readJson)
         .then(data => {
+            activityRevision++;
+            renderActivity(data.identified_today);
             // Виправлена серія вже була пораховена; нова потрапляє в історію «Назад».
             if (!wasEditing) rememberSubmitted(submittedObsId);
             if (!wasEditing && !reviewMode && remainingIdentificationsCount > 0) {

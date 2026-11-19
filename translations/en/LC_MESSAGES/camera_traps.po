@@ -4483,9 +4483,9 @@ msgstr "Animals only"
 msgid "Сортування:"
 msgstr "Sorting:"
 
-#: app/camera_traps/templates/identification.html:66
-msgid "Пріоритет визначених (за замовчуванням)"
-msgstr "Prioritize identified (default)"
+#: app/camera_traps/templates/identification.html:72
+msgid "Пріоритет визначених"
+msgstr "Prioritize identified"
 
 #: app/camera_traps/templates/identification.html:67
 msgid "Випадково"
@@ -4506,6 +4506,11 @@ msgstr "Number of photos (desc)"
 #: app/camera_traps/templates/identification.html:71
 msgid "К-ть фото (спочатку менше)"
 msgstr "Number of photos (asc)"
+
+#: app/camera_traps/templates/identification.html:84
+#: app/camera_traps/templates/identification.html:85
+msgid "Мої ідентифікації сьогодні за місцевим часом"
+msgstr "My identifications today in local time"
 
 #: app/camera_traps/templates/identification.html:89
 msgid "Режим перегляду визначених серій"
@@ -4757,9 +4762,9 @@ msgstr ""
 "accepts it. Your answer was not saved. Please reload the page. Reload "
 "now?"
 
-#: app/camera_traps/templates/identification.html:485
-msgid "Залишилось вам:"
-msgstr "Pending for you:"
+#: app/camera_traps/templates/identification.html:507
+msgid "Залишилось:"
+msgstr "Remaining:"
 
 #: app/camera_traps/templates/identification.html:486
 msgid ""

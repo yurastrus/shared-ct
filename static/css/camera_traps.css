@@ -312,12 +312,38 @@ main .identification-container {
     gap: 0.6rem;
     margin-bottom: 1rem;
 }
+main .identification-navigation.container {
+    display: contents;
+}
 /* Counter + theme/review toggle, kept together at the right edge of the top bar */
 .scope-bar-right {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.6rem;
     margin-left: auto;
+    max-width: 100%;
+}
+.identification-counts {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+#identification-activity {
+    color: #146c43;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+body.dark-theme #identification-activity {
+    color: #75d7a3;
+}
+.identification-activity-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
 }
 .scope-filter-label {
     white-space: nowrap;
@@ -332,6 +358,9 @@ main .identification-container {
     background-color: var(--input-bg);
     color: var(--text-primary);
     border-color: var(--input-border);
+}
+.scope-filter-bar .scope-sort-select {
+    max-width: 240px;
 }
 
 /* The same filters as select2 (searchable) take the place of the select. */
@@ -2230,6 +2259,22 @@ body.dark-theme .message-container.error {
    21. Media Queries
    ────────────────────────────────────────────────────────── */
 @media (max-width: 992px) {
+    main:has(> .identification-navigation) { padding-top: 0.5rem; }
+    main .identification-navigation.container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        width: 96%;
+        margin: 0 auto 0.6rem;
+    }
+    .identification-navigation .ct-back-link { position: static; }
+    .scope-bar-right {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
     /* Filter grids → collapse to fewer columns */
     .filters-row-1,
     .filters-row-2            { grid-template-columns: 1fr 1fr; }
