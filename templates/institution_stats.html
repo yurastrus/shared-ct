@@ -20,7 +20,8 @@
         padding: 8px 12px; border-bottom: 1px solid #e0e0e0; text-align: right;
     }
     .inst-table th:first-child, .inst-table td:first-child { text-align: left; }
-    .inst-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .inst-table th { cursor: pointer; user-select: none; white-space: nowrap; vertical-align: bottom; }
+    .inst-table .period-total { display: block; color: #198754; margin-bottom: 4px; }
     .inst-table th.sorted-asc::after { content: " \25B2"; }
     .inst-table th.sorted-desc::after { content: " \25BC"; }
     .inst-table tbody tr:hover { background: #f6f8fa; }
@@ -69,10 +70,22 @@
                 <thead>
                     <tr>
                         <th data-type="text">{{ _('Установа') }}</th>
-                        <th data-type="num">{{ _('Сьогодні') }}</th>
-                        <th data-type="num">{{ _('Тиждень') }}</th>
-                        <th data-type="num">{{ _('Місяць') }}</th>
-                        <th data-type="num">{{ _('Рік') }}</th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ institutions_stats | sum(attribute='d_today') }}</span>
+                            {{ _('Сьогодні') }}
+                        </th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ institutions_stats | sum(attribute='d_week') }}</span>
+                            {{ _('Тиждень') }}
+                        </th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ institutions_stats | sum(attribute='d_month') }}</span>
+                            {{ _('Місяць') }}
+                        </th>
+                        <th data-type="num">
+                            <span class="period-total">+{{ institutions_stats | sum(attribute='d_year') }}</span>
+                            {{ _('Рік') }}
+                        </th>
                         <th data-type="num" class="sorted-desc">{{ _('Усього') }}</th>
                         <th data-type="num">{{ _('% верифіковано') }}</th>
                         <th data-type="num">{{ _('% в роботі') }}</th>
