@@ -1069,11 +1069,15 @@ def institution_stats(lang_code):
             'pending': pending_series,
             'in_progress': total_series - completed_series - pending_series,
         }
+        forecast = query_verification_forecast(
+            ct_session, inst_condition_orm, inst_params, datetime.now(ZoneInfo('Europe/Kyiv')).date(),
+        ) if institutions_stats else None
 
         return render_template(
             'institution_stats.html',
             institutions_stats=institutions_stats,
             totals=totals,
+            forecast=forecast,
         )
     except Exception as e:
         current_app.logger.error(f"Error in institution_stats: {str(e)}")
