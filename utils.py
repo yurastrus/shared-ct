@@ -803,20 +803,37 @@ def process_photo_batch(files, location_id, user):
         current_app.logger.error(f"Error in deprecated process_photo_batch: {e}")
         raise
 
-def check_consensus_for_observation(observation_id, db_session, moderator_override=False):
+def _moderator_agrees(user_identifications, moderator_user_id, min_identifications):
+    """True when the series still closes with the moderator's vote counted and
+    every species the moderator named is among the accepted ones."""
+    if moderator_user_id is None:
+        return False
+    named = {sp for uid, sp, _q in user_identifications if uid == moderator_user_id}
+    if not named:
+        return False
+    per_species, voters = tally_votes(user_identifications)
+    if voters < min_identifications:
+        return False
+    if not can_close(per_species, voters, is_multi_species(user_identifications)):
+        return False
+    winner = max(per_species.items(), key=lambda x: x[1][0])[0]
+    return named <= set(accepted_species(per_species, voters, winner))
+
+
+def check_consensus_for_observation(observation_id, db_session, moderator_override=False,
+                                    moderator_user_id=None):
+    """Close a pending series once its votes reach consensus.
+
+    `moderator_override`: a moderator voted on an already closed series
+    (review mode). The series is reopened only when the moderator disagrees
+    with the accepted result. Until 2026-11-19 any moderator vote reopened it
+    without a recount, so a vote that merely confirmed the result left a
+    unanimous series stuck in the queue (series 126127: three 'Empty' votes,
+    pending).
+    """
     try:
         observation = db_session.query(Observation).get(observation_id)
         if not observation:
-            return
-
-        if moderator_override and observation.status == 'completed':
-            observation.status = 'pending'
-            for photo in observation.photos:
-                photo.status = 'pending'
-            db_session.flush()
-            return
-
-        if observation.status != 'pending':
             return
 
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
@@ -829,6 +846,19 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
         ).join(Photo).filter(
             Photo.observation_id == observation_id
         ).distinct().all()
+
+        if moderator_override and observation.status == 'completed':
+            if _moderator_agrees(user_identifications, moderator_user_id,
+                                 min_identifications):
+                return
+            observation.status = 'pending'
+            for photo in observation.photos:
+                photo.status = 'pending'
+            db_session.flush()
+            return
+
+        if observation.status != 'pending':
+            return
 
         # Votes are people: one verifier may name several species, and each
         # answer is copied onto every photo of the series.

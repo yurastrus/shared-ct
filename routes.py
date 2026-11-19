@@ -4573,7 +4573,8 @@ def submit_identification(lang_code):
         check_consensus_for_observation(
             observation_id, 
             db_session=ct_session,
-            moderator_override=moderator_override
+            moderator_override=moderator_override,
+            moderator_user_id=current_user.id,
         )
                 
         ct_session.commit()
