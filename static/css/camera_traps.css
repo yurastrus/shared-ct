@@ -327,7 +327,7 @@ main .identification-navigation.container {
 }
 .identification-counts {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 0.35rem;
 }
 #identification-activity {
