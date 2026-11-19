@@ -4691,13 +4691,32 @@ def _series_photo_probe(column):
             .scalar_subquery())
 
 
+def _identify_tier_expr():
+    """Per-series tier of the default queue, higher first, as one correlated
+    scalar: 2 = somebody named an animal (anything but 'Empty'), 1 = only
+    'Empty' votes, 0 = no votes yet.
+
+    Why three tiers (2026-11-19): with two, 77% of the "voted" tier on
+    production (17,369 of ~22.4k series) carried a single 'Empty' vote, so the
+    priority mostly served empty frames, and series with an animal that one
+    more vote would close (or a disagreement would settle) were lost among
+    them. NULL species counts as an animal: it is not a confirmed 'Empty'.
+    """
+    return select(func.coalesce(func.max(case(
+        (func.coalesce(Identification.species_id, 0) != EMPTY_SPECIES_ID, 2),
+        else_=1)), 0)).where(
+        Identification.photo_id == _series_photo_probe(Photo.id)
+    ).scalar_subquery()
+
+
 def _apply_identify_sort(query, sort_by, status_filter, extra_filters=(),
                          voted_expr=None):
     """Apply one of IDENTIFY_SORT_OPTIONS to `query`.
 
-    'priority_random' (the default) has exactly two tiers: series somebody has
-    already identified at least once, then everything else. Order inside a tier
-    is random.
+    'priority_random' (the default) orders by coarse tiers with random order
+    inside each. Normal mode passes `_identify_tier_expr` (animal votes, then
+    only-'Empty' votes, then untouched); review mode has two tiers, voted
+    and untouched.
 
     It used to rank finer than that — by number of distinct voters, then by
     photo count among voted series — and that is what broke "Пропустити". Both
@@ -4707,8 +4726,8 @@ def _apply_identify_sort(query, sort_by, status_filter, extra_filters=(),
     not move off it until somebody else voted. Two coarse tiers put random()
     first in practice, which is what makes skipping work at all.
 
-    `voted_expr`, when given, is a cheap per-series "has votes" expression used
-    for the first tier instead of the voted-series subquery.
+    `voted_expr`, when given, is a cheap per-series rank (bool or int, higher
+    first) used instead of the voted-series subquery.
     """
     if sort_by == 'date_desc':
         return query.order_by(Observation.series_start_time.desc())
@@ -4940,10 +4959,16 @@ def next_observation_for_identification(lang_code):
             if ai_observation_subq is not None:
                 query = query.filter(Observation.id.in_(ai_observation_subq))
 
-            voted_expr = select(Identification.id).where(
-                Identification.photo_id == _series_photo_probe(Photo.id)).exists()
             query = _apply_identify_sort(query, sort_by, Observation.status == 'pending',
-                                         identify_extra_filters, voted_expr=voted_expr)
+                                         identify_extra_filters,
+                                         voted_expr=_identify_tier_expr())
+            # PERF: the three-tier rank pushes the planner's cost estimate over
+            # jit_optimize_above_cost, and JIT then spends ~100 ms compiling a
+            # query that runs ~270 ms (measured on production 2026-11-19,
+            # scripts/probe_identify_tiers.py). Without JIT the three tiers
+            # cost the same as the old two. SET LOCAL ends with the transaction.
+            if ct_session.get_bind().dialect.name == 'postgresql':
+                ct_session.execute(text('SET LOCAL jit = off'))
             observation = query.first()
         
         if not observation:
