@@ -295,7 +295,8 @@ def ai_calibration(lang_code):
     """AI calibration dashboard: per-species accuracy on verified series.
 
     Based on ai_predictions.was_correct (Idea 4), recorded at the time of
-    consensus. ?min=N — minimum sample size per species (default 1, because
+    consensus, counted per series (one AI answer per series). ?min=N —
+    minimum sample size (series) per species (default 1, because
     verified AI series are still scarce; reliability is visible in the 'sample'
     column).
     """
@@ -309,22 +310,56 @@ def ai_calibration(lang_code):
     try:
         engine = get_ct_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT p.prediction_species_id            AS species_id,
-                       s.scientific_name,
-                       s.common_name_ua,
-                       s.common_name_en,
-                       COUNT(*)                            AS total,
-                       COUNT(*) FILTER (WHERE p.was_correct) AS correct,
-                       AVG(p.prediction_score) FILTER (WHERE p.was_correct)        AS mean_score_correct,
-                       AVG(p.prediction_score) FILTER (WHERE p.was_correct = FALSE) AS mean_score_wrong
-                FROM ai_predictions p
-                JOIN species s ON s.id = p.prediction_species_id
-                WHERE p.was_correct IS NOT NULL
-                GROUP BY p.prediction_species_id, s.scientific_name,
-                         s.common_name_ua, s.common_name_en
-                HAVING COUNT(*) >= :min_samples
-                ORDER BY total DESC, correct DESC
+            # One sample per SERIES, not per frame (owner, 2026-11-19): the
+            # series' AI answer is picked by the shared rule
+            # (ai_runner.SERIES_PICK_ORDER_SQL) and scored against consensus.
+            # Per frame, the empty frames before and after a bear counted as
+            # AI errors although they really are empty. was_correct is the
+            # same on every frame of one (series, model, species), so
+            # bool_or just reads it; the score is that species' best frame.
+            from .ai_runner import SERIES_PICK_ORDER_SQL
+            rows = conn.execute(text(f"""
+                WITH agg AS (
+                    SELECT p.observation_id, p.model_id, p.prediction_species_id,
+                           COUNT(*) AS n_frames,
+                           MAX(p.prediction_score) AS best_score,
+                           BOOL_OR(p.was_correct) AS correct
+                    FROM ai_predictions p
+                    -- One pass (an IN over the verified series read the table
+                    -- twice, ~470 ms on prod; this ~280 ms). was_correct is
+                    -- set on every species-mapped frame of a verified series;
+                    -- unmapped labels never get it but still compete in the
+                    -- pick, so they stay in. Unverified series end up with
+                    -- correct NULL and drop out below.
+                    WHERE p.was_correct IS NOT NULL
+                       OR p.prediction_species_id IS NULL
+                    GROUP BY p.observation_id, p.model_id, p.prediction_species_id
+                ),
+                win AS (
+                    SELECT DISTINCT ON (agg.observation_id)
+                           agg.prediction_species_id, agg.best_score, agg.correct
+                    FROM agg
+                    JOIN ai_models m ON m.id = agg.model_id
+                    LEFT JOIN ai_model_levels lvl ON lvl.id = m.level_id
+                    ORDER BY agg.observation_id, {SERIES_PICK_ORDER_SQL}
+                ),
+                per_species AS (
+                    SELECT prediction_species_id AS species_id,
+                           COUNT(*) AS total,
+                           COUNT(*) FILTER (WHERE correct) AS correct,
+                           AVG(best_score) FILTER (WHERE correct) AS mean_score_correct,
+                           AVG(best_score) FILTER (WHERE correct = FALSE) AS mean_score_wrong
+                    FROM win
+                    WHERE correct IS NOT NULL
+                    GROUP BY prediction_species_id
+                    HAVING COUNT(*) >= :min_samples
+                )
+                SELECT ps.species_id, s.scientific_name, s.common_name_ua,
+                       s.common_name_en, ps.total, ps.correct,
+                       ps.mean_score_correct, ps.mean_score_wrong
+                FROM per_species ps
+                JOIN species s ON s.id = ps.species_id
+                ORDER BY ps.total DESC, ps.correct DESC, ps.species_id
             """), {'min_samples': min_samples}).mappings().fetchall()
 
         for r in rows:
