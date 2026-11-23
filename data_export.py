@@ -233,7 +233,13 @@ def get_ct_occurrence_data(filters, limit=None):
                         l.latitude as lat, l.longitude as lon, l.name as location_name, l.state_province,
                         oc.max_quantity,
                         wi.identifier_user_ids,
-                        'human_conflict'::text as row_kind,
+                        -- Every person named the same species, but the series has not
+                        -- closed yet (since 2026-11-23 the weighted rule may want more
+                        -- votes from experienced people): agreed, not a conflict.
+                        CASE WHEN (SELECT COUNT(*) FROM ObservationConsensus oc2
+                                   WHERE oc2.observation_id = o.id) = 1
+                             THEN 'human_agreed_pending' ELSE 'human_conflict'
+                        END::text as row_kind,
                         NULL::double precision as ai_confidence,
                         NULL::text as ai_model_name,
                         NULL::bigint as consensus_rank
@@ -482,6 +488,13 @@ def get_ct_occurrence_data(filters, limit=None):
                         'Competing identification — series has not reached expert '
                         'consensus. Group rows by observationID to see all candidates.'
                     )
+                elif row_kind == 'human_agreed_pending':
+                    identifiedBy = identifiedBy_human or 'Human Expert'
+                    identificationVerificationStatus = 'human identifications agree, awaiting more votes (unconfirmed)'
+                    identificationRemarks = (
+                        'All verifiers so far named this taxon, but the series has not yet '
+                        'reached the consensus threshold; it may still change.'
+                    )
                 else:  # human_consensus (legacy default)
                     identifiedBy = identifiedBy_human or 'Human Expert'
                     identificationVerificationStatus = 'verified by human'
@@ -493,7 +506,9 @@ def get_ct_occurrence_data(filters, limit=None):
                 # same taxon suffix; the primary keeps the plain ID it always had,
                 # so IDs of exported records never change when a species is added.
                 occurrence_id = f"URN:ctmon:{institution_code}:observation:{row['observation_id']}"
-                if row_kind == 'human_conflict' or (row.get('consensus_rank') or 1) > 1:
+                # Pending rows keep the taxon suffix they always had, so an
+                # agreed pending series keeps its ID from earlier exports.
+                if row_kind in ('human_conflict', 'human_agreed_pending') or                         (row.get('consensus_rank') or 1) > 1:
                     occurrence_id += f":taxon:{row['species_id']}"
 
                 occurrence_data.append({
