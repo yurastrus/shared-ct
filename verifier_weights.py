@@ -169,6 +169,23 @@ def maybe_refresh_async(session):
         newest = datetime.fromisoformat(newest)
     if newest is not None and datetime.now() - newest < max_age:
         return False
+    return _start_refresh(engine)
+
+
+def start_refresh(session):
+    """Rebuild now in the background (admin button). False if one is running."""
+    with _refresh_lock:
+        if _refresh_state['running']:
+            return False
+        _refresh_state['checked_at'] = time.monotonic()
+    return _start_refresh(_engine_of(session))
+
+
+def refresh_running():
+    return _refresh_state['running']
+
+
+def _start_refresh(engine):
     app = current_app._get_current_object()
 
     def _run():

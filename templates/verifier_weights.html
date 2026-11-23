@@ -1,0 +1,121 @@
+{% extends "ct_base.html" %}
+
+{% block title %}{{ _('Ваги верифікаторів') }}{% endblock %}
+
+{% block ct_content %}
+<div class="container">
+<div class="module-hub">
+
+    <div class="hub-header">
+        <h1>⚖️ {{ _('Ваги верифікаторів') }}</h1>
+        <p>{{ _('Вага голосу людини за вид = підтверджені / (n + 1), де n означає, скільки разів людина називала цей вид у серіях, де інші мали чітку більшість, а підтверджені показують, скільки разів інші з нею погодились.') }}</p>
+        <p>{{ _('Серія закривається, коли лідер випереджає другий вид щонайменше на') }} <strong>{{ threshold }}</strong>.
+           {{ _('DeepFaune додає') }} <strong>{{ ai_factor }} × score</strong> {{ _('лише виду, який назвала людина.') }}
+           {{ _('Одна людина разом із DeepFaune закриває серію від ваги') }} <strong>{{ '%.2f'|format(solo_weight) }}</strong>.</p>
+        <p>
+            {% if updated_at %}{{ _('Оновлено') }}: <strong>{{ updated_at.strftime('%d.%m.%Y %H:%M') }}</strong>.
+            {{ _('Таблиця оновлюється сама раз на добу.') }}{% endif %}
+            {% if running %}<span class="badge bg-info">{{ _('перерахунок триває') }}</span>{% endif %}
+        </p>
+        {% if not missing %}
+        <form method="post" action="{{ url_for('camera_traps.verifier_weights_refresh', lang_code=g.lang_code) }}"
+              class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-secondary">🔄 {{ _('Перерахувати зараз') }}</button>
+        </form>
+        <a href="{{ url_for('camera_traps.admin_panel', lang_code=g.lang_code) }}" class="btn btn-sm btn-link">
+            ← {{ _('Адмін-панель') }}</a>
+        {% endif %}
+    </div>
+
+    {% if missing %}
+        <p class="text-muted">{{ _('Таблиці ваг ще немає. Поки її немає, серії закриваються за старим правилом більшості.') }}</p>
+    {% else %}
+
+    <section class="hub-section">
+        <h2 class="hub-section-title">👥 {{ _('Люди') }}</h2>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead><tr>
+                <th>{{ _('Логін') }}</th><th>{{ _("Ім'я") }}</th>
+                <th class="text-end">{{ _('Оцінених голосів') }}</th>
+                <th class="text-end">{{ _('Підтверджено') }}</th>
+                <th class="text-end">{{ _('Точність') }}</th>
+                <th class="text-end">{{ _('Видів') }}</th>
+                <th class="text-end">{{ _('Вага на «Пусто»') }}</th>
+                <th class="text-end" title="{{ _('Видів, на яких людина з DeepFaune може закрити серію сама') }}">{{ _('Сам + AI') }}</th>
+            </tr></thead>
+            <tbody>
+            {% for p in people %}
+            <tr>
+                <td><a href="{{ url_for('camera_traps.verifier_weights_page', lang_code=g.lang_code, user=p.user_id) }}#detail">{{ p.login }}</a></td>
+                <td>{{ p.full_name }}</td>
+                <td class="text-end">{{ p.n }}</td>
+                <td class="text-end">{{ p.confirmed }}</td>
+                <td class="text-end">{{ '%.1f'|format(100 * p.precision) if p.precision is not none else '—' }}%</td>
+                <td class="text-end">{{ p.species }}</td>
+                <td class="text-end">{{ '%.3f'|format(p.empty) if p.empty is not none else '—' }}</td>
+                <td class="text-end">{{ p.solo or '' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </section>
+
+    <section class="hub-section" id="detail">
+        <h2 class="hub-section-title">📋 {{ _('Людина × вид') }}</h2>
+        <form method="get" class="row g-2 mb-2">
+            <div class="col-auto">
+                <select name="user" class="form-select form-select-sm">
+                    <option value="">{{ _('Усі люди') }}</option>
+                    {% for uid, login in users %}
+                    <option value="{{ uid }}" {% if uid == sel_user %}selected{% endif %}>{{ login }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <select name="species" class="form-select form-select-sm">
+                    <option value="">{{ _('Усі види') }}</option>
+                    {% for sid, name in species_opts %}
+                    <option value="{{ sid }}" {% if sid == sel_species %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary">{{ _('Показати') }}</button>
+            </div>
+        </form>
+        <p class="text-muted small">{{ _('Рядків') }}: {{ rows|length }}.
+            {{ _('✓ означає, що з цією вагою людина разом із впевненим DeepFaune закриває серію сама.') }}</p>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead><tr>
+                <th>{{ _('Логін') }}</th><th>{{ _('Вид') }}</th>
+                <th class="text-end">n</th>
+                <th class="text-end">{{ _('Підтверджено') }}</th>
+                <th class="text-end">{{ _('Точність') }}</th>
+                <th class="text-end">{{ _('Вага') }}</th>
+                <th class="text-center">{{ _('Сам + AI') }}</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td title="{{ r.full_name }}">{{ r.login }}</td>
+                <td>{{ r.species }}</td>
+                <td class="text-end">{{ r.n }}</td>
+                <td class="text-end">{{ r.confirmed }}</td>
+                <td class="text-end">{{ '%.1f'|format(100 * r.precision) if r.precision is not none else '—' }}%</td>
+                <td class="text-end"><strong>{{ '%.3f'|format(r.weight) }}</strong></td>
+                <td class="text-center">{{ '✓' if r.solo else '' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </section>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}

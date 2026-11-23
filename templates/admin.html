@@ -24,6 +24,10 @@
                 🎯 {{ _('Калібрування AI') }}
             </a>
             {% endif %}
+            <a href="{{ url_for('camera_traps.verifier_weights_page', lang_code=g.lang_code) }}"
+               class="btn btn-sm btn-info">
+                ⚖️ {{ _('Ваги верифікаторів') }}
+            </a>
         </p>
     </div>
 
