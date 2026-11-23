@@ -817,7 +817,8 @@ def closing_decision(observation_id, user_identifications, db_session, config=No
     verifier_species_weights and DeepFaune's series answer. When that table
     is absent or empty (a host that has not run init_verifier_weights), or
     CONSENSUS_MODE is 'majority', the earlier majority rule (can_close).
-    MIN_IDENTIFICATIONS stays a floor in both modes.
+    MIN_IDENTIFICATIONS stays a floor in both modes; the majority rule never
+    closes with fewer than two people.
 
     ``weights`` / ``ai``: preloaded for bulk callers (the admin recount);
     by default fetched for this series.
@@ -825,7 +826,8 @@ def closing_decision(observation_id, user_identifications, db_session, config=No
     if config is None:
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
     per_species, voters = tally_votes(user_identifications)
-    if voters < config.get('MIN_IDENTIFICATIONS', 3):
+    min_ids = config.get('MIN_IDENTIFICATIONS', 3)
+    if voters < min_ids:
         return None
     if config.get('CONSENSUS_MODE', 'weighted') == 'weighted':
         from .verifier_weights import load_weights, series_ai_answers
@@ -842,6 +844,12 @@ def closing_decision(observation_id, user_identifications, db_session, config=No
             if winner is None:
                 return None
             return winner, accepted_species(per_species, voters, winner)
+    # Majority rule: never fewer than two people, whatever MIN_IDENTIFICATIONS
+    # says. MIN 1 exists for the weighted rule (one very reliable person plus
+    # DeepFaune); under the majority rule it would let any single vote close
+    # a series, e.g. while the weights table is missing.
+    if voters < max(min_ids, 2):
+        return None
     if not can_close(per_species, voters, is_multi_species(user_identifications)):
         return None
     winner = max(per_species.items(), key=lambda x: x[1][0])[0]
