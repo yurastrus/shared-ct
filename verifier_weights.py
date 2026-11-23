@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from flask import current_app
 from sqlalchemy import func, inspect, text
 
-from .consensus import grade_votes, pick_series_ai, verifier_weight
+from .consensus import EXPERIENCE_K_DEFAULT, grade_votes, pick_series_ai, verifier_weight
 
 TABLE = 'verifier_species_weights'
 LOCK_KEY = 72_310_517          # arbitrary, constant: pg advisory lock for refresh()
@@ -83,7 +83,14 @@ def load_weights(session, user_ids):
     from .models import VerifierSpeciesWeight as W
     rows = session.query(W.user_id, W.species_id, W.n, W.confirmed) \
         .filter(W.user_id.in_(user_ids)).all()
-    return {(u, s): verifier_weight(c, n) for u, s, n, c in rows}
+    k = experience_k()
+    return {(u, s): verifier_weight(c, n, k) for u, s, n, c in rows}
+
+
+def experience_k():
+    """VERIFIER_EXPERIENCE_K from the CT config (default 1)."""
+    cfg = current_app.config.get('CAMERA_TRAP_CONFIG', {})
+    return cfg.get('VERIFIER_EXPERIENCE_K', EXPERIENCE_K_DEFAULT)
 
 
 def series_ai_answers(session, observation_ids):

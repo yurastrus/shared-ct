@@ -188,9 +188,18 @@ WEIGHTED_THRESHOLD_DEFAULT = 1.5
 AI_VOTE_FACTOR_DEFAULT = 0.5
 
 
-def verifier_weight(confirmed, n):
-    """precision x n/(n+1), which is simply confirmed / (n + 1)."""
-    return confirmed / (n + 1) if n else 0.0
+EXPERIENCE_K_DEFAULT = 1   # config VERIFIER_EXPERIENCE_K (biomon and myproject: 10)
+
+
+def verifier_weight(confirmed, n, k=EXPERIENCE_K_DEFAULT):
+    """precision x n/(n+k), which is simply confirmed / (n + k).
+
+    k is how long a newcomer stays a newcomer: with k = 10 a record of 10 out
+    of 10 weighs 0.5 (k = 1: 0.91), and weight 0.99 needs about 99 x k
+    agreed votes on that species. Owner's choice 2026-11-23: k = 10, so two
+    newcomers together never close a series.
+    """
+    return confirmed / (n + k) if n else 0.0
 
 
 def grade_votes(series_votes):

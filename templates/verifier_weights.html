@@ -38,8 +38,9 @@
     <div class="vw-legend">
         <div class="vw-legend__item vw-legend__item--wide">
             <span class="vw-legend__label">{{ _('Вага голосу') }}</span>
-            <span class="vw-legend__value">{{ _('підтверджені') }} / (n + 1)</span>
-            <span class="vw-legend__hint">{{ _('n означає, скільки разів людина називала вид у серіях, де інші мали чітку більшість; підтверджені показують, скільки разів інші з нею погодились.') }}</span>
+            <span class="vw-legend__value">{{ _('підтверджені') }} / (n + {{ k }})</span>
+            <span class="vw-legend__hint">{{ _('n означає, скільки разів людина називала вид у серіях, де інші мали чітку більшість; підтверджені показують, скільки разів інші з нею погодились.') }}
+                {{ _('Чим більше k, тим довше новачок лишається новачком: 10 з 10 важить') }} {{ '%.2f'|format(10 / (10 + k)) }}.</span>
         </div>
         <div class="vw-legend__item">
             <span class="vw-legend__label">{{ _('Поріг закриття') }}</span>

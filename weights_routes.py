@@ -49,6 +49,7 @@ def verifier_weights_page(lang_code):
     ai_factor = cfg.get('AI_VOTE_FACTOR', AI_VOTE_FACTOR_DEFAULT)
     # One person + DeepFaune (score 1.0) close a series from this weight on.
     solo_weight = threshold - ai_factor
+    k = vw.experience_k()
     sel_user, sel_species = _int_arg('user'), _int_arg('species')
 
     ct = get_ct_session()
@@ -57,7 +58,7 @@ def verifier_weights_page(lang_code):
             return render_template('verifier_weights.html', missing=True, rows=[],
                                    people=[], users=[], species_opts=[],
                                    cfg=cfg, threshold=threshold, ai_factor=ai_factor,
-                                   solo_weight=solo_weight, updated_at=None,
+                                   solo_weight=solo_weight, updated_at=None, k=k,
                                    running=vw.refresh_running(),
                                    sel_user=None, sel_species=None)
         records = ct.execute(text(
@@ -83,7 +84,7 @@ def verifier_weights_page(lang_code):
     summary = {}
     rows = []
     for uid, sid, n, conf in records:
-        w = verifier_weight(conf, n)
+        w = verifier_weight(conf, n, k)
         s = summary.setdefault(uid, {'n': 0, 'confirmed': 0, 'species': 0, 'empty': None,
                                      'solo': 0})
         s['n'] += n
@@ -116,7 +117,7 @@ def verifier_weights_page(lang_code):
     users = sorted(((p['user_id'], p['login']) for p in people), key=lambda x: x[1].lower())
     return render_template('verifier_weights.html', missing=False, rows=rows, people=people,
                            users=users, species_opts=species_opts, cfg=cfg,
-                           threshold=threshold, ai_factor=ai_factor, solo_weight=solo_weight,
+                           threshold=threshold, ai_factor=ai_factor, solo_weight=solo_weight, k=k,
                            updated_at=updated_at, running=vw.refresh_running(),
                            sel_user=sel_user, sel_species=sel_species)
 
