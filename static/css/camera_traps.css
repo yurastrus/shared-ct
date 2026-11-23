@@ -687,6 +687,29 @@ main { position: relative; }   /* anchor for absolute children */
     font-size: 1rem;
     line-height: 1.5;
 }
+/* Button row under a hub header: full width (not the 640px text column),
+   one line on desktop, wraps evenly on narrow screens. */
+.hub-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+.hub-actions form { margin: 0; }
+.hub-actions .btn { padding-left: 0.8rem; padding-right: 0.8rem; }
+/* Not enough room for one line: an even 2 x 2 grid instead of 3 + 1. */
+@media (max-width: 1050px) {
+    .hub-actions {
+        display: grid;
+        grid-template-columns: repeat(2, max-content);
+        justify-content: center;
+    }
+    .hub-actions .btn { width: 100%; }
+}
+@media (max-width: 560px) {
+    .hub-actions { grid-template-columns: max-content; }
+}
 .hub-section {
     margin-bottom: 2rem;
 }

@@ -17,15 +17,16 @@
             {{ _('Таблиця оновлюється сама раз на добу.') }}{% endif %}
             {% if running %}<span class="badge bg-info">{{ _('перерахунок триває') }}</span>{% endif %}
         </p>
-        {% if not missing %}
-        <form method="post" action="{{ url_for('camera_traps.verifier_weights_refresh', lang_code=g.lang_code) }}"
-              class="d-inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-sm btn-secondary">🔄 {{ _('Перерахувати зараз') }}</button>
-        </form>
-        <a href="{{ url_for('camera_traps.admin_panel', lang_code=g.lang_code) }}" class="btn btn-sm btn-link">
-            ← {{ _('Адмін-панель') }}</a>
-        {% endif %}
+        <div class="hub-actions">
+            <a href="{{ url_for('camera_traps.admin_panel', lang_code=g.lang_code) }}"
+               class="btn btn-sm btn-outline-secondary">← {{ _('Адмін-панель') }}</a>
+            {% if not missing %}
+            <form method="post" action="{{ url_for('camera_traps.verifier_weights_refresh', lang_code=g.lang_code) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-info">🔄 {{ _('Перерахувати зараз') }}</button>
+            </form>
+            {% endif %}
+        </div>
     </div>
 
     {% if missing %}
