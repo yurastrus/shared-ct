@@ -422,6 +422,27 @@ class UserProfile(CTBase):
     def __repr__(self):
         return f'<UserProfile {self.user_id}>'
 
+class VerifierSpeciesWeight(CTBase):
+    """A person's record on one species, behind the weighted closing rule.
+
+    n: how many times the person named the species in a series where the
+    other people had a clear majority; confirmed: how many of those the
+    others also named it. Weight = confirmed / (n + 1) (consensus.verifier_weight).
+    Rebuilt as a whole by verifier_weights.refresh(); never edited by hand.
+    Created by scripts/init_verifier_weights.py.
+    """
+    __tablename__ = 'verifier_species_weights'
+
+    user_id = Column(Integer, primary_key=True)      # main-DB user id
+    species_id = Column(Integer, primary_key=True)   # not an FK: legacy votes may name removed ids
+    n = Column(Integer, nullable=False)
+    confirmed = Column(Integer, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=func.now())
+
+    def __repr__(self):
+        return f'<VerifierSpeciesWeight u={self.user_id} sp={self.species_id} {self.confirmed}/{self.n}>'
+
+
 class LocationMergeLog(CTBase):
     __tablename__ = 'location_merge_log'
 

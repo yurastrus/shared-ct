@@ -162,3 +162,138 @@ def can_close(per_species, voters, multi):
     if not multi:
         return True
     return all(count * 2 != voters for count, _q in per_species.values())
+
+
+# ---------------------------------------------------------------------------
+# Weighted closing rule (owner's decision 2026-11-23, biomon WORKLOG)
+# ---------------------------------------------------------------------------
+#
+# Each person's vote for a species weighs  confirmed / (n + 1):
+#   n          = how many times this person named this species in series where
+#                the OTHER people had a clear majority;
+#   confirmed  = how many of those the others' majority also named it.
+# That is precision x n/(n+1): a record of 10 out of 10 weighs 10/11, a first
+# vote on a species weighs nothing (the series is closed by others).
+# DeepFaune adds  AI_VOTE_FACTOR x its score  to the species it named, but
+# only when a person named that species too: it backs people, it never
+# pushes against them (it has no kulan and says 'horse'; it misses animals
+# and says 'empty').
+# A series closes when the leader is ahead of the runner-up by at least the
+# threshold. With 1.5 one person plus DeepFaune never closes (< 1 + 0.5), so
+# two people are always needed, and weak or split votes need more.
+# Checked on every finished series (2026-11-23): 96.4 % would close on the
+# same species, 1 would change, 3.6 % would want more votes.
+
+WEIGHTED_THRESHOLD_DEFAULT = 1.5
+AI_VOTE_FACTOR_DEFAULT = 0.5
+
+
+def verifier_weight(confirmed, n):
+    """precision x n/(n+1), which is simply confirmed / (n + 1)."""
+    return confirmed / (n + 1) if n else 0.0
+
+
+def grade_votes(series_votes):
+    """Per (user, species): (n, confirmed) graded against the other people.
+
+    ``series_votes``: iterable of vote lists, one per series, each an iterable
+    of (user_id, species_id) (duplicates, e.g. one per photo, are ignored).
+    A vote is graded only when the other people of the series have a unique
+    top species by head count; a tie, or nobody else, says nothing about it.
+    """
+    n, confirmed = {}, {}
+    for votes in series_votes:
+        named = {}
+        for user_id, species_id in votes:
+            named.setdefault(user_id, set()).add(species_id)
+        if len(named) < 2:
+            continue
+        for user_id, mine in named.items():
+            counts = {}
+            for other, theirs in named.items():
+                if other == user_id:
+                    continue
+                for sp in theirs:
+                    counts[sp] = counts.get(sp, 0) + 1
+            ranked = sorted(counts.values(), reverse=True)
+            if len(ranked) > 1 and ranked[0] == ranked[1]:
+                continue
+            truth = max(counts, key=counts.get)
+            for sp in mine:
+                key = (user_id, sp)
+                n[key] = n.get(key, 0) + 1
+                confirmed[key] = confirmed.get(key, 0) + (sp == truth)
+    return {key: (n[key], confirmed[key]) for key in n}
+
+
+AI_EMPTY = -1
+
+
+def pick_series_ai(rows):
+    """(species_id, score) of the AI's answer for a series, or None.
+
+    ``rows``: (accuracy_rank, model_id, species_id, n_frames, best_score) per
+    (model, species) of one series. Same order as ai_runner.SERIES_PICK_ORDER_SQL:
+    the most accurate model (then the newer one); within it 'empty' only if
+    no frame has an animal, else the species on most frames, then the best
+    single-frame score, then the species id.
+    """
+    rows = list(rows)
+    if not rows:
+        return None
+    best_model = max((r[0] or 0, r[1]) for r in rows)
+    mine = [r for r in rows if ((r[0] or 0), r[1]) == best_model]
+
+    def key(r):
+        _rank, _model, sp, frames, score = r
+        return (sp != AI_EMPTY, frames, score if score is not None else -1.0,
+                sp is not None, sp or 0)
+
+    _rank, _model, sp, _frames, score = max(mine, key=key)
+    return sp, (score or 0.0)
+
+
+def weighted_close(votes, weight_of, ai=None,
+                   threshold=WEIGHTED_THRESHOLD_DEFAULT,
+                   ai_factor=AI_VOTE_FACTOR_DEFAULT):
+    """Species the series closes on under the weighted rule, or None.
+
+    ``votes``: (user_id, species_id) pairs (one per person and species).
+    ``weight_of(user_id, species_id)``: that person's weight on that species.
+    ``ai``: (species_id, score) of the series' AI answer, or None.
+
+    Guards kept from the majority rule, so every reader of the data (which
+    ranks species by head count) sees the same winner:
+      - the leader is named by more than half of the people;
+      - 'not identifiable' still needs five people (can_close);
+      - when someone named several species, every named species must be
+        decided as before (can_close with multi=True).
+    """
+    pairs = {(u, s) for u, s in votes}
+    per_species, voters = tally_votes((u, s, 0) for u, s in pairs)
+    if not voters:
+        return None
+    points = {}
+    for u, s in pairs:
+        points[s] = points.get(s, 0.0) + weight_of(u, s)
+    if ai is not None and ai[0] is not None and ai[0] in points:
+        points[ai[0]] += ai_factor * (ai[1] or 0.0)
+    ranked = sorted(points.items(), key=lambda kv: kv[1], reverse=True)
+    leader, lead_points = ranked[0]
+    lead = lead_points - (ranked[1][1] if len(ranked) > 1 else 0.0)
+    if lead < threshold - 1e-9:
+        return None
+    if per_species[leader][0] * 2 <= voters:
+        return None
+    multi = any(n > 1 for n in _species_per_user(pairs).values())
+    if leader == UNIDENTIFIABLE_SPECIES_ID or multi:
+        if not can_close(per_species, voters, multi):
+            return None
+    return leader
+
+
+def _species_per_user(pairs):
+    out = {}
+    for u, _s in pairs:
+        out[u] = out.get(u, 0) + 1
+    return out

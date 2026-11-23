@@ -12,7 +12,8 @@ from sqlalchemy import func, text
 from flask import current_app
 from .database import get_ct_session, close_ct_session, get_ct_engine
 from .models import Location, Observation, Photo, UploadBatch, Identification
-from .consensus import (accepted_species, can_close, consensus_ctes, is_multi_species, tally_votes,
+from .consensus import (weighted_close, WEIGHTED_THRESHOLD_DEFAULT,
+                        AI_VOTE_FACTOR_DEFAULT, accepted_species, can_close, consensus_ctes, is_multi_species, tally_votes,
                         UNIDENTIFIABLE_MIN_VOTERS, UNIDENTIFIABLE_SPECIES_ID)
 
 
@@ -803,7 +804,51 @@ def process_photo_batch(files, location_id, user):
         current_app.logger.error(f"Error in deprecated process_photo_batch: {e}")
         raise
 
-def _moderator_agrees(user_identifications, moderator_user_id, min_identifications):
+_LOAD = object()   # closing_decision: "fetch it yourself"
+
+
+def closing_decision(observation_id, user_identifications, db_session, config=None,
+                     weights=_LOAD, ai=_LOAD):
+    """(winner, accepted species) when the series closes now, else None.
+
+    One place for the closing rule, used for every vote, the moderator check
+    and the admin recount. CONSENSUS_MODE 'weighted' (default since
+    2026-11-23): consensus.weighted_close with people's records from
+    verifier_species_weights and DeepFaune's series answer. When that table
+    is absent or empty (a host that has not run init_verifier_weights), or
+    CONSENSUS_MODE is 'majority', the earlier majority rule (can_close).
+    MIN_IDENTIFICATIONS stays a floor in both modes.
+
+    ``weights`` / ``ai``: preloaded for bulk callers (the admin recount);
+    by default fetched for this series.
+    """
+    if config is None:
+        config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
+    per_species, voters = tally_votes(user_identifications)
+    if voters < config.get('MIN_IDENTIFICATIONS', 3):
+        return None
+    if config.get('CONSENSUS_MODE', 'weighted') == 'weighted':
+        from .verifier_weights import load_weights, series_ai_answers
+        pairs = {(u, s) for u, s, _q in user_identifications}
+        if weights is _LOAD:
+            weights = load_weights(db_session, [u for u, _s in pairs])
+        if weights is not None:
+            if ai is _LOAD:
+                ai = series_ai_answers(db_session, [observation_id]).get(observation_id)
+            winner = weighted_close(
+                pairs, lambda u, sp: weights.get((u, sp), 0.0), ai,
+                threshold=config.get('WEIGHTED_CONSENSUS_THRESHOLD', WEIGHTED_THRESHOLD_DEFAULT),
+                ai_factor=config.get('AI_VOTE_FACTOR', AI_VOTE_FACTOR_DEFAULT))
+            if winner is None:
+                return None
+            return winner, accepted_species(per_species, voters, winner)
+    if not can_close(per_species, voters, is_multi_species(user_identifications)):
+        return None
+    winner = max(per_species.items(), key=lambda x: x[1][0])[0]
+    return winner, accepted_species(per_species, voters, winner)
+
+
+def _moderator_agrees(observation_id, user_identifications, moderator_user_id, db_session):
     """True when the series still closes with the moderator's vote counted and
     every species the moderator named is among the accepted ones."""
     if moderator_user_id is None:
@@ -811,13 +856,15 @@ def _moderator_agrees(user_identifications, moderator_user_id, min_identificatio
     named = {sp for uid, sp, _q in user_identifications if uid == moderator_user_id}
     if not named:
         return False
-    per_species, voters = tally_votes(user_identifications)
-    if voters < min_identifications:
+    # The series is already closed: judge the moderator against the result it
+    # was closed with (the majority reading every page uses), not against
+    # today's weighted rule, so a confirming vote never reopens a finished
+    # series (owner, 2026-11-23: finished series are left as they are).
+    config = dict(current_app.config.get('CAMERA_TRAP_CONFIG', {}), CONSENSUS_MODE='majority')
+    decision = closing_decision(observation_id, user_identifications, db_session, config)
+    if decision is None:
         return False
-    if not can_close(per_species, voters, is_multi_species(user_identifications)):
-        return False
-    winner = max(per_species.items(), key=lambda x: x[1][0])[0]
-    return named <= set(accepted_species(per_species, voters, winner))
+    return named <= set(decision[1])
 
 
 def check_consensus_for_observation(observation_id, db_session, moderator_override=False,
@@ -837,7 +884,6 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
             return
 
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
-        min_identifications = config.get('MIN_IDENTIFICATIONS', 3)
 
         user_identifications = db_session.query(
             Identification.user_id,
@@ -848,8 +894,8 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
         ).distinct().all()
 
         if moderator_override and observation.status == 'completed':
-            if _moderator_agrees(user_identifications, moderator_user_id,
-                                 min_identifications):
+            if _moderator_agrees(observation_id, user_identifications,
+                                 moderator_user_id, db_session):
                 return
             observation.status = 'pending'
             for photo in observation.photos:
@@ -862,23 +908,21 @@ def check_consensus_for_observation(observation_id, db_session, moderator_overri
 
         # Votes are people: one verifier may name several species, and each
         # answer is copied onto every photo of the series.
-        per_species, voters = tally_votes(user_identifications)
-
-        if voters >= min_identifications:
-            current_app.logger.info(f"Processing observation {observation_id}: {voters} verifiers")
-
-        if voters < min_identifications:
-            return
-
-        # One species per verifier: the old rule. If someone named several,
-        # every named species must also be decided (consensus.can_close).
-        if can_close(per_species, voters, is_multi_species(user_identifications)):
-            winner_species = max(per_species.items(), key=lambda x: x[1][0])[0]
+        decision = closing_decision(observation_id, user_identifications, db_session, config)
+        if decision is not None:
+            winner_species, accepted = decision
             mark_observation_complete(
                 observation_id, db_session=db_session,
                 winner_species_id=winner_species,
-                accepted_species_ids=accepted_species(per_species, voters, winner_species))
+                accepted_species_ids=accepted)
             current_app.logger.info(f"Completed observation {observation_id}")
+
+        # Keep people's records fresh (background, throttled, never raises).
+        try:
+            from .verifier_weights import maybe_refresh_async
+            maybe_refresh_async(db_session)
+        except Exception as refresh_exc:
+            current_app.logger.warning(f"verifier weights refresh skipped: {refresh_exc}")
 
     except Exception as e:
         current_app.logger.error(f"Error in check_consensus_for_observation {observation_id}: {e}")
@@ -955,6 +999,42 @@ def mark_observation_complete(observation_id, db_session, winner_species_id=None
         current_app.logger.error(f"Error marking observation complete: {e}")
         raise  # Re-raise the exception
 
+def _recount_pending_weighted(ct_session, config):
+    """Admin recount under the weighted rule: every pending series with enough
+    people, judged by closing_decision with records and AI answers loaded
+    once. Only pending series are read, so finished ones are never touched."""
+    from .verifier_weights import load_weights, series_ai_answers
+    rows = ct_session.execute(text("""
+        SELECT DISTINCT p.observation_id, i.user_id, i.species_id, i.quantity
+        FROM identifications i
+        JOIN photos p ON p.id = i.photo_id
+        JOIN observations o ON o.id = p.observation_id
+        WHERE o.status = 'pending'
+    """)).fetchall()
+    by_obs = {}
+    for obs_id, user_id, species_id, quantity in rows:
+        by_obs.setdefault(obs_id, []).append((user_id, species_id, quantity))
+    min_ids = config.get('MIN_IDENTIFICATIONS', 3)
+    candidates = {o: v for o, v in by_obs.items()
+                  if len({u for u, _s, _q in v}) >= min_ids}
+    weights = load_weights(ct_session, {u for v in candidates.values() for u, _s, _q in v})
+    ai_answers = series_ai_answers(ct_session, candidates)
+    completed_count = 0
+    for obs_id, votes in candidates.items():
+        decision = closing_decision(obs_id, votes, ct_session, config,
+                                    weights=weights, ai=ai_answers.get(obs_id))
+        if decision is None:
+            continue
+        mark_observation_complete(obs_id, db_session=ct_session,
+                                  winner_species_id=decision[0],
+                                  accepted_species_ids=decision[1])
+        completed_count += 1
+    ct_session.commit()
+    current_app.logger.info(
+        f"Weighted recount: closed {completed_count} of {len(candidates)} pending series")
+    return completed_count
+
+
 def migrate_pending_observations_to_single_identification():
     """
     Optimised version — one query instead of hundreds.
@@ -965,6 +1045,12 @@ def migrate_pending_observations_to_single_identification():
         config = current_app.config.get('CAMERA_TRAP_CONFIG', {})
         min_identifications = config.get('MIN_IDENTIFICATIONS', 3)
 
+        if config.get('CONSENSUS_MODE', 'weighted') == 'weighted':
+            from .verifier_weights import weights_available
+            if weights_available(ct_session):
+                return _recount_pending_weighted(ct_session, config)
+
+        # Majority rule (CONSENSUS_MODE 'majority', or no weights table).
         # Same rule as check_consensus_for_observation, for every pending series
         # in one query: enough verifiers, and the top species named by more
         # than half of them. (Until 2026-10 this compared identification ROWS,
