@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-23 15:11+0200\n"
+"POT-Creation-Date: 2026-11-23 15:25+0200\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: uk\n"
@@ -471,6 +471,9 @@ msgid "Інший вид"
 msgstr ""
 
 #: app/camera_traps/routes.py:5066
+#: app/camera_traps/templates/verifier_weights.html:71
+#: app/camera_traps/templates/verifier_weights.html:102
+#: app/camera_traps/templates/verifier_weights.html:124
 msgid "Людина"
 msgstr ""
 
@@ -998,15 +1001,15 @@ msgstr ""
 msgid "Збережено: %(n)s"
 msgstr ""
 
-#: app/camera_traps/weights_routes.py:127
+#: app/camera_traps/weights_routes.py:131
 msgid "Таблиці ваг ще немає: запустіть scripts.init_verifier_weights --apply."
 msgstr ""
 
-#: app/camera_traps/weights_routes.py:130
+#: app/camera_traps/weights_routes.py:134
 msgid "Перерахунок ваг запущено у фоні. Оновіть сторінку за хвилину."
 msgstr ""
 
-#: app/camera_traps/weights_routes.py:132
+#: app/camera_traps/weights_routes.py:136
 msgid "Перерахунок ваг уже триває."
 msgstr ""
 
@@ -1396,7 +1399,7 @@ msgstr ""
 
 #: app/camera_traps/templates/admin.html:10
 #: app/camera_traps/templates/overview.html:191
-#: app/camera_traps/templates/verifier_weights.html:27
+#: app/camera_traps/templates/verifier_weights.html:24
 msgid "Адмін-панель"
 msgstr ""
 
@@ -1421,7 +1424,7 @@ msgstr ""
 
 #: app/camera_traps/templates/admin.html:29
 #: app/camera_traps/templates/verifier_weights.html:3
-#: app/camera_traps/templates/verifier_weights.html:10
+#: app/camera_traps/templates/verifier_weights.html:20
 msgid "Ваги верифікаторів"
 msgstr ""
 
@@ -1986,7 +1989,8 @@ msgstr ""
 #: app/camera_traps/templates/ai_calibration.html:24
 #: app/camera_traps/templates/behavior_analysis.html:23
 #: app/camera_traps/templates/expertise.html:228
-#: app/camera_traps/templates/verifier_weights.html:94
+#: app/camera_traps/templates/verifier_weights.html:108
+#: app/camera_traps/templates/verifier_weights.html:125
 msgid "Вид"
 msgstr ""
 
@@ -2329,7 +2333,7 @@ msgstr ""
 #: app/camera_traps/templates/contributors.html:137
 #: app/camera_traps/templates/expertise.html:148
 #: app/camera_traps/templates/expertise.html:284
-#: app/camera_traps/templates/verifier_weights.html:79
+#: app/camera_traps/templates/verifier_weights.html:109
 msgid "Усі види"
 msgstr ""
 
@@ -2348,6 +2352,7 @@ msgstr ""
 #: app/camera_traps/templates/photo_viewer.html:25
 #: app/camera_traps/templates/upload_fast.html:278
 #: app/camera_traps/templates/upload_stats.html:61
+#: app/camera_traps/templates/verifier_weights.html:116
 msgid "Скинути"
 msgstr ""
 
@@ -3058,7 +3063,7 @@ msgstr ""
 #: app/camera_traps/templates/dashboard.html:85
 #: app/camera_traps/templates/gap_analysis.html:309
 #: app/camera_traps/templates/gap_analysis.html:324
-#: app/camera_traps/templates/verifier_weights.html:44
+#: app/camera_traps/templates/verifier_weights.html:75
 msgid "Видів"
 msgstr ""
 
@@ -6818,115 +6823,120 @@ msgstr ""
 msgid "Без часу початку:"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:11
-msgid ""
-"Вага голосу людини за вид = підтверджені / (n + 1), де n означає, скільки"
-" разів людина називала цей вид у серіях, де інші мали чітку більшість, а "
-"підтверджені показують, скільки разів інші з нею погодились."
+#: app/camera_traps/templates/verifier_weights.html:21
+msgid "Скільки важить голос кожної людини за кожен вид, коли серія закривається."
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:12
-msgid "Серія закривається, коли лідер випереджає другий вид щонайменше на"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:13
-msgid "DeepFaune додає"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:13
-msgid "лише виду, який назвала людина."
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:14
-msgid "Одна людина разом із DeepFaune закриває серію від ваги"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:16
-msgid "Оновлено"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:17
-msgid "Таблиця оновлюється сама раз на добу."
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:18
-msgid "перерахунок триває"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:24
+#: app/camera_traps/templates/verifier_weights.html:28
 msgid "Перерахувати зараз"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:32
+#: app/camera_traps/templates/verifier_weights.html:35
 msgid ""
 "Таблиці ваг ще немає. Поки її немає, серії закриваються за старим "
 "правилом більшості."
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:36
-msgid "Люди"
-msgstr ""
-
 #: app/camera_traps/templates/verifier_weights.html:40
-#: app/camera_traps/templates/verifier_weights.html:94
-msgid "Логін"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:40
-msgid "Ім'я"
+msgid "Вага голосу"
 msgstr ""
 
 #: app/camera_traps/templates/verifier_weights.html:41
-msgid "Оцінених голосів"
+msgid "підтверджені"
 msgstr ""
 
 #: app/camera_traps/templates/verifier_weights.html:42
-#: app/camera_traps/templates/verifier_weights.html:96
-msgid "Підтверджено"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:43
-#: app/camera_traps/templates/verifier_weights.html:97
-msgid "Точність"
+msgid ""
+"n означає, скільки разів людина називала вид у серіях, де інші мали чітку"
+" більшість; підтверджені показують, скільки разів інші з нею погодились."
 msgstr ""
 
 #: app/camera_traps/templates/verifier_weights.html:45
-msgid "Вага на «Пусто»"
+msgid "Поріг закриття"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:46
-msgid "Видів, на яких людина з DeepFaune може закрити серію сама"
+#: app/camera_traps/templates/verifier_weights.html:47
+msgid "на стільки лідер має випереджати другий вид"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:46
-#: app/camera_traps/templates/verifier_weights.html:99
+#: app/camera_traps/templates/verifier_weights.html:52
+msgid "лише виду, який назвала людина"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:55
+#: app/camera_traps/templates/verifier_weights.html:77
+#: app/camera_traps/templates/verifier_weights.html:130
 msgid "Сам + AI"
 msgstr ""
 
+#: app/camera_traps/templates/verifier_weights.html:57
+msgid "з такою вагою людина разом із DeepFaune закриває серію"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:60
+msgid "Оновлено"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:62
+msgid "перерахунок триває"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:62
+msgid "сама раз на добу"
+msgstr ""
+
 #: app/camera_traps/templates/verifier_weights.html:67
+msgid "Люди"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:72
+msgid "Оцінених голосів"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:73
+#: app/camera_traps/templates/verifier_weights.html:127
+msgid "Підтверджено"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:74
+#: app/camera_traps/templates/verifier_weights.html:128
+msgid "Точність"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:76
+msgid "Вага на «Пусто»"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:77
+msgid "Видів, на яких людина з DeepFaune може закрити серію сама"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:100
 msgid "Людина × вид"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:71
+#: app/camera_traps/templates/verifier_weights.html:103
 msgid "Усі люди"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:86
+#: app/camera_traps/templates/verifier_weights.html:114
 msgid "Показати"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:89
-msgid "Рядків"
+#: app/camera_traps/templates/verifier_weights.html:119
+msgid "Швидкий пошук у таблиці…"
 msgstr ""
 
-#: app/camera_traps/templates/verifier_weights.html:90
-msgid ""
-"✓ означає, що з цією вагою людина разом із впевненим DeepFaune закриває "
-"серію сама."
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:98
+#: app/camera_traps/templates/verifier_weights.html:129
 msgid "Вага"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:141
+msgid "з цією вагою людина разом із впевненим DeepFaune закриває серію сама"
+msgstr ""
+
+#: app/camera_traps/templates/verifier_weights.html:147
+msgid "Клік на заголовок колонки сортує таблицю, повторний клік змінює напрям."
 msgstr ""
 
 #~ msgid ""
@@ -7088,5 +7098,44 @@ msgstr ""
 #~ msgstr ""
 
 #~ msgid "Завантажено фото по днях (усі користувачі)"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Вага голосу людини за вид = "
+#~ "підтверджені / (n + 1), де n "
+#~ "означає, скільки разів людина називала "
+#~ "цей вид у серіях, де інші мали "
+#~ "чітку більшість, а підтверджені показують, "
+#~ "скільки разів інші з нею погодились."
+#~ msgstr ""
+
+#~ msgid "Серія закривається, коли лідер випереджає другий вид щонайменше на"
+#~ msgstr ""
+
+#~ msgid "DeepFaune додає"
+#~ msgstr ""
+
+#~ msgid "лише виду, який назвала людина."
+#~ msgstr ""
+
+#~ msgid "Одна людина разом із DeepFaune закриває серію від ваги"
+#~ msgstr ""
+
+#~ msgid "Таблиця оновлюється сама раз на добу."
+#~ msgstr ""
+
+#~ msgid "Логін"
+#~ msgstr ""
+
+#~ msgid "Ім'я"
+#~ msgstr ""
+
+#~ msgid "Рядків"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "✓ означає, що з цією вагою людина"
+#~ " разом із впевненим DeepFaune закриває "
+#~ "серію сама."
 #~ msgstr ""
 
