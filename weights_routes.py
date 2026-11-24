@@ -51,7 +51,6 @@ def _int_arg(name):
 @role_required('admin')
 def verifier_weights_page(lang_code):
     cfg = current_app.config.get('CAMERA_TRAP_CONFIG', {})
-    k = vw.experience_k()
     sel_user, sel_species = _int_arg('user'), _int_arg('species')
 
     ct = get_ct_session()
@@ -59,8 +58,10 @@ def verifier_weights_page(lang_code):
         ct_settings.forget()
         threshold = ct_settings.weighted_threshold(ct, cfg)
         ai_factor = ct_settings.ai_vote_factor(ct, cfg)
+        k = ct_settings.experience_k(ct, cfg)
         setting = {'editable': ct_settings.table_ready(ct), 'fields': {}}
-        for key in (ct_settings.THRESHOLD_KEY, ct_settings.AI_FACTOR_KEY):
+        for key in (ct_settings.THRESHOLD_KEY, ct_settings.AI_FACTOR_KEY,
+                    ct_settings.EXPERIENCE_K_KEY):
             _cfg_key, _default, lo, hi = ct_settings.SETTINGS[key]
             setting['fields'][key] = {
                 'value': ct_settings.value(ct, key, cfg),
@@ -164,7 +165,8 @@ def verifier_weights_save_settings(lang_code):
     for confirmation first). Only values that changed are written."""
     back = redirect(url_for('camera_traps.verifier_weights_page', lang_code=g.lang_code))
     fields = ((ct_settings.THRESHOLD_KEY, 'threshold', _('Поріг закриття')),
-              (ct_settings.AI_FACTOR_KEY, 'ai_factor', _('Коефіцієнт DeepFaune')))
+              (ct_settings.AI_FACTOR_KEY, 'ai_factor', _('Коефіцієнт DeepFaune')),
+              (ct_settings.EXPERIENCE_K_KEY, 'k', _('Поправка на досвід k')))
     new = {}
     for key, form_name, label in fields:
         if request.form.get(form_name) in (None, ''):
@@ -226,15 +228,16 @@ def verifier_weights_estimate(lang_code):
     """What a new threshold and DeepFaune factor would change, read-only (JSON)."""
     cfg = current_app.config.get('CAMERA_TRAP_CONFIG', {})
     min_ids = cfg.get('MIN_IDENTIFICATIONS', 3)
-    k = vw.experience_k()
     lang = g.get('lang_code', 'uk')
     ct = get_ct_session()
     try:
         old = ct_settings.weighted_threshold(ct, cfg)
         old_ai = ct_settings.ai_vote_factor(ct, cfg)
+        old_k = ct_settings.experience_k(ct, cfg)
         new = ct_settings.parse(ct_settings.THRESHOLD_KEY, request.args.get('threshold', old))
         new_ai = ct_settings.parse(ct_settings.AI_FACTOR_KEY, request.args.get('ai_factor', old_ai))
-        if new is None or new_ai is None:
+        new_k = ct_settings.parse(ct_settings.EXPERIENCE_K_KEY, request.args.get('k', old_k))
+        if new is None or new_ai is None or new_k is None:
             return jsonify(error=_('Значення поза допустимими межами.')), 400
         records = []
         if inspect(ct.connection()).has_table(vw.TABLE):
@@ -250,12 +253,14 @@ def verifier_weights_estimate(lang_code):
     finally:
         close_ct_session()
 
-    weights = {(u, s): verifier_weight(c, n, k) for u, s, n, c in records}
+    w_old = {(u, s): verifier_weight(c, n, old_k) for u, s, n, c in records}
+    w_new = {(u, s): verifier_weight(c, n, new_k) for u, s, n, c in records}
     solo_old, solo_new = old - old_ai, new - new_ai
-    names = _people({u for u, _s in weights})
+    names = _people({u for u, _s in w_new})
     gained, lost = [], []
-    for (u, s), w in weights.items():
-        was, now = w >= solo_old - 1e-9, w >= solo_new - 1e-9
+    for key, w in w_new.items():
+        u, s = key
+        was, now = w_old[key] >= solo_old - 1e-9, w >= solo_new - 1e-9
         if was != now:
             item = {'login': names.get(u, (f'#{u}', ''))[0], 'species': species.get(s, f'#{s}'),
                     'weight': round(w, 3)}
@@ -263,7 +268,7 @@ def verifier_weights_estimate(lang_code):
     for lst in (gained, lost):
         lst.sort(key=lambda r: (r['login'].lower(), r['species'].lower()))
 
-    def closes(threshold, ai_factor):
+    def closes(threshold, ai_factor, weights):
         """{species_id: series it would close now}."""
         out = {}
         for obs, pairs in candidates.items():
@@ -273,11 +278,11 @@ def verifier_weights_estimate(lang_code):
                 out[sp] = out.get(sp, 0) + 1
         return out
 
-    now_old, now_new = closes(old, old_ai), closes(new, new_ai)
+    now_old, now_new = closes(old, old_ai, w_old), closes(new, new_ai, w_new)
     by_species = sorted(({'species': species.get(sp, f'#{sp}'), 'count': n}
                          for sp, n in now_new.items()), key=lambda r: -r['count'])
 
-    return jsonify(old=old, new=new, old_ai=old_ai, new_ai=new_ai,
+    return jsonify(old=old, new=new, old_ai=old_ai, new_ai=new_ai, old_k=old_k, new_k=new_k,
                    solo_old=round(solo_old, 3), solo_new=round(solo_new, 3),
                    gained=gained, lost=lost, pending_total=len(pending),
                    close_now_old=sum(now_old.values()), close_now_new=sum(now_new.values()),

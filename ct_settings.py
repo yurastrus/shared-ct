@@ -10,9 +10,9 @@ stored value outside its allowed range is ignored.
 Values are cached per process for CACHE_SECONDS, so a change reaches the
 other workers within that time; the worker that saves it sees it at once.
 
-Owner's request 2026-11-23: the weighted rule's closing threshold and
-DeepFaune's vote factor are edited on /admin/verifier-weights instead of in
-config files.
+Owner's request 2026-11-23/24: the weighted rule's closing threshold,
+DeepFaune's vote factor and the experience constant k are edited on
+/admin/verifier-weights instead of in config files.
 """
 import time
 from datetime import datetime
@@ -20,13 +20,15 @@ from datetime import datetime
 from flask import current_app
 from sqlalchemy import inspect, text
 
-from .consensus import AI_VOTE_FACTOR_DEFAULT, WEIGHTED_THRESHOLD_DEFAULT
+from .consensus import (AI_VOTE_FACTOR_DEFAULT, EXPERIENCE_K_DEFAULT,
+                        WEIGHTED_THRESHOLD_DEFAULT)
 
 TABLE = 'ct_settings'
 CACHE_SECONDS = 30
 
 THRESHOLD_KEY = 'weighted_consensus_threshold'
 AI_FACTOR_KEY = 'ai_vote_factor'
+EXPERIENCE_K_KEY = 'verifier_experience_k'
 
 # key -> (config key, code default, min, max)
 SETTINGS = {
@@ -35,6 +37,9 @@ SETTINGS = {
     THRESHOLD_KEY: ('WEIGHTED_CONSENSUS_THRESHOLD', WEIGHTED_THRESHOLD_DEFAULT, 1.0, 3.0),
     # 0 = DeepFaune ignored; 1 = a confident DeepFaune counts as a whole person.
     AI_FACTOR_KEY: ('AI_VOTE_FACTOR', AI_VOTE_FACTOR_DEFAULT, 0.0, 1.0),
+    # weight = confirmed / (n + k): 0 = precision as is, larger = newcomers
+    # stay newcomers longer (weight 0.99 needs about 99 x k agreed votes).
+    EXPERIENCE_K_KEY: ('VERIFIER_EXPERIENCE_K', EXPERIENCE_K_DEFAULT, 0.0, 100.0),
 }
 THRESHOLD_MIN, THRESHOLD_MAX = SETTINGS[THRESHOLD_KEY][2:]
 
@@ -136,6 +141,10 @@ def weighted_threshold(session, config=None):
 
 def ai_vote_factor(session, config=None):
     return value(session, AI_FACTOR_KEY, config)
+
+
+def experience_k(session, config=None):
+    return value(session, EXPERIENCE_K_KEY, config)
 
 
 def config_threshold(config=None):

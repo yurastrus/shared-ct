@@ -38,7 +38,12 @@
     <div class="vw-legend">
         <div class="vw-legend__item vw-legend__item--wide">
             <span class="vw-legend__label">{{ _('Вага голосу') }}</span>
-            <span class="vw-legend__value">{{ _('підтверджені') }} / (n + {{ k }})</span>
+            <span class="vw-legend__value">{{ _('підтверджені') }} / (n + {{ '%g'|format(k) }})
+                {% if setting.editable %}
+                <button type="button" class="vw-edit-btn" data-open-editor
+                        aria-controls="vw-th-editor" aria-expanded="false">✏️ {{ _('Змінити') }}</button>
+                {% endif %}
+            </span>
             <span class="vw-legend__hint">{{ _('n означає, скільки разів людина називала вид у серіях, де інші мали чітку більшість; підтверджені показують, скільки разів інші з нею погодились.') }}
                 {{ _('Чим більше k, тим довше новачок лишається новачком: 10 з 10 важить') }} {{ '%.2f'|format(10 / (10 + k)) }}.</span>
         </div>
@@ -75,9 +80,10 @@
     </div>
 
     {% if setting.editable %}
-    {% set labels = {'weighted_consensus_threshold': _('Поріг закриття'), 'ai_vote_factor': _('Коефіцієнт DeepFaune')} %}
-    {% set hints = {'weighted_consensus_threshold': _('на стільки лідер має випереджати другий вид'), 'ai_vote_factor': _('DeepFaune додає цей коефіцієнт × score виду, який назвала людина')} %}
-    {% set names = {'weighted_consensus_threshold': 'threshold', 'ai_vote_factor': 'ai_factor'} %}
+    {% set labels = {'weighted_consensus_threshold': _('Поріг закриття'), 'ai_vote_factor': _('Коефіцієнт DeepFaune'), 'verifier_experience_k': _('Поправка на досвід k')} %}
+    {% set hints = {'weighted_consensus_threshold': _('на стільки лідер має випереджати другий вид'), 'ai_vote_factor': _('DeepFaune додає цей коефіцієнт × score виду, який назвала людина'), 'verifier_experience_k': _('вага = підтверджені / (n + k); більше k означає, що новачок довше лишається новачком')} %}
+    {% set names = {'weighted_consensus_threshold': 'threshold', 'ai_vote_factor': 'ai_factor', 'verifier_experience_k': 'k'} %}
+    {% set steps = {'weighted_consensus_threshold': '0.01', 'ai_vote_factor': '0.01', 'verifier_experience_k': '1'} %}
     <section class="vw-editor" id="vw-th-editor" hidden>
         <h2 class="vw-editor__title">{{ _('Змінити правило закриття') }}</h2>
         <form method="post" id="vw-th-form"
@@ -89,11 +95,11 @@
             <div class="vw-field">
                 <label class="vw-field__label" for="vw-in-{{ names[key] }}">{{ labels[key] }}</label>
                 <div class="vw-stepper">
-                    <button type="button" class="btn btn-sm btn-secondary" data-step="-0.01" data-for="vw-in-{{ names[key] }}" aria-label="−0.01">−</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-step="-{{ steps[key] }}" data-for="vw-in-{{ names[key] }}" aria-label="−{{ steps[key] }}">−</button>
                     <input type="number" name="{{ names[key] }}" id="vw-in-{{ names[key] }}" value="{{ f.value }}"
                            data-current="{{ f.value }}" data-label="{{ labels[key] }}"
-                           min="{{ f.min }}" max="{{ f.max }}" step="0.01" inputmode="decimal">
-                    <button type="button" class="btn btn-sm btn-secondary" data-step="0.01" data-for="vw-in-{{ names[key] }}" aria-label="+0.01">+</button>
+                           min="{{ f.min }}" max="{{ f.max }}" step="{{ steps[key] }}" inputmode="decimal">
+                    <button type="button" class="btn btn-sm btn-secondary" data-step="{{ steps[key] }}" data-for="vw-in-{{ names[key] }}" aria-label="+{{ steps[key] }}">+</button>
                     <span class="vw-stepper__hint">{{ _('від') }} {{ f.min }} {{ _('до') }} {{ f.max }}</span>
                 </div>
                 <p class="vw-field__hint">{{ hints[key] }}</p>
@@ -270,6 +276,7 @@
                 return num(i) !== parseFloat(i.dataset.current);
             });
         }
+        function show(v) { return (Math.round(v * 100) / 100).toString(); }
         function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
         function setOpen(open) {
             editor.hidden = !open;
@@ -289,7 +296,7 @@
             b.addEventListener('click', function () {
                 var i = document.getElementById(b.dataset.for);
                 var v = Math.min(parseFloat(i.max), Math.max(parseFloat(i.min), num(i) + parseFloat(b.dataset.step)));
-                i.value = v.toFixed(2);
+                i.value = show(v);
             });
         });
         form.addEventListener('submit', function (e) {
@@ -298,9 +305,9 @@
             var diff = changed();
             if (!diff.length) { e.preventDefault(); alert(I18N.same); return; }
             var lines = diff.map(function (i) {
-                return i.dataset.label + ': ' + i.dataset.current + ' → ' + num(i).toFixed(2);
+                return i.dataset.label + ': ' + show(parseFloat(i.dataset.current)) + ' → ' + show(num(i));
             }).join('\n');
-            inputs.forEach(function (i) { i.value = num(i).toFixed(2); });
+            inputs.forEach(function (i) { i.value = show(num(i)); });
             if (!confirm(lines + '\n\n' + I18N.confirm)) { e.preventDefault(); }
         });
         function list(items) {
@@ -315,7 +322,7 @@
                 result.textContent = I18N.bad; return;
             }
             var q = Array.prototype.map.call(inputs, function (i) {
-                return encodeURIComponent(i.name) + '=' + encodeURIComponent(num(i).toFixed(2));
+                return encodeURIComponent(i.name) + '=' + encodeURIComponent(show(num(i)));
             }).join('&');
             result.innerHTML = '<p class="vw-muted">' + I18N.loading + '</p>';
             fetch(form.dataset.estimateUrl + '?' + q, {headers: {'Accept': 'application/json'}})

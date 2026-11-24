@@ -83,12 +83,15 @@ def load_weights(session, user_ids):
     from .models import VerifierSpeciesWeight as W
     rows = session.query(W.user_id, W.species_id, W.n, W.confirmed) \
         .filter(W.user_id.in_(user_ids)).all()
-    k = experience_k()
+    k = experience_k(session)
     return {(u, s): verifier_weight(c, n, k) for u, s, n, c in rows}
 
 
-def experience_k():
-    """VERIFIER_EXPERIENCE_K from the CT config (default 1)."""
+def experience_k(session=None):
+    """k in force: stored in ct_settings (with a session), else the config's."""
+    from . import ct_settings
+    if session is not None:
+        return ct_settings.experience_k(session)
     cfg = current_app.config.get('CAMERA_TRAP_CONFIG', {})
     return cfg.get('VERIFIER_EXPERIENCE_K', EXPERIENCE_K_DEFAULT)
 
