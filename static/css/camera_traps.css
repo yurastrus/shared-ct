@@ -2777,3 +2777,80 @@ body.dark-theme .message-container.error {
 body.dark-theme .vw-chip { background: rgba(32, 201, 151, 0.18); color: #3ddc97; }
 
 .vw-note { margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Threshold editor on the verifier weights page */
+.vw-edit-btn {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    vertical-align: middle;
+}
+.vw-edit-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.vw-editor {
+    margin: -1rem 0 2rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-lg);
+    background: var(--card-bg);
+    box-shadow: var(--shadow-lg);
+}
+.vw-editor__title { font-size: 1rem; font-weight: 600; margin: 0 0 0.35rem; }
+.vw-editor__source { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 0.75rem; }
+.vw-stepper { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.vw-stepper input {
+    width: 6.5rem;
+    height: 34px;
+    padding: 0 0.5rem;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.vw-stepper .btn { min-width: 34px; }
+.vw-stepper__hint { font-size: 0.8rem; color: var(--text-secondary); }
+.vw-editor__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+.vw-estimate { margin-top: 1rem; }
+.vw-estimate:empty { display: none; }
+.vw-estimate__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+.vw-estimate__grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-light);
+}
+.vw-estimate__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 640px) { .vw-estimate__cols { grid-template-columns: 1fr; } }
+.vw-estimate__cols h3 { font-size: 0.85rem; font-weight: 600; margin: 0 0 0.35rem; }
+.vw-estimate__list {
+    max-height: 220px;
+    overflow: auto;
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    list-style: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+}
+.vw-estimate__list li { padding: 0.15rem 0; }
+.vw-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem 1.5rem; }
+.vw-field__label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+.vw-field__hint { font-size: 0.8rem; color: var(--text-secondary); margin: 0.35rem 0 0.2rem; }
+.vw-field .vw-editor__source { margin: 0; font-size: 0.8rem; }

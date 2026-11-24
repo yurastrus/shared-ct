@@ -422,6 +422,23 @@ class UserProfile(CTBase):
     def __repr__(self):
         return f'<UserProfile {self.user_id}>'
 
+class CTSetting(CTBase):
+    """An admin-editable setting shared by every host (ct_settings.py).
+
+    Created by scripts/init_ct_settings.py; the host config is the fallback
+    while a key is missing.
+    """
+    __tablename__ = 'ct_settings'
+
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=func.now())
+    updated_by = Column(String(150))          # login of the admin who saved it
+
+    def __repr__(self):
+        return f'<CTSetting {self.key}={self.value}>'
+
+
 class VerifierSpeciesWeight(CTBase):
     """A person's record on one species, behind the weighted closing rule.
 

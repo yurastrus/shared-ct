@@ -42,14 +42,24 @@
             <span class="vw-legend__hint">{{ _('n означає, скільки разів людина називала вид у серіях, де інші мали чітку більшість; підтверджені показують, скільки разів інші з нею погодились.') }}
                 {{ _('Чим більше k, тим довше новачок лишається новачком: 10 з 10 важить') }} {{ '%.2f'|format(10 / (10 + k)) }}.</span>
         </div>
-        <div class="vw-legend__item">
+        <div class="vw-legend__item vw-legend__item--threshold">
             <span class="vw-legend__label">{{ _('Поріг закриття') }}</span>
-            <span class="vw-legend__value">{{ threshold }}</span>
+            <span class="vw-legend__value">{{ threshold }}
+                {% if setting.editable %}
+                <button type="button" class="vw-edit-btn" data-open-editor
+                        aria-controls="vw-th-editor" aria-expanded="false">✏️ {{ _('Змінити') }}</button>
+                {% endif %}
+            </span>
             <span class="vw-legend__hint">{{ _('на стільки лідер має випереджати другий вид') }}</span>
         </div>
         <div class="vw-legend__item">
             <span class="vw-legend__label">DeepFaune</span>
-            <span class="vw-legend__value">{{ ai_factor }} × score</span>
+            <span class="vw-legend__value">{{ ai_factor }} × score
+                {% if setting.editable %}
+                <button type="button" class="vw-edit-btn" data-open-editor
+                        aria-controls="vw-th-editor" aria-expanded="false">✏️ {{ _('Змінити') }}</button>
+                {% endif %}
+            </span>
             <span class="vw-legend__hint">{{ _('лише виду, який назвала людина') }}</span>
         </div>
         <div class="vw-legend__item">
@@ -63,6 +73,51 @@
             <span class="vw-legend__hint">{% if running %}{{ _('перерахунок триває') }}{% else %}{{ _('сама раз на добу') }}{% endif %}</span>
         </div>
     </div>
+
+    {% if setting.editable %}
+    {% set labels = {'weighted_consensus_threshold': _('Поріг закриття'), 'ai_vote_factor': _('Коефіцієнт DeepFaune')} %}
+    {% set hints = {'weighted_consensus_threshold': _('на стільки лідер має випереджати другий вид'), 'ai_vote_factor': _('DeepFaune додає цей коефіцієнт × score виду, який назвала людина')} %}
+    {% set names = {'weighted_consensus_threshold': 'threshold', 'ai_vote_factor': 'ai_factor'} %}
+    <section class="vw-editor" id="vw-th-editor" hidden>
+        <h2 class="vw-editor__title">{{ _('Змінити правило закриття') }}</h2>
+        <form method="post" id="vw-th-form"
+              action="{{ url_for('camera_traps.verifier_weights_save_settings', lang_code=g.lang_code) }}"
+              data-estimate-url="{{ url_for('camera_traps.verifier_weights_estimate', lang_code=g.lang_code) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="vw-fields">
+            {% for key, f in setting.fields.items() %}
+            <div class="vw-field">
+                <label class="vw-field__label" for="vw-in-{{ names[key] }}">{{ labels[key] }}</label>
+                <div class="vw-stepper">
+                    <button type="button" class="btn btn-sm btn-secondary" data-step="-0.01" data-for="vw-in-{{ names[key] }}" aria-label="−0.01">−</button>
+                    <input type="number" name="{{ names[key] }}" id="vw-in-{{ names[key] }}" value="{{ f.value }}"
+                           data-current="{{ f.value }}" data-label="{{ labels[key] }}"
+                           min="{{ f.min }}" max="{{ f.max }}" step="0.01" inputmode="decimal">
+                    <button type="button" class="btn btn-sm btn-secondary" data-step="0.01" data-for="vw-in-{{ names[key] }}" aria-label="+0.01">+</button>
+                    <span class="vw-stepper__hint">{{ _('від') }} {{ f.min }} {{ _('до') }} {{ f.max }}</span>
+                </div>
+                <p class="vw-field__hint">{{ hints[key] }}</p>
+                <p class="vw-editor__source">
+                    {% if f.stored %}
+                        {{ _('Зараз діє значення з бази') }}: <strong>{{ f.stored[0] }}</strong>
+                        ({{ _('змінив') }} {{ f.stored[2] or '—' }}{% if f.stored[1] %}, {{ f.stored[1].strftime('%d.%m.%Y %H:%M') }}{% endif %}).
+                        {{ _('Запасне значення з конфігу') }}: {{ f.fallback }}.
+                    {% else %}
+                        {{ _('У базі значення ще немає, діє запасне з конфігу') }}: <strong>{{ f.fallback }}</strong>.
+                    {% endif %}
+                </p>
+            </div>
+            {% endfor %}
+            </div>
+            <div class="vw-editor__actions">
+                <button type="button" class="btn btn-sm btn-info" id="vw-th-estimate">🔍 {{ _('Оцінити') }}</button>
+                <button type="submit" class="btn btn-sm btn-primary" id="vw-th-save">💾 {{ _('Зберегти') }}</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="vw-th-cancel">{{ _('Скасувати') }}</button>
+            </div>
+        </form>
+        <div class="vw-estimate" id="vw-th-result" aria-live="polite"></div>
+    </section>
+    {% endif %}
 
     <section class="hub-section">
         <h2 class="hub-section-title">👥 {{ _('Люди') }} <span class="vw-count">{{ people|length }}</span></h2>
@@ -183,6 +238,111 @@
             });
         });
     });
+    // Rule editor: open, step, estimate (read-only), save after a confirm.
+    var I18N = {{ {
+        'confirm': _('Зберегти зміни? Вони діятимуть на обох сайтах для всіх нових голосів.'),
+        'same': _('Ці значення вже діють.'),
+        'bad': _('Значення поза допустимими межами.'),
+        'loading': _('Рахую…'),
+        'failed': _('Не вдалося оцінити.'),
+        'solo': _('Сам + AI: від ваги'),
+        'gain': _('Отримають «сам + AI»'),
+        'lose': _('Втратять «сам + AI»'),
+        'none': _('нікого'),
+        'pending': _('Серій, що чекають на голоси'),
+        'closeNow': _('закрилося б зараз кнопкою «Перерахувати консенсус»'),
+        'empty': _('Пусто'),
+        'animal': _('інше'),
+        'was': _('зараз')
+    } | tojson }};
+    var form = document.getElementById('vw-th-form');
+    if (form) {
+        var editor = document.getElementById('vw-th-editor');
+        var openers = document.querySelectorAll('[data-open-editor]');
+        var inputs = form.querySelectorAll('input[type="number"]');
+        var result = document.getElementById('vw-th-result');
+        function num(input) { return Math.round(parseFloat(String(input.value).replace(',', '.')) * 100) / 100; }
+        function ok(input) {
+            var v = num(input);
+            return !isNaN(v) && v >= parseFloat(input.min) && v <= parseFloat(input.max);
+        }
+        function changed() {
+            return Array.prototype.filter.call(inputs, function (i) {
+                return num(i) !== parseFloat(i.dataset.current);
+            });
+        }
+        function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+        function setOpen(open) {
+            editor.hidden = !open;
+            openers.forEach(function (b) { b.setAttribute('aria-expanded', String(open)); });
+        }
+        openers.forEach(function (b) {
+            b.addEventListener('click', function () {
+                setOpen(editor.hidden);
+                if (!editor.hidden) { editor.scrollIntoView({block: 'nearest'}); inputs[0].focus(); }
+            });
+        });
+        document.getElementById('vw-th-cancel').addEventListener('click', function () {
+            inputs.forEach(function (i) { i.value = i.dataset.current; });
+            result.innerHTML = ''; setOpen(false);
+        });
+        form.querySelectorAll('[data-step]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var i = document.getElementById(b.dataset.for);
+                var v = Math.min(parseFloat(i.max), Math.max(parseFloat(i.min), num(i) + parseFloat(b.dataset.step)));
+                i.value = v.toFixed(2);
+            });
+        });
+        form.addEventListener('submit', function (e) {
+            var bad = Array.prototype.some.call(inputs, function (i) { return !ok(i); });
+            if (bad) { e.preventDefault(); alert(I18N.bad); return; }
+            var diff = changed();
+            if (!diff.length) { e.preventDefault(); alert(I18N.same); return; }
+            var lines = diff.map(function (i) {
+                return i.dataset.label + ': ' + i.dataset.current + ' → ' + num(i).toFixed(2);
+            }).join('\n');
+            inputs.forEach(function (i) { i.value = num(i).toFixed(2); });
+            if (!confirm(lines + '\n\n' + I18N.confirm)) { e.preventDefault(); }
+        });
+        function list(items) {
+            if (!items.length) { return '<span class="vw-muted">' + I18N.none + '</span>'; }
+            return '<ul class="vw-estimate__list">' + items.map(function (r) {
+                return '<li><strong>' + esc(r.login) + '</strong> · ' + esc(r.species) +
+                       ' <span class="vw-muted">' + r.weight.toFixed(3) + '</span></li>';
+            }).join('') + '</ul>';
+        }
+        document.getElementById('vw-th-estimate').addEventListener('click', function () {
+            if (Array.prototype.some.call(inputs, function (i) { return !ok(i); })) {
+                result.textContent = I18N.bad; return;
+            }
+            var q = Array.prototype.map.call(inputs, function (i) {
+                return encodeURIComponent(i.name) + '=' + encodeURIComponent(num(i).toFixed(2));
+            }).join('&');
+            result.innerHTML = '<p class="vw-muted">' + I18N.loading + '</p>';
+            fetch(form.dataset.estimateUrl + '?' + q, {headers: {'Accept': 'application/json'}})
+                .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+                .then(function (x) {
+                    if (!x.ok) { result.textContent = x.d.error || I18N.failed; return; }
+                    var d = x.d, o = d.close_now_old, n = d.close_now_new;
+                    result.innerHTML =
+                        '<div class="vw-estimate__grid">' +
+                        '<div><span class="vw-legend__label">' + I18N.solo + '</span>' +
+                        '<span class="vw-legend__value">' + d.solo_old.toFixed(2) + ' → ' + d.solo_new.toFixed(2) + '</span></div>' +
+                        '<div><span class="vw-legend__label">' + I18N.pending + ': ' + d.pending_total + '</span>' +
+                        '<span class="vw-legend__value">' + (n.empty + n.animal) +
+                        ' <small class="vw-muted">(' + I18N.empty + ' ' + n.empty + ', ' + I18N.animal + ' ' + n.animal +
+                        '; ' + I18N.was + ' ' + (o.empty + o.animal) + ')</small></span>' +
+                        '<span class="vw-legend__hint">' + I18N.closeNow + '</span></div>' +
+                        '</div>' +
+                        '<div class="vw-estimate__cols">' +
+                        '<div><h3>' + I18N.gain + ' (' + d.gained.length + ')</h3>' + list(d.gained) + '</div>' +
+                        '<div><h3>' + I18N.lose + ' (' + d.lost.length + ')</h3>' + list(d.lost) + '</div>' +
+                        '</div>';
+                })
+                .catch(function () { result.textContent = I18N.failed; });
+        });
+    }
+
     // Quick text filter over the person x species table.
     var search = document.getElementById('vw-search');
     var detail = document.getElementById('vw-detail');

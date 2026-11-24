@@ -830,6 +830,7 @@ def closing_decision(observation_id, user_identifications, db_session, config=No
     if voters < min_ids:
         return None
     if config.get('CONSENSUS_MODE', 'weighted') == 'weighted':
+        from . import ct_settings
         from .verifier_weights import load_weights, series_ai_answers
         pairs = {(u, s) for u, s, _q in user_identifications}
         if weights is _LOAD:
@@ -839,8 +840,8 @@ def closing_decision(observation_id, user_identifications, db_session, config=No
                 ai = series_ai_answers(db_session, [observation_id]).get(observation_id)
             winner = weighted_close(
                 pairs, lambda u, sp: weights.get((u, sp), 0.0), ai,
-                threshold=config.get('WEIGHTED_CONSENSUS_THRESHOLD', WEIGHTED_THRESHOLD_DEFAULT),
-                ai_factor=config.get('AI_VOTE_FACTOR', AI_VOTE_FACTOR_DEFAULT))
+                threshold=ct_settings.weighted_threshold(db_session, config),
+                ai_factor=ct_settings.ai_vote_factor(db_session, config))
             if winner is None:
                 return None
             return winner, accepted_species(per_species, voters, winner)
