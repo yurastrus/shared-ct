@@ -2854,3 +2854,12 @@ body.dark-theme .vw-chip { background: rgba(32, 201, 151, 0.18); color: #3ddc97;
 .vw-field__label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
 .vw-field__hint { font-size: 0.8rem; color: var(--text-secondary); margin: 0.35rem 0 0.2rem; }
 .vw-field .vw-editor__source { margin: 0; font-size: 0.8rem; }
+.vw-estimate__h { font-size: 0.85rem; font-weight: 600; margin: 0.25rem 0 0.35rem; }
+.vw-estimate__chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.9rem; padding: 0; list-style: none; }
+.vw-estimate__chips li {
+    padding: 0.15rem 0.55rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--bg-light);
+    font-size: 0.82rem;
+}

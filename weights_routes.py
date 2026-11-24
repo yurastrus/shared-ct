@@ -264,15 +264,21 @@ def verifier_weights_estimate(lang_code):
         lst.sort(key=lambda r: (r['login'].lower(), r['species'].lower()))
 
     def closes(threshold, ai_factor):
-        out = {'empty': 0, 'animal': 0}
+        """{species_id: series it would close now}."""
+        out = {}
         for obs, pairs in candidates.items():
             sp = weighted_close(pairs, lambda u, x: weights.get((u, x), 0.0), ai.get(obs),
                                 threshold=threshold, ai_factor=ai_factor)
             if sp is not None:
-                out['empty' if sp == EMPTY_ID else 'animal'] += 1
+                out[sp] = out.get(sp, 0) + 1
         return out
+
+    now_old, now_new = closes(old, old_ai), closes(new, new_ai)
+    by_species = sorted(({'species': species.get(sp, f'#{sp}'), 'count': n}
+                         for sp, n in now_new.items()), key=lambda r: -r['count'])
 
     return jsonify(old=old, new=new, old_ai=old_ai, new_ai=new_ai,
                    solo_old=round(solo_old, 3), solo_new=round(solo_new, 3),
                    gained=gained, lost=lost, pending_total=len(pending),
-                   close_now_old=closes(old, old_ai), close_now_new=closes(new, new_ai))
+                   close_now_old=sum(now_old.values()), close_now_new=sum(now_new.values()),
+                   close_now_species=by_species)

@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:23+0200\n"
+"POT-Creation-Date: 2026-11-24 14:33+0200\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -7348,17 +7348,12 @@ msgid "закрилося б зараз кнопкою «Перерахуват�
 msgstr "would close now with the “Recalculate consensus” button"
 
 #: app/camera_traps/templates/verifier_weights.html:254
-#, fuzzy
-msgid "Пусто"
-msgstr "Institutions"
-
-#: app/camera_traps/templates/verifier_weights.html:255
-msgid "інше"
-msgstr "other"
-
-#: app/camera_traps/templates/verifier_weights.html:256
 msgid "зараз"
 msgstr "now"
+
+#: app/camera_traps/templates/verifier_weights.html:255
+msgid "Які види закрилися б"
+msgstr "Species that would close"
 
 #~ msgid ""
 #~ "Тут відображаться фото, які ще не "
@@ -7521,4 +7516,10 @@ msgstr "now"
 
 #~ msgid "Поріг має бути числом від %s до %s."
 #~ msgstr "The threshold must be a number from %s to %s."
+
+#~ msgid "Пусто"
+#~ msgstr "Institutions"
+
+#~ msgid "інше"
+#~ msgstr "other"
 

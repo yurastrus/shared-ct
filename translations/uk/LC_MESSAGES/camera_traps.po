@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:23+0200\n"
+"POT-Creation-Date: 2026-11-24 14:33+0200\n"
 "PO-Revision-Date: 2026-06-11 00:00+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: uk\n"
@@ -7061,15 +7061,11 @@ msgid "закрилося б зараз кнопкою «Перерахуват�
 msgstr ""
 
 #: app/camera_traps/templates/verifier_weights.html:254
-msgid "Пусто"
+msgid "зараз"
 msgstr ""
 
 #: app/camera_traps/templates/verifier_weights.html:255
-msgid "інше"
-msgstr ""
-
-#: app/camera_traps/templates/verifier_weights.html:256
-msgid "зараз"
+msgid "Які види закрилися б"
 msgstr ""
 
 #~ msgid ""
@@ -7298,5 +7294,11 @@ msgstr ""
 #~ msgstr ""
 
 #~ msgid "Поріг має бути числом від %s до %s."
+#~ msgstr ""
+
+#~ msgid "Пусто"
+#~ msgstr ""
+
+#~ msgid "інше"
 #~ msgstr ""
 

@@ -251,9 +251,8 @@
         'none': _('нікого'),
         'pending': _('Серій, що чекають на голоси'),
         'closeNow': _('закрилося б зараз кнопкою «Перерахувати консенсус»'),
-        'empty': _('Пусто'),
-        'animal': _('інше'),
-        'was': _('зараз')
+        'was': _('зараз'),
+        'bySpecies': _('Які види закрилися б')
     } | tojson }};
     var form = document.getElementById('vw-th-form');
     if (form) {
@@ -323,17 +322,22 @@
                 .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
                 .then(function (x) {
                     if (!x.ok) { result.textContent = x.d.error || I18N.failed; return; }
-                    var d = x.d, o = d.close_now_old, n = d.close_now_new;
+                    var d = x.d;
+                    var sp = d.close_now_species.length
+                        ? '<ul class="vw-estimate__chips">' + d.close_now_species.map(function (r) {
+                              return '<li>' + esc(r.species) + ' <strong>' + r.count + '</strong></li>';
+                          }).join('') + '</ul>'
+                        : '<span class="vw-muted">' + I18N.none + '</span>';
                     result.innerHTML =
                         '<div class="vw-estimate__grid">' +
                         '<div><span class="vw-legend__label">' + I18N.solo + '</span>' +
                         '<span class="vw-legend__value">' + d.solo_old.toFixed(2) + ' → ' + d.solo_new.toFixed(2) + '</span></div>' +
                         '<div><span class="vw-legend__label">' + I18N.pending + ': ' + d.pending_total + '</span>' +
-                        '<span class="vw-legend__value">' + (n.empty + n.animal) +
-                        ' <small class="vw-muted">(' + I18N.empty + ' ' + n.empty + ', ' + I18N.animal + ' ' + n.animal +
-                        '; ' + I18N.was + ' ' + (o.empty + o.animal) + ')</small></span>' +
+                        '<span class="vw-legend__value">' + d.close_now_new +
+                        ' <small class="vw-muted">(' + I18N.was + ' ' + d.close_now_old + ')</small></span>' +
                         '<span class="vw-legend__hint">' + I18N.closeNow + '</span></div>' +
                         '</div>' +
+                        '<h3 class="vw-estimate__h">' + I18N.bySpecies + '</h3>' + sp +
                         '<div class="vw-estimate__cols">' +
                         '<div><h3>' + I18N.gain + ' (' + d.gained.length + ')</h3>' + list(d.gained) + '</div>' +
                         '<div><h3>' + I18N.lose + ' (' + d.lost.length + ')</h3>' + list(d.lost) + '</div>' +
