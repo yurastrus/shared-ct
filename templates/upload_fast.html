@@ -1055,7 +1055,10 @@ $(document).ready(function () {
         if (!saveOriginal) {
             try {
                 const compressed = await imageCompression(file, {
-                    maxSizeMB: 0.3, maxWidthOrHeight: 960,
+                    // No maxSizeMB: a byte cap makes the library shrink the
+                    // frame by 5 % per retry, so frames of one series came out
+                    // 960/866/822 px wide. Fixed quality keeps every frame 960.
+                    maxWidthOrHeight: 960, initialQuality: 0.85,
                     useWebWorker: true, preserveExif: true
                 });
                 toUpload = new File([compressed], file.name, {

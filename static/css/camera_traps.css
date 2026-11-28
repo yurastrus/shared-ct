@@ -1430,7 +1430,13 @@ body.dark-theme .select2-container--default .select2-selection--multiple {
     border: 1px solid var(--border-color);
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
+/* Fill the column instead of showing the thumbnail at its natural size.
+   Thumbnails of one camera can differ by a few pixels (older uploads were
+   shrunk further to fit a 300 KB cap), and natural sizing made the frame
+   jump during autoplay. Same aspect ratio → same box. */
 #photo-display {
+    width: 100%;
+    height: auto;
     max-width: 100%;
     max-height: 78vh;
     object-fit: contain;

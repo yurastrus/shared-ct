@@ -579,7 +579,8 @@ $(document).ready(function () {
                 $(`#status-${currentIndex}`).text('{{ _("стиснення...") }}').removeClass('success error');
                 try {
                     const compressed = await imageCompression(originalFile, {
-                        maxSizeMB: 0.3, maxWidthOrHeight: 960, useWebWorker: true, preserveExif: true
+                        // No maxSizeMB: see upload_fast.html (byte cap shrank frames unevenly).
+                        maxWidthOrHeight: 960, initialQuality: 0.85, useWebWorker: true, preserveExif: true
                     });
                     fileToUpload = new File([compressed], originalFile.name, {
                         type: compressed.type, lastModified: originalFile.lastModified
